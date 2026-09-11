@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from zoneinfo import ZoneInfo
 
 from app.core.audit import AuditService
+from app.core.database import on_commit
 from app.core.timezone import get_local_day_range_utc, now_local, today_local
 from app.modules.control_ingreso.schemas import (
     CheckinItemHistorialDto,
@@ -155,8 +156,8 @@ class ControlIngresoService:
             ts_local=now_dt_local
         )
 
-        # 5. Emitir evento hacia listeners suscritos (p. ej. Pantalla TV WebSocket)
-        await cls._emitir_evento_checkin(gym_id, response_dto)
+        # 5. Emitir evento hacia listeners suscritos (Pantalla TV) ÚNICAMENTE tras commit confirmado
+        on_commit(session, lambda: cls._emitir_evento_checkin(gym_id, response_dto))
 
         return response_dto
 
@@ -248,8 +249,8 @@ class ControlIngresoService:
             ts_local=now_local()
         )
 
-        # 3. Notificar evento a listeners suscritos (Pantalla TV)
-        await cls._emitir_evento_checkin(gym_id, response_dto)
+        # 3. Notificar evento a listeners suscritos (Pantalla TV) ÚNICAMENTE tras commit confirmado
+        on_commit(session, lambda: cls._emitir_evento_checkin(gym_id, response_dto))
 
         return response_dto
 

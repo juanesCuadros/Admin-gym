@@ -18,6 +18,12 @@ async def lifespan(app: FastAPI):
         print(" Conexión inicial a PostgreSQL establecida correctamente.")
     except Exception as e:
         print(f" Advertencia: No se pudo conectar a PostgreSQL al iniciar: {e}")
+
+    # Suscripción de eventos desacoplada (Módulo 1 -> Módulo 2)
+    from app.modules.control_ingreso.service import ControlIngresoService
+    from app.modules.pantalla_tv.manager import PantallaTvConnectionManager
+    ControlIngresoService.registrar_listener(PantallaTvConnectionManager.on_checkin_event)
+
     yield
     # Shutdown: cerrar conexiones activas del pool
     await engine.dispose()

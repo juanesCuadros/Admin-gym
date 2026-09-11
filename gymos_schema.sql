@@ -299,6 +299,8 @@ CREATE TABLE platform.tenant (
   tope_dias_congelamiento  integer     NOT NULL DEFAULT 30 CHECK (tope_dias_congelamiento >= 0),
   metodos_pago             jsonb       NOT NULL DEFAULT '[]'::jsonb,
   horarios                 jsonb,
+  pantalla_config          jsonb       NOT NULL DEFAULT '{"avisos": [], "logo_url": null, "tiempo_saludo_segundos": 8, "mostrar_clases": true, "mostrar_avisos": true}'::jsonb,
+  pantalla_device_token_hash text,
   landing_slug             text,
   activo                   boolean     NOT NULL DEFAULT true,
   updated_at               timestamptz NOT NULL DEFAULT now()
