@@ -1,5 +1,6 @@
-from datetime import date, datetime, timezone
-from typing import Optional, Tuple
+import logging
+from datetime import date, datetime
+from typing import Awaitable, Callable, List, Optional, Tuple
 from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy import text
@@ -18,9 +19,41 @@ from app.modules.control_ingreso.schemas import (
     ResumenIngresosHoyDto,
 )
 
+logger = logging.getLogger(__name__)
+
+# Tipo de callback asíncrono para eventos de acceso (Punto de extensión para Módulo 2: Pantalla TV)
+CheckinEventListener = Callable[[UUID, CheckinResponseDto], Awaitable[None]]
+
 
 class ControlIngresoService:
-    """Orquestador de reglas de acceso, check-in biométrico/manual y cortesías."""
+    """
+    Orquestador de reglas de acceso, check-in biométrico/manual, cortesías y torniquete.
+    Implementa deduplicación de 3 segundos, cálculo dinámico de membresía/mora/congelamiento/cancelación
+    y punto de extensión desacoplado (pub/sub) para la pantalla de TV.
+    """
+
+    # Registro de listeners en memoria para emisión de eventos sin acoplamiento circular
+    _listeners_checkin: List[CheckinEventListener] = []
+
+    @classmethod
+    def registrar_listener(cls, listener: CheckinEventListener) -> None:
+        """
+        Punto de extensión OCP: Permite que el Módulo 2 (Pantalla TV WebSocket)
+        o futuros módulos registren callbacks ante check-ins sin alterar este servicio.
+        """
+        if listener not in cls._listeners_checkin:
+            cls._listeners_checkin.append(listener)
+
+    @classmethod
+    async def _emitir_evento_checkin(cls, gym_id: UUID, checkin: CheckinResponseDto) -> None:
+        """
+        Dispara los callbacks registrados protegiendo la transacción principal contra fallos del listener.
+        """
+        for listener in cls._listeners_checkin:
+            try:
+                await listener(gym_id, checkin)
+            except Exception as e:
+                logger.error(f"Error al notificar listener de check-in en Pantalla TV: {e}", exc_info=True)
 
     @classmethod
     async def evaluar_y_procesar_checkin(
@@ -33,7 +66,7 @@ class ControlIngresoService:
     ) -> CheckinResponseDto:
         now_dt_local = now_local()
 
-        # 1. Regla de Deduplicación (Ventana de 3 segundos)
+        # 1. Regla de Deduplicación (Ventana de 3 segundos) - Aplica tanto a 'huella' como a 'manual'
         dedup_query = text("""
             SELECT id, resultado, ts_utc
             FROM platform.checkins
@@ -109,7 +142,7 @@ class ControlIngresoService:
             dias_restantes_o_vencido=dias_diff
         )
 
-        return CheckinResponseDto(
+        response_dto = CheckinResponseDto(
             checkin_id=nuevo_id,
             tipo="ingreso",
             metodo=metodo,
@@ -120,6 +153,11 @@ class ControlIngresoService:
             deportista=deportista_dto,
             ts_local=now_dt_local
         )
+
+        # 5. Emitir evento hacia listeners suscritos (p. ej. Pantalla TV WebSocket)
+        await cls._emitir_evento_checkin(gym_id, response_dto)
+
+        return response_dto
 
     @classmethod
     async def checkin_manual(
@@ -152,6 +190,7 @@ class ControlIngresoService:
                 detail={"codigo": "PARAMETROS_INSUFICIENTES", "mensaje": "Debe proporcionar deportista_id o documento"}
             )
 
+        # Ejecuta la misma lógica central con deduplicación y reglas dinámicas
         return await cls.evaluar_y_procesar_checkin(
             session=session,
             gym_id=gym_id,
@@ -184,7 +223,7 @@ class ControlIngresoService:
         })
         nuevo_id = res.scalar_one()
 
-        # 2. Registrar en auditoría inmutable (RF-05)
+        # 2. Registrar en auditoría inmutable (RF-05 / hash-chain)
         await AuditService.registrar(
             session=session,
             gimnasio_id=gym_id,
@@ -196,7 +235,7 @@ class ControlIngresoService:
             detalle={"motivo": data.motivo.strip()}
         )
 
-        return CheckinResponseDto(
+        response_dto = CheckinResponseDto(
             checkin_id=nuevo_id,
             tipo="cortesia",
             metodo="manual",
@@ -208,6 +247,11 @@ class ControlIngresoService:
             ts_local=now_local()
         )
 
+        # 3. Notificar evento a listeners suscritos (Pantalla TV)
+        await cls._emitir_evento_checkin(gym_id, response_dto)
+
+        return response_dto
+
     @classmethod
     async def obtener_ingresos_hoy(
         cls,
@@ -216,6 +260,14 @@ class ControlIngresoService:
         limit: int = 50,
         offset: int = 0
     ) -> ListadoIngresosHoyResponse:
+        """
+        Obtiene el resumen y listado de ingresos del día actual.
+        Conforme a RNF-08:
+        1. Se calcula la fecha en la zona horaria local (America/Bogota).
+        2. Se convierte el día local al rango UTC [00:00:00, 23:59:59.999999] local.
+        3. El query filtra con B-Tree index por 'ts_utc BETWEEN :inicio_utc AND :fin_utc' (óptimo).
+        4. Las fechas retornadas se serializan a hora local en Bogota.
+        """
         hoy = today_local()
         inicio_utc, fin_utc = get_local_day_range_utc(hoy)
 
@@ -332,32 +384,35 @@ class ControlIngresoService:
         dias_gracia: int
     ) -> Tuple[str, int, str, bool, str]:
         """
-        Calcula el estado del deportista y su resultado de torniquete.
+        Calcula el estado derivado del deportista y su comando de torniquete.
         Retorna: (estado_str, dias_diff, mensaje, permite_abrir, resultado_db)
-        donde resultado_db in ('abrio', 'alerta_mora', 'negado')
+        donde resultado_db in ('abrio', 'alerta_mora', 'negado').
+        
+        Manejo estricto de membresías múltiples, cancelaciones y congelamientos:
+        1. Si el deportista tiene 'activo = false' -> 'inactivo', negado.
+        2. Selecciona la membresía no cancelada con fecha_vencimiento más reciente.
+        3. Si no hay membresías no canceladas:
+           - Revisa si la última membresía registrada tiene 'cancelada = true' (RF-27) -> 'cancelada', negado.
+           - Si no tiene registros en absoluto -> 'sin_membresia', negado.
+        4. Si hay membresía no cancelada:
+           - Amarra el congelamiento vigente DIRECTAMENTE a esa 'membresia_id' específica (RF-26).
+             Si tiene congelamiento abierto (fecha_fin IS NULL) -> 'congelado', negado.
+        5. Evalúa fecha_vencimiento contra hoy local (America/Bogota):
+           - fecha_vencimiento >= hoy:
+             * dias_restantes <= 5 -> 'por_vencer', comando=True, resultado='abrio'.
+             * dias_restantes > 5  -> 'activo', comando=True, resultado='abrio'.
+           - fecha_vencimiento < hoy:
+             * dias_mora <= dias_gracia -> 'mora', comando=True, resultado='alerta_mora'.
+             * dias_mora > dias_gracia  -> 'vencido', comando=False, resultado='negado'.
         """
         if not activo:
             return ("inactivo", 0, "Deportista desactivado por la administración", False, "negado")
 
         hoy = today_local()
 
-        # 1. Verificar si tiene congelamiento vigente en platform.congelamientos
-        cong_query = text("""
-            SELECT c.id, c.fecha_inicio
-            FROM platform.congelamientos c
-            JOIN platform.membresias m ON m.id = c.membresia_id
-            WHERE c.gimnasio_id = :gym_id 
-              AND m.deportista_id = :deportista_id 
-              AND c.fecha_fin IS NULL
-            LIMIT 1
-        """)
-        res_cong = await session.execute(cong_query, {"gym_id": gym_id, "deportista_id": deportista_id})
-        if res_cong.mappings().first():
-            return ("congelado", 0, "Membresía congelada. Debe solicitar el descongelamiento previo", False, "negado")
-
-        # 2. Consultar membresía más reciente no cancelada
+        # 1. Consultar la membresía no cancelada más reciente
         memb_query = text("""
-            SELECT id, fecha_inicio, fecha_vencimiento
+            SELECT id, fecha_inicio, fecha_vencimiento, cancelada
             FROM platform.membresias
             WHERE gimnasio_id = :gym_id AND deportista_id = :deportista_id AND cancelada = false
             ORDER BY fecha_vencimiento DESC
@@ -366,17 +421,57 @@ class ControlIngresoService:
         res_memb = await session.execute(memb_query, {"gym_id": gym_id, "deportista_id": deportista_id})
         memb = res_memb.mappings().first()
 
+        # 2. Si no hay membresía activa no cancelada, evaluar si la última fue cancelada (RF-27)
         if not memb:
+            last_memb_query = text("""
+                SELECT id, cancelada
+                FROM platform.membresias
+                WHERE gimnasio_id = :gym_id AND deportista_id = :deportista_id
+                ORDER BY fecha_vencimiento DESC
+                LIMIT 1
+            """)
+            res_last = await session.execute(last_memb_query, {"gym_id": gym_id, "deportista_id": deportista_id})
+            last_memb = res_last.mappings().first()
+            if last_memb and last_memb["cancelada"]:
+                return ("cancelada", 0, "Membresía cancelada por la administración (RF-27)", False, "negado")
             return ("sin_membresia", 0, "El deportista no cuenta con membresías registradas", False, "negado")
 
+        membresia_id = memb["id"]
         fecha_venc: date = memb["fecha_vencimiento"]
 
-        # 3. Evaluar vigencia
+        # 3. Verificar congelamiento vigente amarrado a ESTA membresía específica (RF-26)
+        cong_query = text("""
+            SELECT id, fecha_inicio
+            FROM platform.congelamientos
+            WHERE gimnasio_id = :gym_id 
+              AND membresia_id = :membresia_id 
+              AND fecha_fin IS NULL
+            LIMIT 1
+        """)
+        res_cong = await session.execute(cong_query, {"gym_id": gym_id, "membresia_id": membresia_id})
+        if res_cong.mappings().first():
+            return ("congelado", 0, "Membresía congelada. Debe solicitar el descongelamiento previo", False, "negado")
+
+        # 4. Evaluar vigencia
         if fecha_venc >= hoy:
             dias_restantes = (fecha_venc - hoy).days
-            return ("activo", dias_restantes, f"Acceso concedido. Vence en {dias_restantes} días ({fecha_venc})", True, "abrio")
+            if dias_restantes <= 5:
+                return (
+                    "por_vencer",
+                    dias_restantes,
+                    f"Acceso concedido. Membresía por vencer en {dias_restantes} día(s) ({fecha_venc})",
+                    True,
+                    "abrio"
+                )
+            return (
+                "activo",
+                dias_restantes,
+                f"Acceso concedido. Vence en {dias_restantes} días ({fecha_venc})",
+                True,
+                "abrio"
+            )
 
-        # Está vencido: calcular días de mora
+        # Está vencido: calcular días de mora contra tenant.dias_gracia_mora
         dias_mora = (hoy - fecha_venc).days
         if dias_mora <= dias_gracia:
             return (
@@ -390,7 +485,7 @@ class ControlIngresoService:
             return (
                 "vencido",
                 dias_mora,
-                f"Acceso denegado: membresía vencida hace {dias_mora} día(s). Superó el período de gracia permitido.",
+                f"Acceso denegado: membresía vencida hace {dias_mora} día(s). Superó el período de gracia permitido ({dias_gracia} días).",
                 False,
                 "negado"
             )

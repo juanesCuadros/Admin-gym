@@ -23,7 +23,7 @@ class DeportistaCheckinDto(BaseModel):
     id: UUID
     documento: str
     nombre: str
-    estado_calculado: str  # activo, mora, vencido, congelado, inactivo, sin_membresia
+    estado_calculado: str  # activo, por_vencer, mora, vencido, congelado, cancelada, inactivo, sin_membresia
     dias_restantes_o_vencido: int
 
 
