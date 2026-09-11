@@ -5,7 +5,6 @@ Plataforma operativa y de administración para gimnasios (**GymOS**).
 ## Módulos del Sistema
 - **`gym-jefe-api/`**: Backend FastAPI para la plataforma multi-tenant con Row-Level Security (RLS) en PostgreSQL.
 - **`gymos_schema.sql`**: Esquema DDL de base de datos PostgreSQL con RLS para aislamiento por gimnasio.
-- **`GymOS_SistemaWeb_Requisitos_v1.docx`**: Especificación de requerimientos del Sistema Web del Gimnasio.
 
 ## Requisitos y Configuración del Backend
 1. Python 3.11+
