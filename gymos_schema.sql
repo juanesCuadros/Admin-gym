@@ -295,6 +295,7 @@ CREATE TABLE platform.tenant (
   subdominio               text        NOT NULL UNIQUE,
   zona_horaria             text        NOT NULL DEFAULT 'America/Bogota',
   dias_gracia_mora         integer     NOT NULL DEFAULT 3  CHECK (dias_gracia_mora >= 0),
+  dias_umbral_por_vencer   integer     NOT NULL DEFAULT 5  CHECK (dias_umbral_por_vencer >= 0),
   tope_dias_congelamiento  integer     NOT NULL DEFAULT 30 CHECK (tope_dias_congelamiento >= 0),
   metodos_pago             jsonb       NOT NULL DEFAULT '[]'::jsonb,
   horarios                 jsonb,
@@ -494,7 +495,7 @@ CREATE TABLE platform.checkins (
   metodo           text        NOT NULL CHECK (metodo IN ('huella','manual')),
   resultado        text        NOT NULL CHECK (resultado IN ('abrio','alerta_mora','negado')),
   motivo_cortesia  text,
-  registrado_por   uuid        REFERENCES platform.staff(id) ON DELETE SET NULL, -- NULL = huella automática
+  registrado_por   uuid        REFERENCES platform.staff(id) ON DELETE SET NULL, -- staff que gestionaba la sesión al momento del check-in (manual o huella)
   ts_utc           timestamptz NOT NULL DEFAULT now(),
   -- Cortesía exige motivo y no lleva deportista; ingreso exige deportista
   CONSTRAINT chk_cortesia CHECK (

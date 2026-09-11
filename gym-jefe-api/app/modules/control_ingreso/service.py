@@ -91,10 +91,10 @@ class ControlIngresoService:
                 ts_local=now_dt_local
             )
 
-        # 2. Consultar deportista y parámetros de mora del tenant
+        # 2. Consultar deportista y parámetros de mora/umbral del tenant
         dep_query = text("""
             SELECT d.id, d.documento, d.nombre, d.activo, d.deleted_at,
-                   t.dias_gracia_mora
+                   t.dias_gracia_mora, t.dias_umbral_por_vencer
             FROM platform.deportistas d
             JOIN platform.tenant t ON t.id = d.gimnasio_id
             WHERE d.id = :deportista_id AND d.gimnasio_id = :gym_id
@@ -114,7 +114,8 @@ class ControlIngresoService:
             gym_id=gym_id,
             deportista_id=deportista_id,
             activo=dep["activo"],
-            dias_gracia=dep["dias_gracia_mora"]
+            dias_gracia=dep["dias_gracia_mora"],
+            dias_umbral_por_vencer=dep.get("dias_umbral_por_vencer", 5)
         )
 
         # 4. Insertar evento de check-in en platform.checkins
@@ -346,7 +347,7 @@ class ControlIngresoService:
         deportista_id: UUID
     ) -> DeportistaCheckinDto:
         dep_query = text("""
-            SELECT d.id, d.documento, d.nombre, d.activo, t.dias_gracia_mora
+            SELECT d.id, d.documento, d.nombre, d.activo, t.dias_gracia_mora, t.dias_umbral_por_vencer
             FROM platform.deportistas d
             JOIN platform.tenant t ON t.id = d.gimnasio_id
             WHERE d.id = :deportista_id AND d.gimnasio_id = :gym_id AND d.deleted_at IS NULL
@@ -364,7 +365,8 @@ class ControlIngresoService:
             gym_id=gym_id,
             deportista_id=deportista_id,
             activo=dep["activo"],
-            dias_gracia=dep["dias_gracia_mora"]
+            dias_gracia=dep["dias_gracia_mora"],
+            dias_umbral_por_vencer=dep.get("dias_umbral_por_vencer", 5)
         )
 
         return DeportistaCheckinDto(
@@ -381,7 +383,8 @@ class ControlIngresoService:
         gym_id: UUID,
         deportista_id: UUID,
         activo: bool,
-        dias_gracia: int
+        dias_gracia: int,
+        dias_umbral_por_vencer: int = 5
     ) -> Tuple[str, int, str, bool, str]:
         """
         Calcula el estado derivado del deportista y su comando de torniquete.
@@ -399,8 +402,8 @@ class ControlIngresoService:
              Si tiene congelamiento abierto (fecha_fin IS NULL) -> 'congelado', negado.
         5. Evalúa fecha_vencimiento contra hoy local (America/Bogota):
            - fecha_vencimiento >= hoy:
-             * dias_restantes <= 5 -> 'por_vencer', comando=True, resultado='abrio'.
-             * dias_restantes > 5  -> 'activo', comando=True, resultado='abrio'.
+             * dias_restantes <= dias_umbral_por_vencer -> 'por_vencer', comando=True, resultado='abrio'.
+             * dias_restantes > dias_umbral_por_vencer  -> 'activo', comando=True, resultado='abrio'.
            - fecha_vencimiento < hoy:
              * dias_mora <= dias_gracia -> 'mora', comando=True, resultado='alerta_mora'.
              * dias_mora > dias_gracia  -> 'vencido', comando=False, resultado='negado'.
@@ -455,7 +458,7 @@ class ControlIngresoService:
         # 4. Evaluar vigencia
         if fecha_venc >= hoy:
             dias_restantes = (fecha_venc - hoy).days
-            if dias_restantes <= 5:
+            if dias_restantes <= dias_umbral_por_vencer:
                 return (
                     "por_vencer",
                     dias_restantes,
