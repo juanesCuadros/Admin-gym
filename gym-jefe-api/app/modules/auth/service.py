@@ -38,9 +38,15 @@ class AuthService:
         Registra un intento fallido en una conexión independiente con su propio commit,
         garantizando que persista incluso cuando el request principal lance un error 401
         y la sesión del request haga rollback.
+        Aplica SET LOCAL app.gimnasio_id para cumplir con el WITH CHECK de RLS en PostgreSQL.
         """
         async with async_session_maker() as audit_session:
             async with audit_session.begin():
+                if gym_id:
+                    await audit_session.execute(
+                        text("SET LOCAL app.gimnasio_id = :gym_id"),
+                        {"gym_id": str(gym_id)}
+                    )
                 await audit_session.execute(
                     text("""
                         INSERT INTO platform.intentos_login_staff (gimnasio_id, correo, ip, exito)

@@ -61,3 +61,42 @@ class AuditService:
             "hash_previo": prev_hash,
             "hash_actual": hash_actual
         })
+
+    @classmethod
+    async def registrar_aislado(
+        cls,
+        gimnasio_id: UUID,
+        actor_id: Optional[UUID],
+        actor_nombre: str,
+        accion: str,
+        entidad: str,
+        entidad_id: Optional[str] = None,
+        detalle: Optional[Dict[str, Any]] = None,
+        impersonando: bool = False
+    ) -> None:
+        """
+        Registra un evento de auditoría en una conexión independiente para sobrevivir
+        a rollbacks de la operación principal.
+        
+        REGLA RLS: Toda conexión aislada DEBE ejecutar SET LOCAL app.gimnasio_id = :gym_id
+        dentro de su transacción antes de insertar, para satisfacer la cláusula WITH CHECK
+        de las políticas de Row-Level Security en PostgreSQL.
+        """
+        from app.core.database import async_session_maker
+        async with async_session_maker() as isolated_session:
+            async with isolated_session.begin():
+                await isolated_session.execute(
+                    text("SET LOCAL app.gimnasio_id = :gym_id"),
+                    {"gym_id": str(gimnasio_id)}
+                )
+                await cls.registrar(
+                    session=isolated_session,
+                    gimnasio_id=gimnasio_id,
+                    actor_id=actor_id,
+                    actor_nombre=actor_nombre,
+                    accion=accion,
+                    entidad=entidad,
+                    entidad_id=entidad_id,
+                    detalle=detalle,
+                    impersonando=impersonando
+                )
