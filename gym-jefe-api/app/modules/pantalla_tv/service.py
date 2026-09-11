@@ -1,3 +1,4 @@
+import hmac
 import json
 import logging
 from datetime import datetime
@@ -33,7 +34,7 @@ class PantallaTvService:
     async def validar_device_token(session: AsyncSession, subdominio: str, token: str) -> Optional[dict]:
         """
         Valida que el subdominio exista, esté activo y que el device_token coincida
-        con pantalla_device_token_hash en platform.tenant (Seguridad Ley 1581).
+        con pantalla_device_token_hash en platform.tenant mediante comparación en tiempo constante (Ley 1581).
         """
         token_hash = hash_token(token.strip())
         query = text("""
@@ -49,7 +50,7 @@ class PantallaTvService:
 
         # Si no se ha configurado token o el hash no coincide, se rechaza la conexión
         stored_hash = tenant["pantalla_device_token_hash"]
-        if not stored_hash or stored_hash != token_hash:
+        if not stored_hash or not hmac.compare_digest(stored_hash, token_hash):
             return None
 
         return dict(tenant)
