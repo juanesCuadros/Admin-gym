@@ -1,0 +1,59 @@
+# Entornos y secretos (NUNCA subir a git)
+.env
+.env.local
+.env.*.local
+*.env
+!*.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Logs y bases de datos locales
+*.log
+*.sqlite
+*.sqlite3
+
+# Editores y SO
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Frontend (para cuando se agregue la carpeta de front)
+node_modules/
+.npm/
+.next/
+dist/
+build/
+.turbo/
