@@ -1,11 +1,11 @@
 from dataclasses import dataclass
-from typing import Annotated, AsyncGenerator, Callable
+from typing import Annotated, Callable
 from uuid import UUID
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import async_session_maker
+from app.core.database import get_db_session
 from app.core.security import decode_access_token
 
 security_bearer = HTTPBearer(auto_error=True)
@@ -21,19 +21,13 @@ class AuthenticatedStaff:
     subdominio: str
 
 
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Provee una sesión de base de datos limpia para el request."""
-    async with async_session_maker() as session:
-        yield session
-
-
 async def get_current_staff(
     credentials: Annotated[HTTPAuthorizationCredentials, Security(security_bearer)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AuthenticatedStaff:
     """
-    Valida el JWT de acceso y confirma que el usuario y el gimnasio permanezcan activos.
-    Utiliza una sesión independiente para no alterar el estado transaccional de la sesión
-    que se inyectará en el endpoint/servicio.
+    Valida el JWT de acceso, fija SET LOCAL app.gimnasio_id para la sesión
+    y confirma que el usuario y el gimnasio permanezcan activos.
     """
     token = credentials.credentials
     try:
@@ -41,54 +35,61 @@ async def get_current_staff(
         if payload.get("type") != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Tipo de token inválido",
+                detail={"codigo": "TOKEN_INVALIDO", "mensaje": "Tipo de token inválido"},
                 headers={"WWW-Authenticate": "Bearer"}
             )
         staff_id = UUID(payload["sub"])
         gym_id = UUID(payload["gym_id"])
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales de autenticación inválidas o expiradas",
+            detail={"codigo": "TOKEN_INVALIDO", "mensaje": "Credenciales de autenticación inválidas o expiradas"},
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-    # Verificación en base de datos con sesión aislada
-    async with async_session_maker() as auth_session:
-        query = text("""
-            SELECT s.id, s.gimnasio_id, s.rol, s.correo, s.nombre, s.activo, 
-                   t.subdominio, t.activo as tenant_activo
-            FROM platform.staff s
-            JOIN platform.tenant t ON t.id = s.gimnasio_id
-            WHERE s.id = :staff_id AND s.deleted_at IS NULL
-        """)
-        result = await auth_session.execute(query, {"staff_id": staff_id})
-        row = result.mappings().first()
+    # 1. Establecer RLS para toda la transacción del request
+    await session.execute(
+        text("SET LOCAL app.gimnasio_id = :gym_id"),
+        {"gym_id": str(gym_id)}
+    )
 
-        if not row:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Usuario no encontrado o eliminado"
-            )
-        if not row["activo"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Su cuenta ha sido desactivada por el administrador"
-            )
-        if not row["tenant_activo"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="El servicio del gimnasio se encuentra suspendido"
-            )
+    # 2. Consultar existencia y estado del usuario y tenant
+    query = text("""
+        SELECT s.id, s.gimnasio_id, s.rol, s.correo, s.nombre, s.activo, 
+               t.subdominio, t.activo as tenant_activo
+        FROM platform.staff s
+        JOIN platform.tenant t ON t.id = s.gimnasio_id
+        WHERE s.id = :staff_id AND s.deleted_at IS NULL
+    """)
+    result = await session.execute(query, {"staff_id": staff_id})
+    row = result.mappings().first()
 
-        return AuthenticatedStaff(
-            id=row["id"],
-            gimnasio_id=row["gimnasio_id"],
-            rol=row["rol"],
-            correo=row["correo"],
-            nombre=row["nombre"],
-            subdominio=row["subdominio"]
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"codigo": "USUARIO_NO_ENCONTRADO", "mensaje": "Usuario no encontrado o eliminado"}
         )
+    if not row["activo"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"codigo": "USUARIO_INACTIVO", "mensaje": "Su cuenta ha sido desactivada por el administrador"}
+        )
+    if not row["tenant_activo"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"codigo": "GIMNASIO_SUSPENDIDO", "mensaje": "El servicio del gimnasio se encuentra suspendido"}
+        )
+
+    return AuthenticatedStaff(
+        id=row["id"],
+        gimnasio_id=row["gimnasio_id"],
+        rol=row["rol"],
+        correo=row["correo"],
+        nombre=row["nombre"],
+        subdominio=row["subdominio"]
+    )
 
 
 def require_role(*allowed_roles: str) -> Callable:
@@ -99,7 +100,7 @@ def require_role(*allowed_roles: str) -> Callable:
         if current_staff.rol not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Acceso denegado. Rol requerido: {', '.join(allowed_roles)}"
+                detail={"codigo": "ROL_NO_AUTORIZADO", "mensaje": f"Acceso denegado. Rol requerido: {', '.join(allowed_roles)}"}
             )
         return current_staff
     return role_checker
@@ -107,7 +108,8 @@ def require_role(*allowed_roles: str) -> Callable:
 
 def require_permission(submodulo: str, accion: str) -> Callable:
     """
-    Fábrica de dependencias que valida permisos por submódulo en tiempo real.
+    Fábrica de dependencias que valida permisos por submódulo en tiempo real
+    utilizando la misma sesión inyectada.
     - Rol 'jefe': Bypass total inmediato (nunca se valida contra permisos_rol).
     - Otros roles: Consulta platform.permisos_rol en cada request en PostgreSQL.
     Acciones canónicas: 'leer', 'crear', 'editar', 'eliminar'.
@@ -125,29 +127,29 @@ def require_permission(submodulo: str, accion: str) -> Callable:
 
     async def permission_checker(
         current_staff: Annotated[AuthenticatedStaff, Depends(get_current_staff)],
+        session: Annotated[AsyncSession, Depends(get_db_session)],
     ) -> AuthenticatedStaff:
         # El Jefe siempre tiene acceso total implícito
         if current_staff.rol == "jefe":
             return current_staff
 
-        async with async_session_maker() as perm_session:
-            query = text(f"""
-                SELECT {columna_permiso}
-                FROM platform.permisos_rol
-                WHERE gimnasio_id = :gym_id AND rol = :rol AND submodulo = :submodulo
-            """)
-            res = await perm_session.execute(query, {
-                "gym_id": current_staff.gimnasio_id,
-                "rol": current_staff.rol,
-                "submodulo": submodulo.lower()
-            })
-            tiene_permiso = res.scalar_one_or_none()
+        query = text(f"""
+            SELECT {columna_permiso}
+            FROM platform.permisos_rol
+            WHERE gimnasio_id = :gym_id AND rol = :rol AND submodulo = :submodulo
+        """)
+        res = await session.execute(query, {
+            "gym_id": current_staff.gimnasio_id,
+            "rol": current_staff.rol,
+            "submodulo": submodulo.lower()
+        })
+        tiene_permiso = res.scalar_one_or_none()
 
-            if not tiene_permiso:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"No tiene permisos para {accion} en el submódulo {submodulo}"
-                )
-            return current_staff
+        if not tiene_permiso:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"codigo": "PERMISO_DENEGADO", "mensaje": f"No tiene permisos para {accion} en el submódulo {submodulo}"}
+            )
+        return current_staff
 
     return permission_checker

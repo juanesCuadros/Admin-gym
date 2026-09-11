@@ -26,12 +26,11 @@ Base = declarative_base()
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Generador de sesión asíncrona de base de datos."""
+    """Generador de sesión asíncrona de base de datos con commit/rollback centralizado por request."""
     async with async_session_maker() as session:
         try:
             yield session
+            await session.commit()
         except Exception:
             await session.rollback()
             raise
-        finally:
-            await session.close()
