@@ -43,7 +43,7 @@ router = APIRouter(tags=["05. Membresías y Planes"])
 async def crear_plan(
     req: CrearPlanRequest,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    staff: Annotated[AuthenticatedStaff, Depends(require_permission("configuracion", "crear"))],
+    staff: Annotated[AuthenticatedStaff, Depends(require_permission("membresias", "crear"))],
 ):
     return await MembresiasService.crear_plan(
         session=session,
@@ -103,7 +103,7 @@ async def editar_plan(
     id: Annotated[UUID, Path(description="UUID del plan a editar")],
     req: EditarPlanRequest,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    staff: Annotated[AuthenticatedStaff, Depends(require_permission("configuracion", "editar"))],
+    staff: Annotated[AuthenticatedStaff, Depends(require_permission("membresias", "editar"))],
 ):
     return await MembresiasService.editar_plan(
         session=session,
@@ -126,7 +126,7 @@ async def cambiar_estado_plan(
     id: Annotated[UUID, Path(description="UUID del plan a modificar")],
     req: CambiarEstadoPlanRequest,
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    staff: Annotated[AuthenticatedStaff, Depends(require_permission("configuracion", "editar"))],
+    staff: Annotated[AuthenticatedStaff, Depends(require_permission("membresias", "editar"))],
 ):
     return await MembresiasService.cambiar_estado_plan(
         session=session,

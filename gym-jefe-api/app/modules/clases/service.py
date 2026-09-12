@@ -703,12 +703,14 @@ class ClasesService:
                 detail={"codigo": "RESERVA_NO_ENCONTRADA", "mensaje": "El deportista no cuenta con una reserva activa en esta clase"}
             )
 
-        # 3. Validar check-in de torniquete del mismo día calendario usando get_local_day_range_utc
+        # 3. Validar check-in de torniquete del mismo día calendario y proximidad a la clase (RF-34)
         # Convertir la fecha_hora de la clase a fecha local en America/Bogota
         clase_date_local = clase.fecha_hora.astimezone(LOCAL_TZ).date()
         start_day_utc, end_day_utc = get_local_day_range_utc(clase_date_local)
+        # Límite superior de proximidad: no posterior a fecha_hora + 2 horas, ni posterior al fin de día
+        max_checkin_utc = min(end_day_utc, clase.fecha_hora + timedelta(hours=2))
 
-        # Buscar check-in de ingreso exitoso en la ventana del día
+        # Buscar check-in de ingreso exitoso en la ventana del día y proximidad
         q_checkin = text("""
             SELECT id, ts_utc, resultado
             FROM platform.checkins
@@ -717,7 +719,7 @@ class ClasesService:
               AND tipo = 'ingreso'
               AND resultado IN ('abrio', 'alerta_mora')
               AND ts_utc >= :start_day_utc
-              AND ts_utc <= :end_day_utc
+              AND ts_utc <= :max_checkin_utc
             ORDER BY ts_utc DESC
             LIMIT 1
         """)
@@ -725,7 +727,7 @@ class ClasesService:
             "gym_id": gym_id,
             "dep_id": req.deportista_id,
             "start_day_utc": start_day_utc,
-            "end_day_utc": end_day_utc,
+            "max_checkin_utc": max_checkin_utc,
         })
         checkin_row = res_chk.mappings().first()
         if not checkin_row:

@@ -331,6 +331,30 @@ async def run_modulo_7_full_test_suite():
         assert asist_data["deportista_id"] == str(dep_a1_id)
         print(f" [PASS] Asistencia confirmada vinculando checkin_id {torniquete_checkin_id} previo del mismo día.")
 
+        # 3.2 Límite de Proximidad: check-in del mismo día pero HORAS DESPUÉS de la clase (> fecha_hora + 2h) -> 400 SIN_CHECKIN_PREVIO
+        dt_manana_6am = datetime.combine(now_local().date(), time(6, 0), tzinfo=LOCAL_TZ).astimezone(timezone.utc)
+        clase_antigua_id = uuid.uuid4()
+        reserva_antigua_id = uuid.uuid4()
+        async with async_session_maker() as session:
+            await session.execute(text("SELECT set_config('app.gimnasio_id', :gym_id, true)"), {"gym_id": str(gym_a_id)})
+            await session.execute(text("""
+                INSERT INTO platform.clases (id, gimnasio_id, nombre, tipo, profesor_externo, cupo, fecha_hora, estado)
+                VALUES (:id, :gym, 'Spinning Alba', 'Spinning', 'Profe Alba', 10, :fh, 'programada')
+            """), {"id": clase_antigua_id, "gym": gym_a_id, "fh": dt_manana_6am})
+            await session.execute(text("""
+                INSERT INTO platform.reservas_clase (id, gimnasio_id, clase_id, deportista_id, estado)
+                VALUES (:r_id, :gym, :c_id, :dep, 'reservada')
+            """), {"r_id": reserva_antigua_id, "gym": gym_a_id, "c_id": clase_antigua_id, "dep": dep_a1_id})
+            await session.commit()
+
+        # Intentar registrar asistencia con check-in ocurrido horas después de terminada la clase -> 400 SIN_CHECKIN_PREVIO
+        r_asist_tardia = await client.post(f"/api/v1/clases/{clase_antigua_id}/asistencia", json={
+            "deportista_id": str(dep_a1_id)
+        }, headers=headers_recep)
+        assert r_asist_tardia.status_code == 400
+        assert r_asist_tardia.json()["error"]["codigo"] == "SIN_CHECKIN_PREVIO"
+        print(" [PASS] Límite de proximidad verificado: Check-in posterior a fecha_hora + 2h rechazado (400 SIN_CHECKIN_PREVIO).")
+
         # Comprobar resumen de asistencia: 1 asistente, 0 ausentes (el Coach sí tiene clases:leer)
         r_resumen = await client.get(f"/api/v1/clases/{clase_hoy_id}/asistencia", headers=headers_coach)
         assert r_resumen.status_code == 200
