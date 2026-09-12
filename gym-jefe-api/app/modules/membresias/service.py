@@ -304,8 +304,13 @@ class MembresiasService:
         Asigna el plan inicial a un deportista sin membresía activa previa.
         Bloquea duplicados activos con 409 MEMBRESIA_ACTIVA_EXISTENTE.
         """
-        # 1. Validar deportista
-        q_dep = text("SELECT id, activo FROM platform.deportistas WHERE id = :id AND gimnasio_id = :gym_id AND deleted_at IS NULL")
+        # 1. Validar y bloquear deportista como mutex de concurrencia (evita TOCTOU)
+        q_dep = text("""
+            SELECT id, activo 
+            FROM platform.deportistas 
+            WHERE id = :id AND gimnasio_id = :gym_id AND deleted_at IS NULL 
+            FOR UPDATE
+        """)
         res_dep = await session.execute(q_dep, {"id": req.deportista_id, "gym_id": gym_id})
         dep = res_dep.mappings().first()
         if not dep:
