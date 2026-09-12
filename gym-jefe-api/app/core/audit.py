@@ -46,7 +46,7 @@ class AuditService:
                 accion, entidad, entidad_id, detalle, hash_previo, hash_actual
             ) VALUES (
                 :gym_id, :actor_id, :actor_nombre, :impersonando,
-                :accion, :entidad, :entidad_id, :detalle::jsonb, :hash_previo, :hash_actual
+                :accion, :entidad, :entidad_id, CAST(:detalle AS jsonb), :hash_previo, :hash_actual
             )
         """)
         await session.execute(insert_query, {
@@ -63,22 +63,23 @@ class AuditService:
         })
 
     @classmethod
-    async def registrar_aislado(
+    async def registrar_en_sesion_aislada(
         cls,
         gimnasio_id: UUID,
-        actor_id: Optional[UUID],
-        actor_nombre: str,
         accion: str,
         entidad: str,
+        actor_id: Optional[UUID] = None,
+        actor_nombre: Optional[str] = None,
         entidad_id: Optional[str] = None,
-        detalle: Optional[Dict[str, Any]] = None,
+        detalle: Optional[Dict] = None,
         impersonando: bool = False
     ) -> None:
         """
-        Registra un evento de auditoría en una conexión independiente para sobrevivir
-        a rollbacks de la operación principal.
+        Registra un evento de auditoría en una transacción y conexión independiente.
+        Útil para capturar eventos críticos de seguridad (ej. logins fallidos) que no
+        deben revertirse incluso si la transacción principal del request hace rollback.
         
-        REGLA RLS: Toda conexión aislada DEBE ejecutar SET LOCAL app.gimnasio_id = :gym_id
+        REGLA RLS: Toda conexión aislada DEBE fijar app.gimnasio_id
         dentro de su transacción antes de insertar, para satisfacer la cláusula WITH CHECK
         de las políticas de Row-Level Security en PostgreSQL.
         """
@@ -86,7 +87,7 @@ class AuditService:
         async with async_session_maker() as isolated_session:
             async with isolated_session.begin():
                 await isolated_session.execute(
-                    text("SET LOCAL app.gimnasio_id = :gym_id"),
+                    text("SELECT set_config('app.gimnasio_id', :gym_id, true)"),
                     {"gym_id": str(gimnasio_id)}
                 )
                 await cls.registrar(
@@ -100,3 +101,6 @@ class AuditService:
                     detalle=detalle,
                     impersonando=impersonando
                 )
+
+    # Alias de compatibilidad
+    registrar_aislado = registrar_en_sesion_aislada

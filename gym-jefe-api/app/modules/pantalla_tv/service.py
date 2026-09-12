@@ -202,7 +202,7 @@ class PantallaTvService:
         # 3. Guardar en base de datos
         await session.execute(text("""
             UPDATE platform.tenant 
-            SET pantalla_config = :cfg::jsonb, updated_at = now()
+            SET pantalla_config = CAST(:cfg AS jsonb), updated_at = now()
             WHERE id = :gym_id
         """), {
             "cfg": json.dumps(config_dict),

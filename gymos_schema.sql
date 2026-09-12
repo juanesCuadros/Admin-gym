@@ -608,6 +608,7 @@ CREATE TABLE platform.devoluciones (
   turno_venta_original_id  uuid        NOT NULL REFERENCES platform.turnos_caja(id) ON DELETE RESTRICT,
   turno_devolucion_id      uuid        NOT NULL REFERENCES platform.turnos_caja(id) ON DELETE RESTRICT,
   monto                    numeric(12,2) NOT NULL CHECK (monto > 0),
+  tipo_medio_reembolso     text        NOT NULL CHECK (tipo_medio_reembolso IN ('efectivo','otro')),
   motivo                   text        NOT NULL,
   registrada_por           uuid        REFERENCES platform.staff(id) ON DELETE SET NULL,
   created_at               timestamptz NOT NULL DEFAULT now()
