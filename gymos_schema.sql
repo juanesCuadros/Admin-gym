@@ -776,12 +776,14 @@ CREATE TABLE platform.reservas_clase (
   estado         text        NOT NULL DEFAULT 'reservada'
                              CHECK (estado IN ('reservada','cancelada','asistio','no_show')),
   pase_pagado    boolean     NOT NULL DEFAULT false,  -- vencido/congelado paga la clase
+  venta_item_id  uuid        REFERENCES platform.venta_items(id) ON DELETE SET NULL,  -- pase pagado en Caja (RF-33)
   created_at     timestamptz NOT NULL DEFAULT now()
 );
 -- Una reserva vigente por deportista y clase
 CREATE UNIQUE INDEX ux_reserva_vigente
   ON platform.reservas_clase(clase_id, deportista_id) WHERE estado <> 'cancelada';
 CREATE INDEX ix_reservas_clase ON platform.reservas_clase(clase_id);
+CREATE INDEX ix_reservas_clase_venta ON platform.reservas_clase(venta_item_id);
 
 -- El check-in de clase EXIGE haber ingresado al gimnasio (checkin_id).
 CREATE TABLE platform.asistencia_clase (
