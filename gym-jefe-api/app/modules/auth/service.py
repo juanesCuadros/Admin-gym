@@ -44,7 +44,7 @@ class AuthService:
             async with audit_session.begin():
                 if gym_id:
                     await audit_session.execute(
-                        text("SET LOCAL app.gimnasio_id = :gym_id"),
+                        text("SELECT set_config('app.gimnasio_id', :gym_id, true)"),
                         {"gym_id": str(gym_id)}
                     )
                 await audit_session.execute(
@@ -175,7 +175,7 @@ class AuthService:
 
         # 3. Establecer RLS explícito para la sesión del request
         await session.execute(
-            text("SET LOCAL app.gimnasio_id = :gym_id"),
+            text("SELECT set_config('app.gimnasio_id', :gym_id, true)"),
             {"gym_id": str(gym_id)}
         )
 
@@ -297,7 +297,7 @@ class AuthService:
 
         # RLS en la sesión
         await session.execute(
-            text("SET LOCAL app.gimnasio_id = :gym_id"),
+            text("SELECT set_config('app.gimnasio_id', :gym_id, true)"),
             {"gym_id": str(row["gimnasio_id"])}
         )
 
@@ -346,7 +346,7 @@ class AuthService:
 
         gym_id = tenant["id"]
         await session.execute(
-            text("SET LOCAL app.gimnasio_id = :gym_id"),
+            text("SELECT set_config('app.gimnasio_id', :gym_id, true)"),
             {"gym_id": str(gym_id)}
         )
 
@@ -391,7 +391,7 @@ class AuthService:
 
         gym_id = row["gimnasio_id"]
         await session.execute(
-            text("SET LOCAL app.gimnasio_id = :gym_id"),
+            text("SELECT set_config('app.gimnasio_id', :gym_id, true)"),
             {"gym_id": str(gym_id)}
         )
 

@@ -87,7 +87,7 @@ class PantallaTvService:
 
         # 2. Establecer RLS explícito antes de consultar datos protegidos
         await session.execute(
-            text("SET LOCAL app.gimnasio_id = :gym_id"),
+            text("SELECT set_config('app.gimnasio_id', :gym_id, true)"),
             {"gym_id": str(gym_id)}
         )
 
