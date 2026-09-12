@@ -39,6 +39,8 @@ async def run_modulo_6_full_test_suite():
         gym_b_id = uuid.uuid4()
         staff_a_id = uuid.uuid4()
         staff_b_id = uuid.uuid4()
+        coach_a_id = uuid.uuid4()
+        recep_a_id = uuid.uuid4()
         dep_a_id = uuid.uuid4()
         global_ejer_id = uuid.uuid4()
 
@@ -52,10 +54,27 @@ async def run_modulo_6_full_test_suite():
                 VALUES (:id_a, :nom_a, :sub_a, true)
             """), {"id_a": gym_a_id, "nom_a": f"Gym Entrena A {prefix}", "sub_a": f"entrena-a-{prefix}"})
 
+            # Staff Jefe Gym A
             await session.execute(text("""
                 INSERT INTO platform.staff (id, gimnasio_id, rol, correo, hash_password, nombre, activo)
                 VALUES (:id_a, :gym_a, 'jefe', :mail_a, :pwd, 'Jefe Gym A', true)
             """), {"id_a": staff_a_id, "gym_a": gym_a_id, "mail_a": f"jefe_a_{prefix}@test.com", "pwd": pwd_hash})
+
+            # Staff Entrenador Gym A (Rol principal de este módulo)
+            await session.execute(text("""
+                INSERT INTO platform.staff (id, gimnasio_id, rol, correo, hash_password, nombre, activo)
+                VALUES (:id_e, :gym_a, 'entrenador', :mail_e, :pwd, 'Coach Gym A', true)
+            """), {"id_e": coach_a_id, "gym_a": gym_a_id, "mail_e": f"coach_a_{prefix}@test.com", "pwd": pwd_hash})
+
+            # Staff Recepcionista Gym A (Rol con permisos restringidos de solo lectura en entrenamiento)
+            await session.execute(text("""
+                INSERT INTO platform.staff (id, gimnasio_id, rol, correo, hash_password, nombre, activo)
+                VALUES (:id_r, :gym_a, 'recepcionista', :mail_r, :pwd, 'Recep Gym A', true)
+            """), {"id_r": recep_a_id, "gym_a": gym_a_id, "mail_r": f"recep_a_{prefix}@test.com", "pwd": pwd_hash})
+
+            # Sembrar matriz de permisos canónicos en platform.permisos_rol para Gym A
+            from app.modules.auth.service import AuthService
+            await AuthService._seed_permisos_en_transaccion(session, gym_a_id)
 
             await session.execute(text("""
                 INSERT INTO platform.deportistas (
@@ -77,6 +96,7 @@ async def run_modulo_6_full_test_suite():
                 INSERT INTO platform.staff (id, gimnasio_id, rol, correo, hash_password, nombre, activo)
                 VALUES (:id_b, :gym_b, 'jefe', :mail_b, :pwd, 'Jefe Gym B', true)
             """), {"id_b": staff_b_id, "gym_b": gym_b_id, "mail_b": f"jefe_b_{prefix}@test.com", "pwd": pwd_hash})
+            await AuthService._seed_permisos_en_transaccion(session, gym_b_id)
             await session.commit()
 
             # Ejercicio Global (gimnasio_id NULL, propio = false)
@@ -93,11 +113,16 @@ async def run_modulo_6_full_test_suite():
             })
             await session.commit()
 
-        # Tokens JWT
+        # Tokens JWT para Jefe, Entrenador y Recepcionista
         token_a = create_access_token(subject=str(staff_a_id), gym_id=str(gym_a_id), role="jefe")
         token_b = create_access_token(subject=str(staff_b_id), gym_id=str(gym_b_id), role="jefe")
+        token_coach = create_access_token(subject=str(coach_a_id), gym_id=str(gym_a_id), role="entrenador")
+        token_recep = create_access_token(subject=str(recep_a_id), gym_id=str(gym_a_id), role="recepcionista")
+
         headers_a = {"Authorization": f"Bearer {token_a}"}
         headers_b = {"Authorization": f"Bearer {token_b}"}
+        headers_coach = {"Authorization": f"Bearer {token_coach}"}
+        headers_recep = {"Authorization": f"Bearer {token_recep}"}
 
         print("\n--- 1. Catálogo Híbrido: Ejercicio Global y Regla de GIF Condicional (RF-28) ---")
         # Ambos gimnasios ven el ejercicio global y su GIF activo
@@ -353,7 +378,89 @@ async def run_modulo_6_full_test_suite():
         print(f" Acciones de auditoría registradas en Gym A: {acciones}")
         for esperada in ["CREAR_EJERCICIO", "EDITAR_EJERCICIO", "CREAR_PLANTILLA_RUTINA", "EDITAR_PLANTILLA_RUTINA", "ELIMINAR_PLANTILLA_RUTINA", "ASIGNAR_RUTINA", "PERSONALIZAR_RUTINA_ASIGNADA"]:
             assert esperada in acciones, f"Falta acción en auditoría: {esperada}"
-        print(" [PASS] Trazabilidad SHA-256 inmutable verificada en platform.auditoria_gym.")
+        print("\n--- 8. Verificación RBAC: Rol Entrenador vs Recepcionista (Submódulo 'entrenamiento') ---")
+        # 8.1 Entrenador (usuario principal) tiene permisos completos para gestionar entrenamiento
+        r_coach_get = await client.get("/api/v1/entrenamiento/ejercicios", headers=headers_coach)
+        assert r_coach_get.status_code == 200, f"Entrenador debe poder listar ejercicios: {r_coach_get.text}"
+
+        r_coach_create_ej = await client.post("/api/v1/entrenamiento/ejercicios", json={
+            "nombre_es": f"Remo con Mancuerna Coach {prefix}",
+            "grupo_muscular": "Espalda",
+            "equipo": "Mancuernas",
+        }, headers=headers_coach)
+        assert r_coach_create_ej.status_code == 201, f"Entrenador debe poder crear ejercicios: {r_coach_create_ej.text}"
+        coach_ej_id = r_coach_create_ej.json()["id"]
+
+        r_coach_plant = await client.post("/api/v1/entrenamiento/plantillas", json={
+            "nombre": f"Plantilla Espalda Coach {prefix}",
+            "items": [{"ejercicio_id": coach_ej_id, "orden": 1, "series": 4, "reps": "10"}]
+        }, headers=headers_coach)
+        assert r_coach_plant.status_code == 201, f"Entrenador debe poder crear plantillas: {r_coach_plant.text}"
+        coach_plant_id = r_coach_plant.json()["id"]
+
+        r_coach_asig = await client.post("/api/v1/entrenamiento/asignar-rutina", json={
+            "deportista_id": str(dep_a_id),
+            "plantilla_id": str(coach_plant_id)
+        }, headers=headers_coach)
+        assert r_coach_asig.status_code == 201, f"Entrenador debe poder asignar rutinas: {r_coach_asig.text}"
+        coach_asig_id = r_coach_asig.json()["id"]
+
+        r_coach_pers = await client.put(f"/api/v1/entrenamiento/rutinas-asignadas/{coach_asig_id}/personalizar", json={
+            "items": [{"ejercicio_id": coach_ej_id, "orden": 1, "series": 5, "reps": "8"}]
+        }, headers=headers_coach)
+        assert r_coach_pers.status_code == 200, f"Entrenador debe poder personalizar rutinas (Opción B): {r_coach_pers.text}"
+        print(" [PASS] Rol Entrenador validado 100%: Puede listar, crear ejercicios, crear plantillas, asignar y personalizar rutinas.")
+
+        # 8.2 Recepcionista tiene solo lectura en entrenamiento (bloqueo 403 en escritura)
+        r_recep_get = await client.get("/api/v1/entrenamiento/ejercicios", headers=headers_recep)
+        assert r_recep_get.status_code == 200, "Recepcionista debe poder consultar ejercicios (entrenamiento:leer)"
+
+        r_recep_crear_ej = await client.post("/api/v1/entrenamiento/ejercicios", json={
+            "nombre_es": f"Ejercicio Ilegal Recep {prefix}",
+            "grupo_muscular": "Pecho",
+        }, headers=headers_recep)
+        assert r_recep_crear_ej.status_code == 403
+        assert r_recep_crear_ej.json()["error"]["codigo"] == "PERMISO_DENEGADO"
+
+        r_recep_crear_plant = await client.post("/api/v1/entrenamiento/plantillas", json={
+            "nombre": f"Plantilla Ilegal Recep {prefix}",
+            "items": [{"ejercicio_id": coach_ej_id, "orden": 1, "series": 3}]
+        }, headers=headers_recep)
+        assert r_recep_crear_plant.status_code == 403
+        assert r_recep_crear_plant.json()["error"]["codigo"] == "PERMISO_DENEGADO"
+
+        r_recep_asig = await client.post("/api/v1/entrenamiento/asignar-rutina", json={
+            "deportista_id": str(dep_a_id),
+            "plantilla_id": str(coach_plant_id)
+        }, headers=headers_recep)
+        assert r_recep_asig.status_code == 403
+        assert r_recep_asig.json()["error"]["codigo"] == "PERMISO_DENEGADO"
+        print(" [PASS] Rol Recepcionista restringido 100%: Puede leer catálogo pero creación bloqueada con 403 PERMISO_DENEGADO.")
+
+        print("\n--- 9. Verificación de Esquema e Integridad de Columnas ---")
+        async with async_session_maker() as session:
+            await session.execute(text("SELECT set_config('app.gimnasio_id', :gym_id, true)"), {"gym_id": str(gym_a_id)})
+            
+            # 9.1 Confirmar que la FK real en platform.rutina_plantilla_items es plantilla_id
+            res_fk = await session.execute(text("""
+                SELECT plantilla_id, ejercicio_id, series, reps
+                FROM platform.rutina_plantilla_items
+                WHERE plantilla_id = :p_id AND gimnasio_id = :gym_id
+            """), {"p_id": coach_plant_id, "gym_id": gym_a_id})
+            items_sql = res_fk.fetchall()
+            assert len(items_sql) == 1
+            assert str(items_sql[0][0]) == coach_plant_id
+            print(" [PASS] platform.rutina_plantilla_items confirmado usando columna 'plantilla_id'.")
+
+            # 9.2 Confirmar que platform.rutinas_plantilla NO tiene columna 'activo'
+            res_col = await session.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'platform' AND table_name = 'rutinas_plantilla'
+                  AND column_name = 'activo'
+            """))
+            assert res_col.first() is None, "platform.rutinas_plantilla no debe tener columna activo"
+            print(" [PASS] platform.rutinas_plantilla confirmado: no tiene columna 'activo' (borrado estricto con SET NULL en asignaciones).")
 
     print("\n==================================================================")
     print(" SUITE COMPLETA DEL MÓDULO 6 Y AISLAMIENTO CROSS-TENANT SUPERADOS 100%")

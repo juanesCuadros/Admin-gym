@@ -37,7 +37,7 @@ router = APIRouter(prefix="/entrenamiento", tags=["06. Entrenamiento y Ejercicio
     "/ejercicios",
     response_model=EjerciciosPaginadosResponse,
     summary="Catálogo de ejercicios con activación por sede y GIF condicional",
-    dependencies=[Depends(require_permission("ejercicios", "leer"))],
+    dependencies=[Depends(require_permission("entrenamiento", "leer"))],
 )
 async def listar_ejercicios(
     busqueda: Optional[str] = Query(None, description="Búsqueda por nombre español o inglés"),
@@ -72,7 +72,7 @@ async def listar_ejercicios(
     response_model=EjercicioResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Crea un ejercicio propio del gimnasio",
-    dependencies=[Depends(require_permission("ejercicios", "crear"))],
+    dependencies=[Depends(require_permission("entrenamiento", "crear"))],
 )
 async def crear_ejercicio_propio(
     req: CrearEjercicioPropioRequest,
@@ -92,7 +92,7 @@ async def crear_ejercicio_propio(
     "/ejercicios/{id}",
     response_model=EjercicioResponse,
     summary="Detalle de un ejercicio del catálogo",
-    dependencies=[Depends(require_permission("ejercicios", "leer"))],
+    dependencies=[Depends(require_permission("entrenamiento", "leer"))],
 )
 async def obtener_ejercicio(
     id: UUID,
@@ -110,7 +110,7 @@ async def obtener_ejercicio(
     "/ejercicios/{id}",
     response_model=EjercicioResponse,
     summary="Edita un ejercicio propio del gimnasio con control optimista",
-    dependencies=[Depends(require_permission("ejercicios", "editar"))],
+    dependencies=[Depends(require_permission("entrenamiento", "editar"))],
 )
 async def editar_ejercicio_propio(
     id: UUID,
@@ -132,7 +132,7 @@ async def editar_ejercicio_propio(
     "/ejercicios/{id}/estado",
     response_model=EjercicioResponse,
     summary="Activa o desactiva un ejercicio en la sede (global o propio)",
-    dependencies=[Depends(require_permission("ejercicios", "editar"))],
+    dependencies=[Depends(require_permission("entrenamiento", "editar"))],
 )
 async def cambiar_estado_ejercicio(
     id: UUID,
@@ -159,7 +159,7 @@ async def cambiar_estado_ejercicio(
     response_model=RutinaPlantillaResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Crea una plantilla de rutina reutilizable con ejercicios ordenados",
-    dependencies=[Depends(require_permission("rutinas", "crear"))],
+    dependencies=[Depends(require_permission("entrenamiento", "crear"))],
 )
 async def crear_plantilla(
     req: CrearPlantillaRequest,
@@ -179,7 +179,7 @@ async def crear_plantilla(
     "/plantillas",
     response_model=PlantillasPaginadasResponse,
     summary="Listado paginado de plantillas de rutina del gimnasio",
-    dependencies=[Depends(require_permission("rutinas", "leer"))],
+    dependencies=[Depends(require_permission("entrenamiento", "leer"))],
 )
 async def listar_plantillas(
     busqueda: Optional[str] = Query(None, description="Búsqueda por nombre o descripción"),
@@ -201,7 +201,7 @@ async def listar_plantillas(
     "/plantillas/{id}",
     response_model=RutinaPlantillaResponse,
     summary="Detalle completo de una plantilla con sus ejercicios y regla de GIF",
-    dependencies=[Depends(require_permission("rutinas", "leer"))],
+    dependencies=[Depends(require_permission("entrenamiento", "leer"))],
 )
 async def obtener_plantilla(
     id: UUID,
@@ -219,7 +219,7 @@ async def obtener_plantilla(
     "/plantillas/{id}",
     response_model=RutinaPlantillaResponse,
     summary="Actualiza una plantilla de rutina con control optimista (version)",
-    dependencies=[Depends(require_permission("rutinas", "editar"))],
+    dependencies=[Depends(require_permission("entrenamiento", "editar"))],
 )
 async def editar_plantilla(
     id: UUID,
@@ -240,7 +240,7 @@ async def editar_plantilla(
 @router.delete(
     "/plantillas/{id}",
     summary="Elimina una plantilla (los snapshots ya asignados no se alteran)",
-    dependencies=[Depends(require_permission("rutinas", "eliminar"))],
+    dependencies=[Depends(require_permission("entrenamiento", "eliminar"))],
 )
 async def eliminar_plantilla(
     id: UUID,
@@ -265,7 +265,7 @@ async def eliminar_plantilla(
     response_model=RutinaAsignadaResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Asigna una rutina a un deportista generando un snapshot inmutable",
-    dependencies=[Depends(require_permission("rutinas", "crear"))],
+    dependencies=[Depends(require_permission("entrenamiento", "crear"))],
 )
 async def asignar_rutina(
     req: AsignarRutinaRequest,
@@ -285,7 +285,7 @@ async def asignar_rutina(
     "/deportistas/{deportista_id}/rutinas",
     response_model=List[RutinaAsignadaResponse],
     summary="Consulta qué rutinas tiene asignadas un deportista (RF-31)",
-    dependencies=[Depends(require_permission("rutinas", "leer"))],
+    dependencies=[Depends(require_permission("entrenamiento", "leer"))],
 )
 async def listar_rutinas_deportista(
     deportista_id: UUID,
@@ -305,7 +305,7 @@ async def listar_rutinas_deportista(
     "/rutinas-asignadas/{id}",
     response_model=RutinaAsignadaResponse,
     summary="Detalle completo de una rutina asignada con sus items de snapshot",
-    dependencies=[Depends(require_permission("rutinas", "leer"))],
+    dependencies=[Depends(require_permission("entrenamiento", "leer"))],
 )
 async def obtener_rutina_asignada(
     id: UUID,
@@ -323,7 +323,7 @@ async def obtener_rutina_asignada(
     "/rutinas-asignadas/{id}/estado",
     response_model=RutinaAsignadaResponse,
     summary="Activa o desactiva (archiva) una rutina asignada",
-    dependencies=[Depends(require_permission("rutinas", "editar"))],
+    dependencies=[Depends(require_permission("entrenamiento", "editar"))],
 )
 async def cambiar_estado_rutina_asignada(
     id: UUID,
@@ -345,7 +345,7 @@ async def cambiar_estado_rutina_asignada(
     "/rutinas-asignadas/{id}/personalizar",
     response_model=RutinaAsignadaResponse,
     summary="Personaliza una rutina asignada (Opción B: nuevo snapshot, desactiva anterior y preserva historial)",
-    dependencies=[Depends(require_permission("rutinas", "editar"))],
+    dependencies=[Depends(require_permission("entrenamiento", "editar"))],
 )
 async def personalizar_rutina_asignada(
     id: UUID,
