@@ -56,9 +56,11 @@ register_exception_handlers(app)
 app.include_router(api_v1_router)
 
 
-@app.get("/health", tags=["Health"])
+@app.get("/health", tags=["Health"], summary="Comprobación de salud de la API")
 async def health_check():
-    """Endpoint de comprobación de salud del sistema."""
+    """
+    Endpoint de comprobación de salud y conectividad básica del servicio API.
+    """
     return {
         "status": "healthy",
         "app": settings.PROJECT_NAME,
@@ -67,8 +69,11 @@ async def health_check():
     }
 
 
-@app.get("/", tags=["Root"])
+@app.get("/", tags=["Root"], summary="Página de bienvenida de la API")
 async def root():
+    """
+    Punto de entrada raíz de la API con enlaces a la documentación Swagger y ReDoc.
+    """
     return {
         "message": f"Bienvenido a {settings.PROJECT_NAME}",
         "docs": "/docs",
