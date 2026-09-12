@@ -5,7 +5,7 @@ cambio de plan sin prorrateo, cierre de congelamientos y auditoría inmutable.
 """
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -74,6 +74,16 @@ class MembresiasService:
         await session.execute(q_close, {"hoy": hoy, "dias": dias_efectivos, "id": cong["id"]})
         return cong["id"]
 
+    @classmethod
+    async def _obtener_config_tenant(cls, session: AsyncSession, gym_id: UUID) -> Tuple[int, int]:
+        """Obtiene dias_gracia_mora y dias_umbral_por_vencer configurados para el gimnasio."""
+        q = text("SELECT dias_gracia_mora, dias_umbral_por_vencer FROM platform.tenant WHERE id = :gym_id")
+        res = await session.execute(q, {"gym_id": gym_id})
+        row = res.mappings().first()
+        gracia = row["dias_gracia_mora"] if row and row["dias_gracia_mora"] is not None else 3
+        umbral = row["dias_umbral_por_vencer"] if row and row["dias_umbral_por_vencer"] is not None else 5
+        return gracia, umbral
+
     # =========================================================================
     # 1. CATÁLOGO DE PLANES TARIFARIOS (RF-24)
     # =========================================================================
@@ -121,9 +131,9 @@ class MembresiasService:
                 detail={"codigo": "PLAN_YA_EXISTE", "mensaje": "Conflicto de unicidad al crear el plan"}
             )
 
-        await AuditService.registrar_accion(
+        await AuditService.registrar(
             session=session,
-            gym_id=gym_id,
+            gimnasio_id=gym_id,
             actor_id=staff_id,
             actor_nombre=staff_nombre,
             accion="CREAR_PLAN",
@@ -231,9 +241,9 @@ class MembresiasService:
                 }
             )
 
-        await AuditService.registrar_accion(
+        await AuditService.registrar(
             session=session,
-            gym_id=gym_id,
+            gimnasio_id=gym_id,
             actor_id=staff_id,
             actor_nombre=staff_nombre,
             accion="EDITAR_PLAN",
@@ -274,9 +284,9 @@ class MembresiasService:
             )
 
         accion = "ACTIVAR_PLAN" if req.activo else "DESACTIVAR_PLAN"
-        await AuditService.registrar_accion(
+        await AuditService.registrar(
             session=session,
-            gym_id=gym_id,
+            gimnasio_id=gym_id,
             actor_id=staff_id,
             actor_nombre=staff_nombre,
             accion=accion,
@@ -374,9 +384,9 @@ class MembresiasService:
         })
         m = res_ins.mappings().one()
 
-        await AuditService.registrar_accion(
+        await AuditService.registrar(
             session=session,
-            gym_id=gym_id,
+            gimnasio_id=gym_id,
             actor_id=staff_id,
             actor_nombre=staff_nombre,
             accion="ASIGNAR_MEMBRESIA",
@@ -386,11 +396,14 @@ class MembresiasService:
         )
 
         hoy = today_local()
+        gracia, umbral = await cls._obtener_config_tenant(session, gym_id)
         calc = MembresiaDomainService.evaluar_estado_puro(
             hoy=hoy,
             activo_deportista=dep["activo"],
             tiene_membresia=True,
             fecha_vencimiento=f_vencimiento,
+            dias_gracia_mora=gracia,
+            dias_umbral_por_vencer=umbral,
             membresia_id=m["id"],
             plan_nombre=plan["nombre"]
         )
@@ -486,9 +499,9 @@ class MembresiasService:
         })
         nueva_m = res_ins.mappings().one()
 
-        await AuditService.registrar_accion(
+        await AuditService.registrar(
             session=session,
-            gym_id=gym_id,
+            gimnasio_id=gym_id,
             actor_id=staff_id,
             actor_nombre=staff_nombre,
             accion="CAMBIO_DE_PLAN",
@@ -502,11 +515,14 @@ class MembresiasService:
             }
         )
 
+        gracia, umbral = await cls._obtener_config_tenant(session, gym_id)
         calc = MembresiaDomainService.evaluar_estado_puro(
             hoy=hoy,
             activo_deportista=curr["deportista_activo"],
             tiene_membresia=True,
             fecha_vencimiento=nueva_venc,
+            dias_gracia_mora=gracia,
+            dias_umbral_por_vencer=umbral,
             membresia_id=nueva_m["id"],
             plan_nombre=new_plan["nombre"]
         )
@@ -555,9 +571,9 @@ class MembresiasService:
         q_canc = text("UPDATE platform.membresias SET cancelada = true, updated_at = now() WHERE id = :id")
         await session.execute(q_canc, {"id": membresia_id})
 
-        await AuditService.registrar_accion(
+        await AuditService.registrar(
             session=session,
-            gym_id=gym_id,
+            gimnasio_id=gym_id,
             actor_id=staff_id,
             actor_nombre=staff_nombre,
             accion="CANCELAR_MEMBRESIA",
@@ -664,9 +680,9 @@ class MembresiasService:
                 detail={"codigo": "MEMBRESIA_YA_CONGELADA", "mensaje": "Conflicto concurrente: la membresía ya fue congelada"}
             )
 
-        await AuditService.registrar_accion(
+        await AuditService.registrar(
             session=session,
-            gym_id=gym_id,
+            gimnasio_id=gym_id,
             actor_id=staff_id,
             actor_nombre=staff_nombre,
             accion="CONGELAR_MEMBRESIA",
@@ -744,9 +760,9 @@ class MembresiasService:
             """)
             await session.execute(q_ext, {"dias": dias_a_extender, "id": membresia_id})
 
-        await AuditService.registrar_accion(
+        await AuditService.registrar(
             session=session,
-            gym_id=gym_id,
+            gimnasio_id=gym_id,
             actor_id=staff_id,
             actor_nombre=staff_nombre,
             accion="DESCONGELAR_MEMBRESIA",
@@ -819,11 +835,7 @@ class MembresiasService:
         raw_items = [dict(r) for r in res_items.mappings().all()]
 
         # Enriquecer en memoria con una sola consulta batch para congelamientos
-        q_params = text("SELECT dias_gracia_mora, dias_umbral_por_vencer FROM platform.tenant WHERE id = :gym_id")
-        res_t = await session.execute(q_params, {"gym_id": gym_id})
-        t_row = res_t.mappings().first()
-        gracia = t_row["dias_gracia_mora"] if t_row else 3
-        umbral = t_row["dias_umbral_por_vencer"] if t_row else 5
+        gracia, umbral = await cls._obtener_config_tenant(session, gym_id)
 
         enriquecidos = await MembresiaDomainService.enriquecer_membresias_batch(
             session=session,
@@ -901,6 +913,7 @@ class MembresiasService:
 
         # 4. Estado calculado
         hoy = today_local()
+        gracia, umbral = await cls._obtener_config_tenant(session, gym_id)
         calc = MembresiaDomainService.evaluar_estado_puro(
             hoy=hoy,
             activo_deportista=m["deportista_activo"],
@@ -909,6 +922,8 @@ class MembresiasService:
             fecha_vencimiento=m["fecha_vencimiento"],
             congelamiento_activo=bool(congelamiento_activo_id),
             congelamiento_id=congelamiento_activo_id,
+            dias_gracia_mora=gracia,
+            dias_umbral_por_vencer=umbral,
             membresia_id=m["id"],
             plan_nombre=m["plan_nombre"]
         )
@@ -924,8 +939,8 @@ class MembresiasService:
             cancelada=m["cancelada"],
             estado_calculado=calc.estado,
             dias_restantes_o_vencido=calc.dias_restantes_o_vencido,
-            congelamiento_activo=bool(congelamiento_activo_id),
-            congelamiento_id=congelamiento_activo_id,
+            congelamiento_activo=calc.congelamiento_activo,
+            congelamiento_id=calc.congelamiento_id,
             created_at=m["created_at"],
             updated_at=m["updated_at"]
         )
@@ -964,11 +979,7 @@ class MembresiasService:
         res = await session.execute(q, {"gym_id": gym_id, "dep_id": deportista_id})
         raw_items = [dict(r) for r in res.mappings().all()]
 
-        q_params = text("SELECT dias_gracia_mora, dias_umbral_por_vencer FROM platform.tenant WHERE id = :gym_id")
-        res_t = await session.execute(q_params, {"gym_id": gym_id})
-        t_row = res_t.mappings().first()
-        gracia = t_row["dias_gracia_mora"] if t_row else 3
-        umbral = t_row["dias_umbral_por_vencer"] if t_row else 5
+        gracia, umbral = await cls._obtener_config_tenant(session, gym_id)
 
         enriquecidos = await MembresiaDomainService.enriquecer_membresias_batch(
             session=session,

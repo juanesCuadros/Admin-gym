@@ -17,11 +17,14 @@ class AuditService:
         actor_nombre: str,
         accion: str,
         entidad: str,
-        entidad_id: Optional[str] = None,
+        entidad_id: Optional[Any] = None,
         detalle: Optional[Dict[str, Any]] = None,
         impersonando: bool = False
     ) -> None:
-        # 1. Obtener hash actual previo para el gimnasio con bloqueo pesimista
+        # 1. Normalizar entidad_id a str si es provisto
+        entidad_id_str = str(entidad_id) if entidad_id is not None else None
+
+        # 2. Obtener hash actual previo para el gimnasio con bloqueo pesimista
         hash_query = text("""
             SELECT hash_actual FROM platform.auditoria_gym
             WHERE gimnasio_id = :gym_id
@@ -32,14 +35,14 @@ class AuditService:
         res = await session.execute(hash_query, {"gym_id": gimnasio_id})
         prev_hash = res.scalar() or "0" * 64
 
-        # 2. Serializar detalle a JSON ordenado para consistencia del hash
+        # 3. Serializar detalle a JSON ordenado para consistencia del hash
         detalle_json = json.dumps(detalle, sort_keys=True) if detalle else "{}"
 
-        # 3. Calcular hash SHA-256 encadenado
-        cadena_a_hashear = f"{prev_hash}{actor_id or ''}{accion}{entidad}{entidad_id or ''}{detalle_json}"
+        # 4. Calcular hash SHA-256 encadenado
+        cadena_a_hashear = f"{prev_hash}{actor_id or ''}{accion}{entidad}{entidad_id_str or ''}{detalle_json}"
         hash_actual = hashlib.sha256(cadena_a_hashear.encode("utf-8")).hexdigest()
 
-        # 4. Insertar registro append-only
+        # 5. Insertar registro append-only
         insert_query = text("""
             INSERT INTO platform.auditoria_gym (
                 gimnasio_id, actor_id, actor_nombre, impersonando,
@@ -56,7 +59,7 @@ class AuditService:
             "impersonando": impersonando,
             "accion": accion,
             "entidad": entidad,
-            "entidad_id": entidad_id,
+            "entidad_id": entidad_id_str,
             "detalle": detalle_json,
             "hash_previo": prev_hash,
             "hash_actual": hash_actual
@@ -104,30 +107,4 @@ class AuditService:
 
     # Alias de compatibilidad
     registrar_aislado = registrar_en_sesion_aislada
-
-    @classmethod
-    async def registrar_accion(
-        cls,
-        session: AsyncSession,
-        gym_id: UUID,
-        actor_id: Optional[UUID],
-        actor_nombre: str,
-        accion: str,
-        entidad: str,
-        entidad_id: Any = None,
-        detalle: Optional[Dict[str, Any]] = None,
-        impersonando: bool = False
-    ) -> None:
-        """Helper para registrar acciones en la sesión actual."""
-        await cls.registrar(
-            session=session,
-            gimnasio_id=gym_id,
-            actor_id=actor_id,
-            actor_nombre=actor_nombre,
-            accion=accion,
-            entidad=entidad,
-            entidad_id=str(entidad_id) if entidad_id is not None else None,
-            detalle=detalle,
-            impersonando=impersonando
-        )
 
