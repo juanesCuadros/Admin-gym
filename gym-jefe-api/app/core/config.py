@@ -17,10 +17,10 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Base de Datos
-    DATABASE_URL: str = "postgresql+asyncpg://gymos_platform:gymos_secret_2026@localhost:5432/gymos"
+    DATABASE_URL: str = "postgresql+asyncpg://gymos_platform:cambiar_password@localhost:5432/gymos"
 
     # JWT
-    JWT_SECRET_KEY: str = "gymos_platform_super_secret_jwt_key_development_2026"
+    JWT_SECRET_KEY: str = "cambiar_esta_clave_secreta_jwt_por_cadena_segura_de_32_caracteres"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
