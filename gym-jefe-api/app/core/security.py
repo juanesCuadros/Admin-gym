@@ -56,3 +56,46 @@ def decode_access_token(token: str) -> Dict[str, Any]:
         return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
     except jwt.PyJWTError as exc:
         raise ValueError("Token inválido o expirado") from exc
+
+
+# --- Cifrado Biométrico Simétrico (RNF-01: AES-256-GCM) ---
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import os
+
+
+def encrypt_biometric_template(template_bytes: bytes) -> bytes:
+    """
+    Cifra una plantilla biométrica dactilar utilizando AES-256-GCM.
+    Genera un nonce criptográfico de 12 bytes (96 bits) por cada registro.
+    Retorna un payload binario autocontenido:
+        [12 bytes Nonce] || [Ciphertext + 16 bytes Tag de Autenticación]
+    """
+    if not template_bytes:
+        raise ValueError("La plantilla biométrica no puede estar vacía")
+    
+    key_bytes = bytes.fromhex(settings.BIOMETRIC_ENCRYPTION_KEY)
+    aesgcm = AESGCM(key_bytes)
+    nonce = os.urandom(12)
+    ciphertext = aesgcm.encrypt(nonce, template_bytes, None)
+    return nonce + ciphertext
+
+
+def decrypt_biometric_template(encrypted_payload: bytes) -> bytes:
+    """
+    Descifra un payload biométrico cifrado con AES-256-GCM.
+    Extrae los primeros 12 bytes como nonce y el resto como ciphertext + tag de autenticación.
+    Lanza ValueError si el payload está truncado, alterado o la autenticación falla.
+    """
+    # Mínimo 12 bytes de nonce + 16 bytes de tag de autenticación = 28 bytes
+    if not encrypted_payload or len(encrypted_payload) < 28:
+        raise ValueError("Payload biométrico cifrado inválido o truncado")
+
+    key_bytes = bytes.fromhex(settings.BIOMETRIC_ENCRYPTION_KEY)
+    aesgcm = AESGCM(key_bytes)
+    nonce = encrypted_payload[:12]
+    ciphertext = encrypted_payload[12:]
+    
+    try:
+        return aesgcm.decrypt(nonce, ciphertext, None)
+    except Exception as exc:
+        raise ValueError("Fallo de autenticación o integridad en la plantilla biométrica") from exc

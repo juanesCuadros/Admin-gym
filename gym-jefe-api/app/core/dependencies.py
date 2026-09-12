@@ -20,6 +20,10 @@ class AuthenticatedStaff:
     nombre: str
     subdominio: str
 
+    @property
+    def staff_id(self) -> UUID:
+        return self.id
+
 
 async def get_current_staff(
     credentials: Annotated[HTTPAuthorizationCredentials, Security(security_bearer)],
@@ -51,7 +55,7 @@ async def get_current_staff(
 
     # 1. Establecer RLS para toda la transacción del request
     await session.execute(
-        text("SET LOCAL app.gimnasio_id = :gym_id"),
+        text("SELECT set_config('app.gimnasio_id', :gym_id, true)"),
         {"gym_id": str(gym_id)}
     )
 

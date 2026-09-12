@@ -28,6 +28,23 @@ class Settings(BaseSettings):
     # Zona Horaria Operativa
     TIMEZONE: str = "America/Bogota"
 
+    # Cifrado Biométrico de Huellas (RNF-01) - Obligatorio sin default
+    BIOMETRIC_ENCRYPTION_KEY: str
+
+    @field_validator("BIOMETRIC_ENCRYPTION_KEY")
+    @classmethod
+    def validate_biometric_encryption_key(cls, v: str) -> str:
+        key_str = v.strip()
+        try:
+            key_bytes = bytes.fromhex(key_str)
+        except ValueError:
+            raise ValueError("BIOMETRIC_ENCRYPTION_KEY debe ser una cadena hexadecimal válida.")
+        if len(key_bytes) != 32:
+            raise ValueError(
+                f"BIOMETRIC_ENCRYPTION_KEY debe tener exactamente 32 bytes (64 caracteres hexadecimales). Longitud recibida: {len(key_bytes)} bytes."
+            )
+        return key_str
+
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173", "app://electron"]
 
