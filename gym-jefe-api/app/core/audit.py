@@ -104,3 +104,30 @@ class AuditService:
 
     # Alias de compatibilidad
     registrar_aislado = registrar_en_sesion_aislada
+
+    @classmethod
+    async def registrar_accion(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        actor_id: Optional[UUID],
+        actor_nombre: str,
+        accion: str,
+        entidad: str,
+        entidad_id: Any = None,
+        detalle: Optional[Dict[str, Any]] = None,
+        impersonando: bool = False
+    ) -> None:
+        """Helper para registrar acciones en la sesión actual."""
+        await cls.registrar(
+            session=session,
+            gimnasio_id=gym_id,
+            actor_id=actor_id,
+            actor_nombre=actor_nombre,
+            accion=accion,
+            entidad=entidad,
+            entidad_id=str(entidad_id) if entidad_id is not None else None,
+            detalle=detalle,
+            impersonando=impersonando
+        )
+

@@ -1,3 +1,1 @@
-from app.modules.membresias.router import router as membresias_router
-
-__all__ = ["membresias_router"]
+"""Módulo 5: Membresías y Planes (RF-24 a RF-27)"""

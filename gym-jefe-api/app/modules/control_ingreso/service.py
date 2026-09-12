@@ -19,6 +19,7 @@ from app.modules.control_ingreso.schemas import (
     ListadoIngresosHoyResponse,
     ResumenIngresosHoyDto,
 )
+from app.modules.membresias.domain import MembresiaDomainService
 
 logger = logging.getLogger(__name__)
 
@@ -388,108 +389,22 @@ class ControlIngresoService:
         dias_umbral_por_vencer: int = 5
     ) -> Tuple[str, int, str, bool, str]:
         """
-        Calcula el estado derivado del deportista y su comando de torniquete.
+        Delega el cálculo derivado del deportista a MembresiaDomainService (Única Fuente de Verdad).
         Retorna: (estado_str, dias_diff, mensaje, permite_abrir, resultado_db)
         donde resultado_db in ('abrio', 'alerta_mora', 'negado').
-        
-        Manejo estricto de membresías múltiples, cancelaciones y congelamientos:
-        1. Si el deportista tiene 'activo = false' -> 'inactivo', negado.
-        2. Selecciona la membresía no cancelada con fecha_vencimiento más reciente.
-        3. Si no hay membresías no canceladas:
-           - Revisa si la última membresía registrada tiene 'cancelada = true' (RF-27) -> 'cancelada', negado.
-           - Si no tiene registros en absoluto -> 'sin_membresia', negado.
-        4. Si hay membresía no cancelada:
-           - Amarra el congelamiento vigente DIRECTAMENTE a esa 'membresia_id' específica (RF-26).
-             Si tiene congelamiento abierto (fecha_fin IS NULL) -> 'congelado', negado.
-        5. Evalúa fecha_vencimiento contra hoy local (America/Bogota):
-           - fecha_vencimiento >= hoy:
-             * dias_restantes <= dias_umbral_por_vencer -> 'por_vencer', comando=True, resultado='abrio'.
-             * dias_restantes > dias_umbral_por_vencer  -> 'activo', comando=True, resultado='abrio'.
-           - fecha_vencimiento < hoy:
-             * dias_mora <= dias_gracia -> 'mora', comando=True, resultado='alerta_mora'.
-             * dias_mora > dias_gracia  -> 'vencido', comando=False, resultado='negado'.
         """
-        if not activo:
-            return ("inactivo", 0, "Deportista desactivado por la administración", False, "negado")
-
-        hoy = today_local()
-
-        # 1. Consultar la membresía no cancelada más reciente
-        memb_query = text("""
-            SELECT id, fecha_inicio, fecha_vencimiento, cancelada
-            FROM platform.membresias
-            WHERE gimnasio_id = :gym_id AND deportista_id = :deportista_id AND cancelada = false
-            ORDER BY fecha_vencimiento DESC
-            LIMIT 1
-        """)
-        res_memb = await session.execute(memb_query, {"gym_id": gym_id, "deportista_id": deportista_id})
-        memb = res_memb.mappings().first()
-
-        # 2. Si no hay membresía activa no cancelada, evaluar si la última fue cancelada (RF-27)
-        if not memb:
-            last_memb_query = text("""
-                SELECT id, cancelada
-                FROM platform.membresias
-                WHERE gimnasio_id = :gym_id AND deportista_id = :deportista_id
-                ORDER BY fecha_vencimiento DESC
-                LIMIT 1
-            """)
-            res_last = await session.execute(last_memb_query, {"gym_id": gym_id, "deportista_id": deportista_id})
-            last_memb = res_last.mappings().first()
-            if last_memb and last_memb["cancelada"]:
-                return ("cancelada", 0, "Membresía cancelada por la administración (RF-27)", False, "negado")
-            return ("sin_membresia", 0, "El deportista no cuenta con membresías registradas", False, "negado")
-
-        membresia_id = memb["id"]
-        fecha_venc: date = memb["fecha_vencimiento"]
-
-        # 3. Verificar congelamiento vigente amarrado a ESTA membresía específica (RF-26)
-        cong_query = text("""
-            SELECT id, fecha_inicio
-            FROM platform.congelamientos
-            WHERE gimnasio_id = :gym_id 
-              AND membresia_id = :membresia_id 
-              AND fecha_fin IS NULL
-            LIMIT 1
-        """)
-        res_cong = await session.execute(cong_query, {"gym_id": gym_id, "membresia_id": membresia_id})
-        if res_cong.mappings().first():
-            return ("congelado", 0, "Membresía congelada. Debe solicitar el descongelamiento previo", False, "negado")
-
-        # 4. Evaluar vigencia
-        if fecha_venc >= hoy:
-            dias_restantes = (fecha_venc - hoy).days
-            if dias_restantes <= dias_umbral_por_vencer:
-                return (
-                    "por_vencer",
-                    dias_restantes,
-                    f"Acceso concedido. Membresía por vencer en {dias_restantes} día(s) ({fecha_venc})",
-                    True,
-                    "abrio"
-                )
-            return (
-                "activo",
-                dias_restantes,
-                f"Acceso concedido. Vence en {dias_restantes} días ({fecha_venc})",
-                True,
-                "abrio"
-            )
-
-        # Está vencido: calcular días de mora contra tenant.dias_gracia_mora
-        dias_mora = (hoy - fecha_venc).days
-        if dias_mora <= dias_gracia:
-            return (
-                "mora",
-                dias_mora,
-                f"Acceso con alerta de mora: membresía vencida hace {dias_mora} día(s). Período de gracia permitido ({dias_gracia} días).",
-                True,
-                "alerta_mora"
-            )
-        else:
-            return (
-                "vencido",
-                dias_mora,
-                f"Acceso denegado: membresía vencida hace {dias_mora} día(s). Superó el período de gracia permitido ({dias_gracia} días).",
-                False,
-                "negado"
-            )
+        calc = await MembresiaDomainService.calcular_estado_para_deportista(
+            session=session,
+            gym_id=gym_id,
+            deportista_id=deportista_id,
+            activo_deportista=activo,
+            dias_gracia_mora=dias_gracia,
+            dias_umbral_por_vencer=dias_umbral_por_vencer,
+        )
+        return (
+            calc.estado,
+            calc.dias_restantes_o_vencido,
+            calc.mensaje,
+            calc.permite_ingreso,
+            calc.resultado_acceso,
+        )
