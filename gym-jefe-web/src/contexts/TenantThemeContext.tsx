@@ -101,8 +101,37 @@ function applyCssTokens(primary: string, secondary: string, accent: string) {
   root.style.setProperty('--primary-hover', primary);
 }
 
+function detectSubdomainFromHostname(): string | null {
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    const parts = hostname.split('.');
+    if (parts.length >= 2 && parts[0] !== 'www' && parts[0] !== 'localhost' && parts[0] !== '127') {
+      return parts[0];
+    }
+  }
+  return null;
+}
+
 export const TenantThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [tenant, setTenant] = useState<TenantConfig>(() => {
+    // 1. Check if URL hostname defines the tenant (e.g. smartfit.gymos.co)
+    const urlSubdomain = detectSubdomainFromHostname();
+    if (urlSubdomain) {
+      const match = TENANT_PRESETS.find((p) => p.subdominio === urlSubdomain);
+      if (match) {
+        return {
+          ...defaultTenant,
+          id: match.id,
+          nombre: match.nombre,
+          subdominio: match.subdominio,
+          primary_color: match.primary,
+          secondary_color: match.secondary,
+          accent_color: match.accent,
+        };
+      }
+    }
+
+    // 2. Fallback to localStorage
     const saved = localStorage.getItem('gymos_tenant_config');
     if (saved) {
       try {

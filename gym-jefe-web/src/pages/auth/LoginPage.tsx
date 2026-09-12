@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Dumbbell, ArrowRight, Shield, UserCheck, KeyRound } from 'lucide-react';
+import { Dumbbell, ArrowRight, Shield, UserCheck, KeyRound, Building2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenantTheme, TENANT_PRESETS } from '../../contexts/TenantThemeContext';
 import { Button } from '../../components/ui/Button';
@@ -11,22 +11,28 @@ export const LoginPage: React.FC = () => {
   const { login, loginDemo, isLoading } = useAuth();
   const { tenant, applyPreset } = useTenantTheme();
 
-  const [subdominio, setSubdominio] = useState(tenant.subdominio);
   const [correo, setCorreo] = useState('');
   const [password, setPassword] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!subdominio || !correo || !password) return;
+    if (!correo || !password) return;
 
-    const success = await login({ subdominio, correo, password });
+    // El subdominio se inyecta automáticamente desde el tenant de la sede actual
+    const success = await login({
+      subdominio: tenant.subdominio,
+      correo: correo.trim(),
+      password,
+    });
+
     if (success) {
       navigate('/');
     }
   };
 
+  // Atajos opcionales para pruebas rápidas de interfaz según el rol
   const handleDemo = (role: 'jefe' | 'recepcionista' | 'entrenador') => {
-    loginDemo(role, subdominio);
+    loginDemo(role, tenant.subdominio);
     navigate('/');
   };
 
@@ -44,7 +50,7 @@ export const LoginPage: React.FC = () => {
       <div
         style={{
           width: '100%',
-          maxWidth: '440px',
+          maxWidth: '430px',
           background: 'var(--bg-surface)',
           border: '1px solid var(--border-color)',
           borderRadius: 'var(--radius-lg)',
@@ -52,7 +58,7 @@ export const LoginPage: React.FC = () => {
           boxShadow: 'var(--shadow-lg)',
         }}
       >
-        {/* Brand Header */}
+        {/* Encabezado con Identidad Institucional del Gimnasio */}
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
           <div
             style={{
@@ -73,12 +79,26 @@ export const LoginPage: React.FC = () => {
           <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
             {tenant.nombre}
           </h2>
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-            Ingresa con tus credenciales de staff del gimnasio
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              marginTop: 4,
+              fontSize: '0.8rem',
+              color: 'var(--primary)',
+              fontWeight: 600,
+            }}
+          >
+            <Building2 size={14} />
+            <span>{tenant.subdominio}.gymos.co</span>
+          </div>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 8 }}>
+            Ingresa tu correo y contraseña para acceder al sistema
           </p>
         </div>
 
-        {/* Tenant Switcher Pill */}
+        {/* Selector de Sede para entorno de pruebas / localhost */}
         <div
           style={{
             marginBottom: 20,
@@ -86,20 +106,19 @@ export const LoginPage: React.FC = () => {
             borderRadius: 'var(--radius-sm)',
             backgroundColor: 'var(--bg-surface-elevated)',
             border: '1px solid var(--border-color)',
-            fontSize: '0.8rem',
+            fontSize: '0.78rem',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
           }}
         >
-          <span style={{ color: 'var(--text-secondary)' }}>Sede seleccionada:</span>
+          <span style={{ color: 'var(--text-muted)' }}>Sede (Multi-tenant):</span>
           <select
             value={tenant.id}
             onChange={(e) => {
               const selected = TENANT_PRESETS.find((p) => p.id === e.target.value);
               if (selected) {
                 applyPreset(selected);
-                setSubdominio(selected.subdominio);
               }
             }}
             style={{
@@ -119,22 +138,15 @@ export const LoginPage: React.FC = () => {
           </select>
         </div>
 
-        {/* Form */}
+        {/* Formulario de Login Limpio: Solo Correo y Contraseña */}
         <form onSubmit={handleSubmit}>
           <Input
-            label="Subdominio del Gimnasio"
-            placeholder="ej. smartfit"
-            value={subdominio}
-            onChange={(e) => setSubdominio(e.target.value.toLowerCase().trim())}
-            required
-          />
-
-          <Input
-            label="Correo Corporativo"
+            label="Correo Electrónico"
             type="email"
-            placeholder="staff@tudominio.com"
+            placeholder="usuario@gimnasio.com"
             value={correo}
             onChange={(e) => setCorreo(e.target.value)}
+            autoFocus
             required
           />
 
@@ -158,20 +170,20 @@ export const LoginPage: React.FC = () => {
           </Button>
         </form>
 
-        {/* Demo Fast Access Section */}
+        {/* Atajos de Demostración para Evaluar Vistas por Rol */}
         <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--border-color)' }}>
           <div
             style={{
-              fontSize: '0.75rem',
+              fontSize: '0.725rem',
               fontWeight: 700,
               textTransform: 'uppercase',
               color: 'var(--text-muted)',
               textAlign: 'center',
               letterSpacing: '0.06em',
-              marginBottom: 12,
+              marginBottom: 10,
             }}
           >
-            Acceso Rápido de Prueba (Demo)
+            Acceso Rápido Demo (Prueba de Roles)
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
