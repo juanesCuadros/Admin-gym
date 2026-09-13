@@ -338,7 +338,26 @@ async def run_modulo_9_full_test_suite():
         assert res_trans_self.status_code == 400
         assert res_trans_self.json()["error"]["codigo"] == "TRANSFERENCIA_INVALIDA"
 
-        # 3. Transferencia exitosa con orden correcto (antiguo jefe degrada a entrenador, nuevo jefe asciende)
+        # 3. Fallo: Candidato inactivo
+        # Desactivamos temporalmente al candidato
+        await client.patch(f"/api/v1/personal/{candidato_id}/estado", headers=headers_jefe_a, json={
+            "activo": False,
+            "motivo": "Inactivo temporal"
+        })
+        res_trans_inactivo = await client.post("/api/v1/personal/transferir-jefe", headers=headers_jefe_a, json={
+            "nuevo_jefe_id": str(candidato_id),
+            "nuevo_rol_antiguo_jefe": "entrenador",
+            "password_confirmacion": pwd_raw
+        })
+        assert res_trans_inactivo.status_code == 400
+        assert res_trans_inactivo.json()["error"]["codigo"] == "STAFF_INACTIVO"
+
+        # Reactivamos al candidato para la prueba exitosa
+        await client.patch(f"/api/v1/personal/{candidato_id}/estado", headers=headers_jefe_a, json={
+            "activo": True
+        })
+
+        # 4. Transferencia exitosa con orden correcto (antiguo jefe degrada a entrenador, nuevo jefe asciende)
         res_trans_ok = await client.post("/api/v1/personal/transferir-jefe", headers=headers_jefe_a, json={
             "nuevo_jefe_id": str(candidato_id),
             "nuevo_rol_antiguo_jefe": "entrenador",
