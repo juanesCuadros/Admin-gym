@@ -22,6 +22,7 @@ class CrearProductoRequest(BaseModel):
 class ActualizarProductoRequest(BaseModel):
     nombre: str = Field(..., min_length=2, max_length=150, description="Nombre descriptivo del producto")
     precio: Decimal = Field(..., ge=0, description="Precio unitario de venta")
+    version: int = Field(..., ge=1, description="Versión actual del producto para control de concurrencia optimista")
     # NOTA: El stock NO se muta mediante este endpoint para preservar la integridad del Kardex.
 
 

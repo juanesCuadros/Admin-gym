@@ -8,6 +8,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditService
@@ -151,7 +152,7 @@ class InventarioService:
                 detail={"codigo": "PRODUCTO_YA_EXISTE", "mensaje": f"Ya existe un producto con el nombre '{nombre_limpio}' en este gimnasio"}
             )
 
-        # 2. Insertar producto
+        # 2. Insertar producto protegido contra condición de carrera TOCTOU en concurrencia
         insert_query = text("""
             INSERT INTO platform.productos (
                 gimnasio_id, nombre, precio, stock, activo, version, created_at, updated_at
@@ -159,14 +160,21 @@ class InventarioService:
                 :gym_id, :nombre, :precio, :stock, :activo, 1, now(), now()
             ) RETURNING id, gimnasio_id, nombre, precio, stock, activo, version, created_at, updated_at
         """)
-        res_ins = await session.execute(insert_query, {
-            "gym_id": gym_id,
-            "nombre": nombre_limpio,
-            "precio": data.precio,
-            "stock": data.stock_inicial,
-            "activo": data.activo
-        })
-        row = res_ins.mappings().one()
+        try:
+            async with session.begin_nested():
+                res_ins = await session.execute(insert_query, {
+                    "gym_id": gym_id,
+                    "nombre": nombre_limpio,
+                    "precio": data.precio,
+                    "stock": data.stock_inicial,
+                    "activo": data.activo
+                })
+                row = res_ins.mappings().one()
+        except IntegrityError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"codigo": "PRODUCTO_YA_EXISTE", "mensaje": f"Ya existe un producto con el nombre '{nombre_limpio}' en este gimnasio"}
+            )
         producto_id = row["id"]
 
         # 3. Registrar movimiento inicial en kardex si stock_inicial > 0
@@ -287,7 +295,17 @@ class InventarioService:
                 detail={"codigo": "PRODUCTO_NO_ENCONTRADO", "mensaje": "El producto especificado no existe en este gimnasio"}
             )
 
-        # 2. Si cambia el nombre, validar unicidad
+        # 2. Control de concurrencia optimista (RF-36)
+        if prod["version"] != data.version:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "codigo": "CONFLICTO_CONCURRENCIA",
+                    "mensaje": f"El producto fue modificado por otro usuario (versión actual: {prod['version']}, versión recibida: {data.version}). Por favor recargue antes de guardar."
+                }
+            )
+
+        # 3. Si cambia el nombre, validar unicidad
         if prod["nombre"].lower() != nombre_limpio.lower():
             dup_query = text("""
                 SELECT id FROM platform.productos
@@ -304,20 +322,39 @@ class InventarioService:
                     detail={"codigo": "PRODUCTO_YA_EXISTE", "mensaje": f"Ya existe otro producto con el nombre '{nombre_limpio}'"}
                 )
 
-        # 3. Actualizar registro
+        # 4. Actualizar registro con cláusula de versión y protección contra colisión de nombre
         update_query = text("""
             UPDATE platform.productos
             SET nombre = :nombre, precio = :precio, version = version + 1, updated_at = now()
-            WHERE id = :pid AND gimnasio_id = :gym_id
+            WHERE id = :pid AND gimnasio_id = :gym_id AND version = :version_esperada
             RETURNING id, gimnasio_id, nombre, precio, stock, activo, version, created_at, updated_at
         """)
-        res_up = await session.execute(update_query, {
-            "nombre": nombre_limpio,
-            "precio": data.precio,
-            "pid": producto_id,
-            "gym_id": gym_id
-        })
-        return ProductoResponse(**dict(res_up.mappings().one()))
+        try:
+            async with session.begin_nested():
+                res_up = await session.execute(update_query, {
+                    "nombre": nombre_limpio,
+                    "precio": data.precio,
+                    "pid": producto_id,
+                    "gym_id": gym_id,
+                    "version_esperada": data.version
+                })
+                row = res_up.mappings().first()
+        except IntegrityError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"codigo": "PRODUCTO_YA_EXISTE", "mensaje": f"Ya existe otro producto con el nombre '{nombre_limpio}'"}
+            )
+
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "codigo": "CONFLICTO_CONCURRENCIA",
+                    "mensaje": "Conflicto de concurrencia: el producto fue modificado por otra transacción simultánea."
+                }
+            )
+
+        return ProductoResponse(**dict(row))
 
     @classmethod
     async def cambiar_estado(

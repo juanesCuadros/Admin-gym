@@ -133,7 +133,7 @@ async def run_modulo_8_full_test_suite():
         assert r.json()["error"]["codigo"] == "PRODUCTO_NO_ENCONTRADO"
 
         # Gym B intenta actualizar producto de Gym A -> 404
-        r = await client.put(f"/api/v1/inventario/productos/{prod_a_id}", json={"nombre": "Hack", "precio": 10.0}, headers=headers_jefe_b)
+        r = await client.put(f"/api/v1/inventario/productos/{prod_a_id}", json={"nombre": "Hack", "precio": 10.0, "version": 1}, headers=headers_jefe_b)
         assert r.status_code == 404
 
         # Gym B intenta cambiar estado de producto de Gym A -> 404
@@ -290,20 +290,37 @@ async def run_modulo_8_full_test_suite():
         assert r_coach_list.status_code == 403
         print("OK: Entrenador bloqueado completamente en inventario (403 Forbidden)")
 
-        print("\n--- [7/7] TEST ACTUALIZACIÓN DE DATOS MAESTROS Y DESACTIVACIÓN LÓGICA ---")
-        # Actualizar nombre y precio maestro
+        print("\n--- [7/7] TEST CONTROL DE CONCURRENCIA OPTIMISTA (VERSION) Y ACTUALIZACIÓN ---")
+        # 1. Obtener versión actual del producto
+        res_cur = await client.get(f"/api/v1/inventario/productos/{prod_a_id}", headers=headers_jefe_a)
+        assert res_cur.status_code == 200
+        cur_version = res_cur.json()["version"]
+
+        # 2. Intento de actualizar con versión obsoleta -> 409 CONFLICTO_CONCURRENCIA
+        res_stale = await client.put(
+            f"/api/v1/inventario/productos/{prod_a_id}",
+            json={"nombre": "Proteína Intento Desactualizado", "precio": 150000.0, "version": cur_version + 99},
+            headers=headers_jefe_a
+        )
+        assert res_stale.status_code == 409
+        assert res_stale.json()["error"]["codigo"] == "CONFLICTO_CONCURRENCIA"
+        print("OK: Actualización con versión obsoleta rechazada (409 CONFLICTO_CONCURRENCIA)")
+
+        # 3. Actualización válida con versión exacta
         res_up = await client.put(
             f"/api/v1/inventario/productos/{prod_a_id}",
-            json={"nombre": "Proteína Whey Vainilla Aislada 2lb", "precio": 148000.0},
+            json={"nombre": "Proteína Whey Vainilla Aislada 2lb", "precio": 148000.0, "version": cur_version},
             headers=headers_jefe_a
         )
         assert res_up.status_code == 200
         up_data = res_up.json()
         assert up_data["nombre"] == "Proteína Whey Vainilla Aislada 2lb"
         assert Decimal(str(up_data["precio"])) == Decimal("148000.00")
+        assert up_data["version"] == cur_version + 1
         assert up_data["stock"] == 30  # El stock debe permanecer inmutable en PUT
+        print(f"OK: Actualización exitosa con version={cur_version} -> nueva version={up_data['version']}")
 
-        # Desactivación lógica
+        # 4. Desactivación lógica
         res_desc = await client.patch(
             f"/api/v1/inventario/productos/{prod_a_id}/estado",
             json={"activo": False},
@@ -311,7 +328,7 @@ async def run_modulo_8_full_test_suite():
         )
         assert res_desc.status_code == 200
         assert res_desc.json()["activo"] is False
-        print("OK: Producto actualizado y desactivado lógicamente preservando trazabilidad")
+        print("OK: Producto desactivado lógicamente preservando trazabilidad")
 
         print("\n" + "="*70)
         print(">>> TODOS LOS TESTS DEL MÓDULO 8 (INVENTARIO) PASARON EXITOSAMENTE <<<")
