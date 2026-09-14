@@ -61,5 +61,9 @@ node_modules/
 .turbo/
 coverage/
 
-# Documentos privados de especificación
+# Documentos privados de especificación y negocio (NUNCA subir a git)
 *.docx
+*.xlsx
+*.pdf
+metadata.json
+**/metadata.json
