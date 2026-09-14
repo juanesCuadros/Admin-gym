@@ -1,0 +1,95 @@
+name: gymos-prod
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      GYMOS_SUPERADMIN_PASSWORD: ${GYMOS_SUPERADMIN_PASSWORD}
+      GYMOS_PLATFORM_PASSWORD: ${GYMOS_PLATFORM_PASSWORD}
+    expose:
+      - "5432"
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d:ro
+      - gymos_prod_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------- plataforma (Super Admin) ----------
+  super-admin-api:
+    build: ../plataforma/super-admin-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      RUN_MIGRATIONS: "false"
+      DATABASE_URL: postgresql+psycopg2://${GYMOS_SUPERADMIN_USER:-gymos_superadmin}:${GYMOS_SUPERADMIN_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_SECRET_KEY: ${SUPERADMIN_JWT_SECRET_KEY}
+      FIRST_SUPERADMIN_EMAIL: ${FIRST_SUPERADMIN_EMAIL}
+      FIRST_SUPERADMIN_PASSWORD: ${FIRST_SUPERADMIN_PASSWORD}
+      BASE_DOMAIN: ${BASE_DOMAIN}
+      CORS_ORIGINS: ${SUPERADMIN_CORS_ORIGINS}
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  super-admin-vista:
+    build: ../plataforma/super-admin-vista
+    restart: unless-stopped
+    depends_on:
+      super-admin-api:
+        condition: service_healthy
+    expose:
+      - "80"
+
+  # ---------- producto (Gym Tenant) ----------
+  api:
+    build: ../producto/gym-jefe-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "False"
+      DATABASE_URL: postgresql+asyncpg://${GYMOS_PLATFORM_USER:-gymos_platform}:${GYMOS_PLATFORM_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_SECRET_KEY: ${PLATFORM_JWT_SECRET_KEY}
+      TIMEZONE: ${TIMEZONE:-America/Bogota}
+      CORS_ORIGINS: ${PLATFORM_CORS_ORIGINS}
+      BIOMETRIC_ENCRYPTION_KEY: ${BIOMETRIC_ENCRYPTION_KEY}
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    build:
+      context: ../producto/gym-jefe-web
+      args:
+        VITE_API_URL: /api/v1
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    expose:
+      - "80"
+
+volumes:
+  gymos_prod_pgdata:

@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gymos_postgres
+    environment:
+      POSTGRES_USER: gymos_superadmin
+      POSTGRES_PASSWORD: gymos_superadmin_secret
+      POSTGRES_DB: gymos_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gymos_superadmin -d gymos_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  super-admin-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gymos_super_admin_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      DATABASE_URL: postgresql+psycopg2://gymos_superadmin:gymos_superadmin_secret@postgres:5432/gymos_db
+      JWT_SECRET_KEY: dev_super_secret_jwt_key_gymos_mvc_2026
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  pgdata:

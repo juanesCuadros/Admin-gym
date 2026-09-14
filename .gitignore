@@ -1,9 +1,8 @@
 # Entornos y secretos (NUNCA subir a git)
 .env
-.env.local
-.env.*.local
-*.env
-!*.env.example
+.env.*
+!.env.example
+!.env.production.example
 
 # Python
 __pycache__/
@@ -27,6 +26,11 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
 # Entornos virtuales
 venv/
@@ -50,13 +54,12 @@ venv.bak/
 .DS_Store
 Thumbs.db
 
-# Frontend (para cuando se agregue la carpeta de front)
+# Frontend (Node / Vite / React)
 node_modules/
 .npm/
 .next/
-dist/
-build/
 .turbo/
+coverage/
 
 # Documentos privados de especificación
 *.docx

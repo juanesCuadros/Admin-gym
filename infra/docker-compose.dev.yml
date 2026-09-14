@@ -1,0 +1,79 @@
+name: gymos-dev
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gymos_db
+      GYMOS_SUPERADMIN_PASSWORD: gymos_superadmin_secret
+      GYMOS_PLATFORM_PASSWORD: gymos_platform_secret
+    ports: ["5433:5432"]
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d:ro
+      - gymos_dev_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gymos_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # ---------- plataforma ----------
+  super-admin-api:
+    build: ../plataforma/super-admin-api
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      RUN_MIGRATIONS: "false"
+      DATABASE_URL: postgresql+psycopg2://gymos_superadmin:gymos_superadmin_secret@db:5432/gymos_db
+      JWT_SECRET_KEY: dev_solo_local_cambiar_en_vps
+      FIRST_SUPERADMIN_EMAIL: admin@gymos.internal
+      FIRST_SUPERADMIN_PASSWORD: ChangeMeToStrongPassword2026!
+      BASE_DOMAIN: localhost
+      CORS_ORIGINS: '["http://localhost:3001"]'
+    ports: ["8002:8000"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  super-admin-vista:
+    build: ../plataforma/super-admin-vista
+    depends_on: { super-admin-api: { condition: service_healthy } }
+    ports: ["3001:80"]
+
+  # ---------- producto ----------
+  # OJO: los nombres "api" y "web" no son arbitrarios: el nginx.conf interno de
+  # gym-jefe-web proxea a http://api:8000 y el de super-admin-vista a
+  # http://super-admin-api:8000. Si se renombra un servicio hay que tocar ese conf.
+  api:
+    build: ../producto/gym-jefe-api
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "True"
+      DATABASE_URL: postgresql+asyncpg://gymos_platform:gymos_platform_secret@db:5432/gymos_db
+      JWT_SECRET_KEY: dev_solo_local_cambiar_en_vps_min_32_caracteres
+      TIMEZONE: America/Bogota
+      CORS_ORIGINS: '["http://localhost:3000"]'
+      BIOMETRIC_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  web:
+    build:
+      context: ../producto/gym-jefe-web
+      args: { VITE_API_URL: /api/v1 }
+    depends_on: { api: { condition: service_healthy } }
+    ports: ["3000:80"]
+
+volumes:
+  gymos_dev_pgdata:
