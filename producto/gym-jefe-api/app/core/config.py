@@ -45,6 +45,22 @@ class Settings(BaseSettings):
             )
         return key_str
 
+    # Correo saliente (app/core/email): 'log' escribe el correo en el log; 'resend' lo envía por Resend.
+    EMAIL_MODO: str = "log"
+    RESEND_API_KEY: str = ""
+    EMAIL_REMITENTE: str = "GymOS <onboarding@resend.dev>"
+    # Base de la URL pública del Sistema Web. Admite el marcador {subdominio}
+    # (p. ej. https://{subdominio}.gymos.co); sin marcador se agrega ?subdominio=.
+    APP_URL_BASE: str = "http://localhost:3000"
+
+    @field_validator("EMAIL_MODO")
+    @classmethod
+    def validate_email_modo(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v not in ("log", "resend"):
+            raise ValueError("EMAIL_MODO debe ser 'log' o 'resend'.")
+        return v
+
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173", "app://electron"]
 
