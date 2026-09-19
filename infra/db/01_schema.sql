@@ -302,6 +302,11 @@ CREATE TABLE platform.tenant (
   pantalla_config          jsonb       NOT NULL DEFAULT '{"avisos": [], "logo_url": null, "tiempo_saludo_segundos": 8, "mostrar_clases": true, "mostrar_avisos": true}'::jsonb,
   pantalla_device_token_hash text,
   landing_slug             text,
+  -- Identidad visual editable por el Jefe (primary_color, secondary_color, accent_color, logo_url, banner_url)
+  branding                 jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  -- Expiración de sesión por inactividad, en minutos (GW-RF-48: 15 min – 8 h, por defecto 1 h)
+  duracion_sesion_minutos  integer     NOT NULL DEFAULT 60
+                                       CONSTRAINT tenant_duracion_sesion_rango CHECK (duracion_sesion_minutos BETWEEN 15 AND 480),
   activo                   boolean     NOT NULL DEFAULT true,
   updated_at               timestamptz NOT NULL DEFAULT now()
 );
@@ -316,6 +321,10 @@ CREATE TABLE platform.staff (
   rol             text        NOT NULL CHECK (rol IN ('jefe','recepcionista','entrenador')),
   activo          boolean     NOT NULL DEFAULT true,
   ultimo_ingreso  timestamptz,
+  -- Contraseña temporal (GW-RF-00.1 CA3): obliga a cambiarla en el primer ingreso; vence a las 72 h.
+  -- Para el Jefe, el estado también se lee del Super-Admin vía platform.credencial_jefe().
+  debe_cambiar_password       boolean     NOT NULL DEFAULT false,
+  password_temporal_expira_en timestamptz,
   version         integer     NOT NULL DEFAULT 1,
   deleted_at      timestamptz,
   created_at      timestamptz NOT NULL DEFAULT now(),
@@ -342,15 +351,21 @@ CREATE TABLE platform.permisos_rol (
   UNIQUE (gimnasio_id, rol, submodulo)
 );
 
+-- Cada login abre una familia; cada refresh rota (rotado_en) y crea una fila nueva
+-- en la misma familia. Reusar un refresh ya rotado revoca la familia completa (GW-RF-00.1 CA1).
 CREATE TABLE platform.sesiones_staff (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   gimnasio_id   uuid        NOT NULL REFERENCES platform.tenant(id) ON DELETE CASCADE,
   staff_id      uuid        NOT NULL REFERENCES platform.staff(id) ON DELETE CASCADE,
   refresh_hash  text        NOT NULL UNIQUE,
+  familia_id    uuid        NOT NULL DEFAULT gen_random_uuid(),
   expira_en     timestamptz NOT NULL,
+  rotado_en     timestamptz,
+  revocado_en   timestamptz,
   created_at    timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX ix_ses_staff ON platform.sesiones_staff(staff_id);
+CREATE INDEX ix_ses_staff   ON platform.sesiones_staff(staff_id);
+CREATE INDEX ix_ses_familia ON platform.sesiones_staff(familia_id);
 
 -- FALTABA: recuperación de contraseña del staff (RF-00.2)
 CREATE TABLE platform.tokens_recuperacion_staff (
@@ -1062,6 +1077,106 @@ CREATE POLICY ejercicios_global_y_propios ON platform.ejercicios
     gimnasio_id = platform.current_gimnasio_id()
     OR (gimnasio_id IS NULL AND platform.current_gimnasio_id() IS NULL)
   );
+
+
+-- =====================================================================
+-- PUENTE CONTROLADO platform → superadmin (SECURITY DEFINER)
+-- gymos_platform NO tiene permisos sobre el esquema superadmin. Estas funciones
+-- exponen únicamente lo que el Sistema Web necesita: el estado calculado de la
+-- suscripción (sin montos ni deuda) y el estado de la credencial temporal del Jefe.
+-- =====================================================================
+
+-- Estado calculado de la suscripción (requisitos Super-Admin §2.2, GW-RF-51).
+-- d = hoy − fecha_corte:  al_dia d < −5 · por_vencer −5 ≤ d ≤ 0 · en_gracia 1 ≤ d ≤ 3
+--                          bloqueado d ≥ 4, o prueba con d ≥ 1, o suspendido/cancelado.
+CREATE OR REPLACE FUNCTION platform.estado_suscripcion(p_gimnasio_id uuid)
+RETURNS TABLE (
+  estado_guardado   text,
+  fecha_corte       date,
+  dias_restantes    integer,
+  estado_calculado  text,
+  motivo_bloqueo    text
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+  WITH g AS (
+    SELECT gi.estado, gi.fecha_corte,
+           (now() AT TIME ZONE COALESCE(t.zona_horaria, 'America/Bogota'))::date AS hoy
+    FROM superadmin.gimnasios gi
+    LEFT JOIN platform.tenant t ON t.id = gi.gimnasio_id
+    WHERE gi.gimnasio_id = p_gimnasio_id AND gi.deleted_at IS NULL
+  ),
+  d AS (
+    SELECT estado, fecha_corte, hoy,
+           CASE WHEN fecha_corte IS NULL THEN NULL ELSE (hoy - fecha_corte) END AS d
+    FROM g
+  )
+  SELECT
+    estado,
+    fecha_corte,
+    CASE WHEN d IS NULL THEN NULL ELSE -d END AS dias_restantes,
+    CASE
+      WHEN estado IN ('suspendido', 'cancelado') THEN 'bloqueado'
+      WHEN d IS NULL THEN 'al_dia'
+      WHEN estado = 'prueba' AND d >= 1 THEN 'bloqueado'
+      WHEN d >= 4 THEN 'bloqueado'
+      WHEN d >= 1 THEN 'en_gracia'
+      WHEN d >= -5 THEN 'por_vencer'
+      ELSE 'al_dia'
+    END AS estado_calculado,
+    CASE
+      WHEN estado = 'cancelado' THEN 'cancelado'
+      WHEN estado = 'suspendido' THEN 'suspendido'
+      WHEN d IS NULL THEN NULL
+      WHEN estado = 'prueba' AND d >= 1 THEN 'prueba_vencida'
+      WHEN d >= 4 THEN 'falta_pago'
+      ELSE NULL
+    END AS motivo_bloqueo
+  FROM d;
+$$;
+
+-- Credencial temporal del Jefe: la emite el Super-Admin (72 h) y su estado vive allá.
+CREATE OR REPLACE FUNCTION platform.credencial_jefe(p_gimnasio_id uuid)
+RETURNS TABLE (password_cambiada boolean, expira_en timestamptz)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+  SELECT cj.password_cambiada,
+         (SELECT e.expira_en
+            FROM superadmin.emisiones_credenciales e
+           WHERE e.gimnasio_id = gi.id
+           ORDER BY e.created_at DESC
+           LIMIT 1) AS expira_en
+  FROM superadmin.gimnasios gi
+  JOIN superadmin.cuentas_jefe cj ON cj.gimnasio_id = gi.id
+  WHERE gi.gimnasio_id = p_gimnasio_id AND gi.deleted_at IS NULL;
+$$;
+
+-- El Jefe cambió su contraseña temporal: se registra en el Super-Admin.
+CREATE OR REPLACE FUNCTION platform.marcar_password_jefe_cambiada(p_gimnasio_id uuid)
+RETURNS void
+LANGUAGE sql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+  UPDATE superadmin.cuentas_jefe cj
+     SET password_cambiada = true, updated_at = now()
+    FROM superadmin.gimnasios gi
+   WHERE cj.gimnasio_id = gi.id AND gi.gimnasio_id = p_gimnasio_id;
+$$;
+
+REVOKE ALL ON FUNCTION platform.estado_suscripcion(uuid)             FROM PUBLIC;
+REVOKE ALL ON FUNCTION platform.credencial_jefe(uuid)                FROM PUBLIC;
+REVOKE ALL ON FUNCTION platform.marcar_password_jefe_cambiada(uuid)  FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION platform.estado_suscripcion(uuid)            TO gymos_platform;
+GRANT EXECUTE ON FUNCTION platform.credencial_jefe(uuid)               TO gymos_platform;
+GRANT EXECUTE ON FUNCTION platform.marcar_password_jefe_cambiada(uuid) TO gymos_platform;
 
 
 -- =====================================================================
