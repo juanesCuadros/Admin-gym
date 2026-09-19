@@ -38,7 +38,7 @@ export type EstadoBranding =
   | 'ok'
   /** 404: el subdominio no existe o el gimnasio está inactivo. */
   | 'no_disponible'
-  /** Sin respuesta del servidor. */
-  | 'error_red'
+  /** No se pudo cargar (sin red o error del servidor); el gimnasio puede existir igual. */
+  | 'error_carga'
   /** No se pudo detectar subdominio. */
   | 'sin_subdominio';

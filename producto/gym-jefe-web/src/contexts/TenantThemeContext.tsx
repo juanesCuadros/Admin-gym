@@ -99,7 +99,9 @@ export const TenantThemeProvider: React.FC<{ children: ReactNode }> = ({ childre
       return 'ok';
     } catch (err) {
       const e = toApiError(err);
-      const estado: EstadoBranding = e.tipo === 'red' ? 'error_red' : 'no_disponible';
+      // Solo el 404 significa que el gimnasio no existe o está inactivo; cualquier otro fallo
+      // (red, 5xx) es un error de carga y no debe mandar a /bloqueado.
+      const estado: EstadoBranding = e.tipo === 'no_encontrado' ? 'no_disponible' : 'error_carga';
       setEstadoBranding(estado);
       return estado;
     }

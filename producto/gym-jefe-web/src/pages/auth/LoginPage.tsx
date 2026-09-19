@@ -155,7 +155,7 @@ export const LoginPage: React.FC = () => {
           </MensajeFijo>
         )}
 
-        {estadoBranding === 'error_red' && (
+        {estadoBranding === 'error_carga' && (
           <MensajeFijo
             tono="error"
             style={{ marginBottom: 16 }}
@@ -165,7 +165,7 @@ export const LoginPage: React.FC = () => {
               </Button>
             }
           >
-            No se pudo conectar con el servidor.
+            No se pudo cargar la información del gimnasio. Puedes intentar ingresar de todos modos.
           </MensajeFijo>
         )}
 

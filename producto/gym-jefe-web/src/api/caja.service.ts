@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, toApiError } from './client';
 import {
   AbrirTurnoRequest,
   CerrarTurnoRequest,
@@ -19,9 +19,16 @@ export const cajaService = {
     return response.data;
   },
 
+  /** `null` cuando no hay turno abierto: el backend lo responde como 404 `NO_HAY_TURNO_ABIERTO`. */
   async getTurnoActual(): Promise<TurnoResumenDto | null> {
-    const response = await apiClient.get<TurnoResumenDto | null>('/caja/turnos/actual');
-    return response.data;
+    try {
+      const response = await apiClient.get<TurnoResumenDto>('/caja/turnos/actual');
+      return response.data;
+    } catch (err) {
+      const e = toApiError(err);
+      if (e.status === 404 && e.codigo === 'NO_HAY_TURNO_ABIERTO') return null;
+      throw e;
+    }
   },
 
   async cerrarTurno(data: CerrarTurnoRequest): Promise<TurnoResumenDto> {

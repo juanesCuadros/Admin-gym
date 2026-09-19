@@ -128,14 +128,14 @@ export const RecuperarPage: React.FC = () => {
                 onChange={(e) => setCorreo(e.target.value)}
                 onBlur={validar}
                 error={errorCorreo}
-                disabled={estadoBranding !== 'ok'}
+                disabled={estadoBranding === 'cargando' || estadoBranding === 'sin_subdominio'}
                 autoFocus
               />
               <Button
                 type="submit"
                 variant="primary"
                 isLoading={enviando}
-                disabled={estadoBranding !== 'ok'}
+                disabled={estadoBranding === 'cargando' || estadoBranding === 'sin_subdominio'}
                 style={{ width: '100%', marginTop: 8 }}
                 rightIcon={<Send size={16} />}
               >
