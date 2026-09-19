@@ -9,6 +9,9 @@ import { EVENTOS } from './api/client';
 
 // Públicas
 import { LoginPage } from './pages/auth/LoginPage';
+import { RecuperarPage } from './pages/auth/RecuperarPage';
+import { NuevaClavePage } from './pages/auth/NuevaClavePage';
+import { CambiarClavePage } from './pages/auth/CambiarClavePage';
 import { BloqueadoPage } from './pages/bloqueado/BloqueadoPage';
 import { PantallaTvPage } from './pages/pantallaTv/PantallaTvPage';
 
@@ -66,9 +69,16 @@ export const App: React.FC = () => {
             <Routes>
               {/* Públicas, fuera del layout autenticado */}
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/recuperar" element={<RecuperarPage />} />
+              <Route path="/recuperar/:token" element={<NuevaClavePage />} />
               <Route path="/bloqueado" element={<BloqueadoPage />} />
               <Route path="/pantalla-tv" element={<PantallaTvPage />} />
               <Route path="/tv/:subdominio" element={<PantallaTvPage />} />
+
+              {/* Requiere sesión pero bloquea la navegación (§C4) */}
+              <Route element={<ProtectedRoute />}>
+                <Route path="/cambiar-clave" element={<CambiarClavePage />} />
+              </Route>
 
               {/* Aplicación autenticada */}
               <Route element={<ProtectedRoute />}>

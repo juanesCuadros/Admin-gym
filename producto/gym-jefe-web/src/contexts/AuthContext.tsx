@@ -1,7 +1,14 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import { UsuarioAuthDto, LoginRequest } from '../types/auth.types';
 import { authService } from '../api/auth.service';
 import { ApiError, EVENTOS, STORAGE, expirarSesion, limpiarSesionLocal, toApiError } from '../api/client';
+
+/**
+ * Duración de sesión por inactividad (§C6). Debería venir del parámetro del gimnasio
+ * (GW-RF-48, 15 min – 8 h); el backend aún no lo expone, así que aplica el valor por defecto: 1 h.
+ */
+const INACTIVIDAD_MS = 60 * 60 * 1000;
+const EVENTOS_ACTIVIDAD = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'] as const;
 
 /** Motivo por el que se terminó la última sesión; el login lo muestra como mensaje fijo. */
 export type MotivoFinSesion = 'expirada' | 'inactividad' | 'cerrada' | null;
@@ -42,6 +49,7 @@ function leerUsuarioGuardado(): UsuarioAuthDto | null {
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UsuarioAuthDto | null>(() => leerUsuarioGuardado());
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const timerInactividad = useRef<number | null>(null);
 
   // Fin de sesión disparado por el interceptor (401 sin refresh, refresh fallido, usuario inactivo)
   // o gimnasio suspendido (la sesión local ya fue limpiada; aquí solo se suelta el estado).
@@ -58,6 +66,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       window.removeEventListener(EVENTOS.gimnasioSuspendido, onSuspendido);
     };
   }, []);
+
+  // Expiración por inactividad (§C6).
+  useEffect(() => {
+    if (!user) return;
+
+    const vencer = () => {
+      sessionStorage.setItem(STORAGE_MOTIVO, 'inactividad');
+      expirarSesion();
+    };
+    const reiniciar = () => {
+      if (timerInactividad.current) window.clearTimeout(timerInactividad.current);
+      timerInactividad.current = window.setTimeout(vencer, INACTIVIDAD_MS);
+    };
+
+    reiniciar();
+    EVENTOS_ACTIVIDAD.forEach((ev) => window.addEventListener(ev, reiniciar, { passive: true }));
+    return () => {
+      if (timerInactividad.current) window.clearTimeout(timerInactividad.current);
+      EVENTOS_ACTIVIDAD.forEach((ev) => window.removeEventListener(ev, reiniciar));
+    };
+  }, [user]);
 
   const login = async (credentials: LoginRequest): Promise<ResultadoLogin> => {
     setIsLoading(true);
