@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Annotated, Callable
+from typing import Annotated, Callable, Optional
 from uuid import UUID
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -19,10 +19,39 @@ class AuthenticatedStaff:
     correo: str
     nombre: str
     subdominio: str
+    # Familia de refresh tokens del login con el que se emitió el access token (claim `fam`)
+    familia_id: Optional[UUID] = None
 
     @property
     def staff_id(self) -> UUID:
         return self.id
+
+
+def gimnasio_suspendido_exception(motivo: Optional[str] = None) -> HTTPException:
+    """403 único para todo bloqueo del gimnasio; el motivo es genérico, nunca datos internos."""
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "codigo": "GIMNASIO_SUSPENDIDO",
+            "mensaje": "El servicio del gimnasio no está disponible",
+            "detalles": {"motivo": motivo or "suspendido"},
+        },
+    )
+
+
+async def verificar_suscripcion_operativa(session: AsyncSession, gym_id: UUID) -> None:
+    """
+    GW-RF-51 CA3 / SA-RF-32: si el estado calculado de la suscripción es `bloqueado`
+    (falta de pago, suspendido, cancelado o prueba vencida), la API responde 403 a toda operación.
+    Se calcula en cada consulta vía platform.estado_suscripcion(); sin procesos programados.
+    """
+    res = await session.execute(
+        text("SELECT estado_calculado, motivo_bloqueo FROM platform.estado_suscripcion(:gym_id)"),
+        {"gym_id": gym_id},
+    )
+    row = res.mappings().first()
+    if row and row["estado_calculado"] == "bloqueado":
+        raise gimnasio_suspendido_exception(row["motivo_bloqueo"])
 
 
 async def get_current_staff(
@@ -44,6 +73,7 @@ async def get_current_staff(
             )
         staff_id = UUID(payload["sub"])
         gym_id = UUID(payload["gym_id"])
+        familia_id = UUID(payload["fam"]) if payload.get("fam") else None
     except HTTPException:
         raise
     except Exception:
@@ -81,10 +111,10 @@ async def get_current_staff(
             detail={"codigo": "USUARIO_INACTIVO", "mensaje": "Su cuenta ha sido desactivada por el administrador"}
         )
     if not row["tenant_activo"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"codigo": "GIMNASIO_SUSPENDIDO", "mensaje": "El servicio del gimnasio se encuentra suspendido"}
-        )
+        raise gimnasio_suspendido_exception("suspendido")
+
+    # Bloqueo automático por suscripción vencida (calculado, sin procesos programados)
+    await verificar_suscripcion_operativa(session, row["gimnasio_id"])
 
     return AuthenticatedStaff(
         id=row["id"],
@@ -92,7 +122,8 @@ async def get_current_staff(
         rol=row["rol"],
         correo=row["correo"],
         nombre=row["nombre"],
-        subdominio=row["subdominio"]
+        subdominio=row["subdominio"],
+        familia_id=familia_id,
     )
 
 

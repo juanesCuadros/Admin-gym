@@ -11,6 +11,7 @@ from app.core.dependencies import (
 from app.modules.auth.schemas import (
     ActualizarMatrizPermisosRequest,
     ApiResponse,
+    CambiarPasswordRequest,
     ConfirmarRecuperacionRequest,
     LoginRequest,
     LoginResponseDto,
@@ -19,6 +20,7 @@ from app.modules.auth.schemas import (
     RefreshTokenRequest,
     SolicitarRecuperacionRequest,
     UsuarioAuthDto,
+    ValidarTokenRecuperacionResponse,
 )
 from app.modules.auth.service import AuthService
 
@@ -56,7 +58,8 @@ async def refresh_token(
     session: Annotated[AsyncSession, Depends(get_db_session)]
 ):
     """
-    Renueva el access token y recalcula en tiempo real los permisos canónicos.
+    Renueva el access token y ROTA el refresh: el usado deja de servir y se devuelve uno nuevo.
+    Reusar un refresh ya rotado revoca la familia completa (todas las sesiones de ese login).
     """
     return await AuthService.refresh(session, data)
 
@@ -72,9 +75,9 @@ async def logout(
     current_staff: Annotated[AuthenticatedStaff, Depends(get_current_staff)]
 ):
     """
-    Invalida el refresh token de forma segura dentro de su gimnasio.
+    Revoca la familia completa del refresh token (todas sus rotaciones) dentro de su gimnasio.
     """
-    await AuthService.logout(session, current_staff.gimnasio_id, data.refresh_token)
+    await AuthService.logout(session, current_staff.gimnasio_id, current_staff.id, data.refresh_token)
     return ApiResponse(message="Sesión cerrada exitosamente")
 
 
@@ -96,6 +99,22 @@ async def solicitar_recuperacion(
     )
 
 
+@router.get(
+    "/recuperar-password/validar/{token}",
+    response_model=ValidarTokenRecuperacionResponse,
+    summary="Validar un enlace de recuperación sin consumirlo (RF-00.2)"
+)
+async def validar_recuperacion(
+    token: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    Responde si el token sirve (no usado, no vencido, usuario activo) sin gastarlo.
+    El frontend lo usa antes de mostrar el formulario de nueva contraseña.
+    """
+    return ValidarTokenRecuperacionResponse(valido=await AuthService.validar_token_recuperacion(session, token))
+
+
 @router.post(
     "/recuperar-password/confirmar",
     response_model=ApiResponse,
@@ -111,6 +130,32 @@ async def confirmar_recuperacion(
     """
     await AuthService.confirmar_recuperacion_password(session, data)
     return ApiResponse(message="Contraseña restablecida exitosamente. Puede iniciar sesión con sus nuevas credenciales.")
+
+
+@router.post(
+    "/cambiar-password",
+    response_model=ApiResponse,
+    summary="Cambiar la contraseña del usuario en sesión (RF-00.1 CA3)"
+)
+async def cambiar_password(
+    data: CambiarPasswordRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    current_staff: Annotated[AuthenticatedStaff, Depends(get_current_staff)]
+):
+    """
+    Exige la contraseña actual (o la temporal), rechaza si la nueva es igual, limpia el estado
+    de contraseña temporal y cierra las demás sesiones del usuario (la actual sigue viva).
+    """
+    await AuthService.cambiar_password(
+        session=session,
+        gym_id=current_staff.gimnasio_id,
+        staff_id=current_staff.id,
+        rol=current_staff.rol,
+        nombre=current_staff.nombre,
+        familia_actual=current_staff.familia_id,
+        data=data,
+    )
+    return ApiResponse(message="Contraseña actualizada")
 
 
 @router.get(

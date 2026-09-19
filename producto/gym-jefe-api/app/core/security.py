@@ -34,9 +34,14 @@ def create_access_token(
     subject: str,
     gym_id: str,
     role: str,
-    expires_delta: Optional[timedelta] = None
+    expires_delta: Optional[timedelta] = None,
+    familia_id: Optional[str] = None,
 ) -> str:
-    """Genera un JWT de acceso con claims estandarizados."""
+    """
+    Genera un JWT de acceso con claims estandarizados.
+    `familia_id` identifica la familia de refresh tokens del login (claim `fam`): permite, por ejemplo,
+    cerrar "las demás sesiones" sin tocar la actual.
+    """
     now = datetime.now(timezone.utc)
     expire = now + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     payload: Dict[str, Any] = {
@@ -47,6 +52,8 @@ def create_access_token(
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
     }
+    if familia_id:
+        payload["fam"] = str(familia_id)
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 

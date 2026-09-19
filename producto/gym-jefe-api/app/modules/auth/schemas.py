@@ -41,6 +41,11 @@ class ConfirmarRecuperacionRequest(BaseModel):
     nueva_password: str = Field(..., min_length=8, description="Nueva contraseña (mínimo 8 caracteres)")
 
 
+class CambiarPasswordRequest(BaseModel):
+    password_actual: str = Field(..., min_length=1, description="Contraseña vigente (o la temporal)")
+    password_nueva: str = Field(..., min_length=8, description="Nueva contraseña (mínimo 8 caracteres)")
+
+
 class PermisoItemUpdate(BaseModel):
     rol: str = Field(..., pattern="^(recepcionista|entrenador)$", description="Rol subordinado a configurar")
     submodulo: str = Field(..., description="Identificador del submódulo")
@@ -63,6 +68,9 @@ class UsuarioAuthDto(BaseModel):
     gimnasio_id: UUID
     subdominio: str
     permisos: List[str]  # ["*"] para Jefe, o ["submodulo:accion"] canónico (leer, crear, editar, eliminar)
+    # Contraseña temporal (GW-RF-00.1 CA3): el frontend manda a /cambiar-clave y bloquea la navegación
+    debe_cambiar_password: bool = False
+    password_temporal_expira_en: Optional[datetime] = None
 
 
 class LoginResponseDto(BaseModel):
@@ -74,8 +82,14 @@ class LoginResponseDto(BaseModel):
 
 class RefreshResponseDto(BaseModel):
     access_token: str
+    # El refresh rota en cada uso (GW-RF-00.1 CA1): el anterior deja de servir
+    refresh_token: str
     token_type: str = "bearer"
     usuario: UsuarioAuthDto
+
+
+class ValidarTokenRecuperacionResponse(BaseModel):
+    valido: bool
 
 
 class PermisoMatrizItemDto(BaseModel):
