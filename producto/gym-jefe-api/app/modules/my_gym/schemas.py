@@ -39,12 +39,19 @@ class ActualizarParametrosRequest(BaseModel):
         le=60,
         description="Días de anticipación para alertar membresía próxima a expirar [1..60]"
     )
+    duracion_sesion_minutos: Optional[int] = Field(
+        None,
+        ge=15,
+        le=480,
+        description="Expiración de sesión por inactividad en minutos [15..480]. Si se omite, no cambia"
+    )
 
 
 class ParametrosTenantResponse(BaseModel):
     dias_gracia_mora: int
     tope_dias_congelamiento: int
     dias_umbral_por_vencer: int
+    duracion_sesion_minutos: int
     version: int
 
 
@@ -84,6 +91,8 @@ class InfoGymResponse(BaseModel):
     dias_gracia_mora: int
     tope_dias_congelamiento: int
     dias_umbral_por_vencer: int
+    # GW-RF-48: expiración de sesión por inactividad (15 min – 8 h, por defecto 60)
+    duracion_sesion_minutos: int
     branding: Dict[str, Any] = Field(default_factory=dict)
     version: int
     activo: bool

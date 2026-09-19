@@ -132,3 +132,34 @@ async def test_public_branding_distingue_inexistente_de_bloqueado(cliente, fabri
     r = await cliente.get(f"/api/v1/my-gym/public-branding/{ok.subdominio}")
     assert r.status_code == 200
     assert r.json()["nombre"] == ok.nombre and r.json()["primary_color"] == "#123456"
+
+
+async def test_duracion_sesion_en_info_y_parametros(cliente, fabrica):
+    """Punto 6: /my-gym/info expone duracion_sesion_minutos (15..480, por defecto 60)."""
+    gym = await fabrica.crear_gimnasio(fecha_corte=_hoy() + timedelta(days=30))
+    jefe = await fabrica.crear_staff(gym, rol="jefe")
+    access = (await login(cliente, gym, jefe)).json()["access_token"]
+
+    info = (await cliente.get("/api/v1/my-gym/info", headers=_auth(access))).json()
+    assert info["duracion_sesion_minutos"] == 60
+
+    r = await cliente.patch(
+        "/api/v1/my-gym/parametros",
+        json={"version": info["version"], "dias_gracia_mora": 3, "tope_dias_congelamiento": 30,
+              "dias_umbral_por_vencer": 5, "duracion_sesion_minutos": 120},
+        headers=_auth(access),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["duracion_sesion_minutos"] == 120
+
+    # Fuera de rango → 422 (GW-RF-48 CA1)
+    r = await cliente.patch(
+        "/api/v1/my-gym/parametros",
+        json={"version": info["version"] + 1, "dias_gracia_mora": 3, "tope_dias_congelamiento": 30,
+              "dias_umbral_por_vencer": 5, "duracion_sesion_minutos": 10},
+        headers=_auth(access),
+    )
+    assert r.status_code == 422
+
+    info = (await cliente.get("/api/v1/my-gym/info", headers=_auth(access))).json()
+    assert info["duracion_sesion_minutos"] == 120

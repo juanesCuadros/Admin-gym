@@ -139,7 +139,7 @@ class MyGymService:
             SELECT id, nombre, subdominio, zona_horaria, direccion, ciudad,
                    telefono, correo, redes, horarios, metodos_pago,
                    dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer,
-                   branding, version, activo, updated_at
+                   duracion_sesion_minutos, branding, version, activo, updated_at
             FROM platform.tenant
             WHERE id = :gym_id
         """)
@@ -167,6 +167,7 @@ class MyGymService:
             dias_gracia_mora=row["dias_gracia_mora"],
             tope_dias_congelamiento=row["tope_dias_congelamiento"],
             dias_umbral_por_vencer=row["dias_umbral_por_vencer"],
+            duracion_sesion_minutos=row["duracion_sesion_minutos"],
             branding=cls._parse_json_field(row["branding"], {}),
             version=row["version"],
             activo=row["activo"],
@@ -203,7 +204,7 @@ class MyGymService:
             RETURNING id, nombre, subdominio, zona_horaria, direccion, ciudad,
                       telefono, correo, redes, horarios, metodos_pago,
                       dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer,
-                      branding, version, activo, updated_at
+                      duracion_sesion_minutos, branding, version, activo, updated_at
         """)
 
         res = await session.execute(update_stmt, {
@@ -277,6 +278,7 @@ class MyGymService:
             dias_gracia_mora=row["dias_gracia_mora"],
             tope_dias_congelamiento=row["tope_dias_congelamiento"],
             dias_umbral_por_vencer=row["dias_umbral_por_vencer"],
+            duracion_sesion_minutos=row["duracion_sesion_minutos"],
             branding=cls._parse_json_field(row["branding"], {}),
             version=row["version"],
             activo=row["activo"],
@@ -301,10 +303,11 @@ class MyGymService:
             SET dias_gracia_mora = :dias_gracia,
                 tope_dias_congelamiento = :tope_congelamiento,
                 dias_umbral_por_vencer = :dias_umbral,
+                duracion_sesion_minutos = COALESCE(CAST(:duracion_sesion AS integer), duracion_sesion_minutos),
                 version = version + 1,
                 updated_at = now()
             WHERE id = :gym_id AND version = :version_esperada
-            RETURNING dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer, version
+            RETURNING dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer, duracion_sesion_minutos, version
         """)
 
         res = await session.execute(update_stmt, {
@@ -312,7 +315,8 @@ class MyGymService:
             "version_esperada": data.version,
             "dias_gracia": data.dias_gracia_mora,
             "tope_congelamiento": data.tope_dias_congelamiento,
-            "dias_umbral": data.dias_umbral_por_vencer
+            "dias_umbral": data.dias_umbral_por_vencer,
+            "duracion_sesion": data.duracion_sesion_minutos,
         })
         row = res.mappings().first()
 
@@ -360,6 +364,7 @@ class MyGymService:
             dias_gracia_mora=row["dias_gracia_mora"],
             tope_dias_congelamiento=row["tope_dias_congelamiento"],
             dias_umbral_por_vencer=row["dias_umbral_por_vencer"],
+            duracion_sesion_minutos=row["duracion_sesion_minutos"],
             version=row["version"]
         )
 
@@ -391,7 +396,7 @@ class MyGymService:
             RETURNING id, nombre, subdominio, zona_horaria, direccion, ciudad,
                       telefono, correo, redes, horarios, metodos_pago,
                       dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer,
-                      branding, version, activo, updated_at
+                      duracion_sesion_minutos, branding, version, activo, updated_at
         """)
 
         res = await session.execute(update_stmt, {
@@ -451,6 +456,7 @@ class MyGymService:
             dias_gracia_mora=row["dias_gracia_mora"],
             tope_dias_congelamiento=row["tope_dias_congelamiento"],
             dias_umbral_por_vencer=row["dias_umbral_por_vencer"],
+            duracion_sesion_minutos=row["duracion_sesion_minutos"],
             branding=cls._parse_json_field(row["branding"], {}),
             version=row["version"],
             activo=row["activo"],
@@ -499,7 +505,7 @@ class MyGymService:
             RETURNING id, nombre, subdominio, zona_horaria, direccion, ciudad,
                       telefono, correo, redes, horarios, metodos_pago,
                       dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer,
-                      branding, version, activo, updated_at
+                      duracion_sesion_minutos, branding, version, activo, updated_at
         """)
 
         res = await session.execute(update_stmt, {
@@ -549,6 +555,7 @@ class MyGymService:
             dias_gracia_mora=row["dias_gracia_mora"],
             tope_dias_congelamiento=row["tope_dias_congelamiento"],
             dias_umbral_por_vencer=row["dias_umbral_por_vencer"],
+            duracion_sesion_minutos=row["duracion_sesion_minutos"],
             branding=cls._parse_json_field(row["branding"], {}),
             version=row["version"],
             activo=row["activo"],

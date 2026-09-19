@@ -154,6 +154,7 @@ async def actualizar_parametros_tenant(
     - `dias_gracia_mora`: Rango [0..30] días
     - `tope_dias_congelamiento`: Rango [0..365] días
     - `dias_umbral_por_vencer`: Rango [1..60] días
+    - `duracion_sesion_minutos` (opcional): Rango [15..480] minutos, expiración por inactividad
 
     El cambio tiene efecto inmediato en Control de Ingreso, Membresías y Reportes.
     Requiere `version` para concurrencia optimista.
