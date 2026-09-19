@@ -126,6 +126,24 @@ class PublicBrandingResponse(BaseModel):
 
 
 # ==============================================================================
+# GW-RF-51: ESTADO DE LA SUSCRIPCIÓN DEL GIMNASIO (calculado en cada consulta)
+# ==============================================================================
+
+class EstadoSuscripcionResponse(BaseModel):
+    """
+    Estado calculado según §2.2 de los requisitos del Super-Admin. No expone el valor de la
+    mensualidad ni la deuda: eso es entre MVC y el dueño.
+    """
+    estado_calculado: str = Field(..., description="al_dia | por_vencer | en_gracia | bloqueado")
+    dias_restantes: Optional[int] = Field(
+        None, description="Días hasta el corte; negativo si ya pasó. null si el gimnasio no tiene fecha de corte"
+    )
+    motivo_bloqueo: Optional[str] = Field(
+        None, description="falta_pago | suspendido | cancelado | prueba_vencida | null"
+    )
+
+
+# ==============================================================================
 # RF-46: MI LANDING Y QR (SOLO LECTURA)
 # ==============================================================================
 

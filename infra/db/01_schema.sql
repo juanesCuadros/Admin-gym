@@ -297,6 +297,12 @@ CREATE TABLE platform.tenant (
   dias_gracia_mora         integer     NOT NULL DEFAULT 3  CHECK (dias_gracia_mora >= 0),
   dias_umbral_por_vencer   integer     NOT NULL DEFAULT 5  CHECK (dias_umbral_por_vencer >= 0),
   tope_dias_congelamiento  integer     NOT NULL DEFAULT 30 CHECK (tope_dias_congelamiento >= 0),
+  -- Información general y contacto editables por el Jefe (GW-RF-45)
+  direccion                text,
+  ciudad                   text,
+  telefono                 text,
+  correo                   citext,
+  redes                    jsonb       NOT NULL DEFAULT '{}'::jsonb,
   metodos_pago             jsonb       NOT NULL DEFAULT '[]'::jsonb,
   horarios                 jsonb,
   pantalla_config          jsonb       NOT NULL DEFAULT '{"avisos": [], "logo_url": null, "tiempo_saludo_segundos": 8, "mostrar_clases": true, "mostrar_avisos": true}'::jsonb,
@@ -308,6 +314,8 @@ CREATE TABLE platform.tenant (
   duracion_sesion_minutos  integer     NOT NULL DEFAULT 60
                                        CONSTRAINT tenant_duracion_sesion_rango CHECK (duracion_sesion_minutos BETWEEN 15 AND 480),
   activo                   boolean     NOT NULL DEFAULT true,
+  -- Concurrencia optimista (OCC) en las mutaciones de configuración
+  version                  integer     NOT NULL DEFAULT 1,
   updated_at               timestamptz NOT NULL DEFAULT now()
 );
 

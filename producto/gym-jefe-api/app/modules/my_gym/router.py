@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
-from app.core.dependencies import AuthenticatedStaff, require_permission, require_role
+from app.core.dependencies import AuthenticatedStaff, get_current_staff, require_permission, require_role
 from app.modules.my_gym.schemas import (
     ActualizarBrandingRequest,
     ActualizarInfoGymRequest,
@@ -28,6 +28,7 @@ from app.modules.my_gym.schemas import (
     LandingInfoResponse,
     ParametrosTenantResponse,
     PublicBrandingResponse,
+    EstadoSuscripcionResponse,
 )
 from app.modules.my_gym.service import MyGymService
 
@@ -58,6 +59,33 @@ async def obtener_public_branding(
         session=session,
         subdominio=subdominio
     )
+
+
+# ------------------------------------------------------------------------------
+# GW-RF-51: ESTADO DE LA SUSCRIPCIÓN
+# ------------------------------------------------------------------------------
+
+@router.get(
+    "/suscripcion",
+    response_model=EstadoSuscripcionResponse,
+    summary="Estado calculado de la suscripción del gimnasio (GW-RF-51)"
+)
+async def obtener_estado_suscripcion(
+    current_staff: Annotated[AuthenticatedStaff, Depends(get_current_staff)],
+    session: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    Estado calculado en cada consulta (sin procesos programados) a partir de la fecha de corte
+    del Super-Admin: `al_dia`, `por_vencer` (−5 ≤ d ≤ 0), `en_gracia` (1 ≤ d ≤ 3) o `bloqueado`.
+    Lo ven todos los roles: el frontend muestra la franja con el contador.
+    No expone el valor de la mensualidad ni la deuda.
+
+    Decisión: endpoint propio y no dentro de `/auth/me`, porque el estado cambia con el tiempo
+    (y con los pagos que registra MVC) y la franja necesita refrescarlo sin renovar la sesión.
+    Si el estado es `bloqueado`, esta misma petición ya responde 403 GIMNASIO_SUSPENDIDO
+    desde `get_current_staff`.
+    """
+    return await MyGymService.obtener_estado_suscripcion(session, current_staff.gimnasio_id)
 
 
 # ------------------------------------------------------------------------------

@@ -22,7 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditService
-from app.core.dependencies import AuthenticatedStaff
+from app.core.dependencies import AuthenticatedStaff, gimnasio_suspendido_exception
 from app.core.timezone import get_local_day_range_utc
 from app.modules.my_gym.schemas import (
     ActualizarBrandingRequest,
@@ -32,6 +32,7 @@ from app.modules.my_gym.schemas import (
     AuditoriaFiltrosDisponiblesResponse,
     AuditoriaGymItemResponse,
     AuditoriaPaginadaResponse,
+    EstadoSuscripcionResponse,
     InfoGymResponse,
     LandingInfoResponse,
     ParametrosTenantResponse,
@@ -70,18 +71,25 @@ class MyGymService:
         Utilizado por la pantalla de login para renderizar logo, nombre y colores corporativos.
         """
         stmt = text("""
-            SELECT nombre, subdominio, branding
+            SELECT id, nombre, subdominio, branding, activo
             FROM platform.tenant
-            WHERE subdominio = :subdominio AND activo = true
+            WHERE subdominio = :subdominio
         """)
-        res = await session.execute(stmt, {"subdominio": subdominio})
+        res = await session.execute(stmt, {"subdominio": subdominio.lower()})
         row = res.mappings().first()
 
+        # Inexistente (404) y bloqueado (403 con motivo genérico) se distinguen para que el login
+        # muestre el mensaje correcto. Nunca se devuelven datos internos del gimnasio.
         if not row:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail={"codigo": "TENANT_NO_ENCONTRADO", "mensaje": f"Gimnasio con subdominio '{subdominio}' no encontrado o inactivo."}
+                detail={"codigo": "GIMNASIO_NO_ENCONTRADO", "mensaje": f"No existe un gimnasio con el subdominio '{subdominio}'."}
             )
+        if not row["activo"]:
+            raise gimnasio_suspendido_exception("suspendido")
+        suscripcion = await cls.obtener_estado_suscripcion(session, row["id"])
+        if suscripcion.estado_calculado == "bloqueado":
+            raise gimnasio_suspendido_exception(suscripcion.motivo_bloqueo)
 
         branding = cls._parse_json_field(row["branding"], {})
         if not isinstance(branding, dict):
@@ -94,6 +102,30 @@ class MyGymService:
             primary_color=branding.get("primary_color") or "#4f46e5",
             secondary_color=branding.get("secondary_color") or "#06b6d4",
             accent_color=branding.get("accent_color") or "#f59e0b",
+        )
+
+    # --------------------------------------------------------------------------
+    # GW-RF-51: ESTADO DE LA SUSCRIPCIÓN (calculado en la consulta, sin procesos programados)
+    # --------------------------------------------------------------------------
+
+    @staticmethod
+    async def obtener_estado_suscripcion(session: AsyncSession, gimnasio_id: UUID) -> EstadoSuscripcionResponse:
+        """
+        Lee platform.estado_suscripcion(): puente SECURITY DEFINER hacia superadmin.gimnasios
+        que solo expone estado, días y motivo. Si el gimnasio no tiene registro en el Super-Admin
+        (p. ej. datos de prueba), se considera al día.
+        """
+        res = await session.execute(
+            text("SELECT estado_calculado, dias_restantes, motivo_bloqueo FROM platform.estado_suscripcion(:gym_id)"),
+            {"gym_id": gimnasio_id},
+        )
+        row = res.mappings().first()
+        if not row:
+            return EstadoSuscripcionResponse(estado_calculado="al_dia", dias_restantes=None, motivo_bloqueo=None)
+        return EstadoSuscripcionResponse(
+            estado_calculado=row["estado_calculado"],
+            dias_restantes=row["dias_restantes"],
+            motivo_bloqueo=row["motivo_bloqueo"],
         )
 
     @classmethod
