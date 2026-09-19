@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Dumbbell,
   Plus,
@@ -27,10 +28,16 @@ import {
   CrearPlantillaRequest,
 } from '../../types/entrenamiento.types';
 
-export const EntrenamientoPage: React.FC = () => {
-  const { showToast } = useToast();
+type TabEntrenamiento = 'ejercicios' | 'plantillas';
 
-  const [activeTab, setActiveTab] = useState<'ejercicios' | 'plantillas'>('ejercicios');
+export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({ tabInicial = 'ejercicios' }) => {
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+
+  // La pestaña activa la decide la ruta (§B2): /entrenamiento · /entrenamiento/plantillas
+  const activeTab = tabInicial;
+  const setActiveTab = (tab: TabEntrenamiento) =>
+    navigate(tab === 'plantillas' ? '/entrenamiento/plantillas' : '/entrenamiento');
 
   // Ejercicios state
   const [ejercicios, setEjercicios] = useState<EjercicioResponse[]>([]);

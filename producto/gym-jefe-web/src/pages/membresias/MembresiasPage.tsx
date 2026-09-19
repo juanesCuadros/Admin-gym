@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Award,
   Plus,
@@ -26,10 +27,15 @@ import {
   CrearPlanRequest,
 } from '../../types/membresias.types';
 
-export const MembresiasPage: React.FC = () => {
-  const { showToast } = useToast();
+type TabMembresias = 'membresias' | 'planes';
 
-  const [activeTab, setActiveTab] = useState<'membresias' | 'planes'>('membresias');
+export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabInicial = 'membresias' }) => {
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+
+  // La pestaña activa la decide la ruta (§B2): /membresias · /membresias/planes
+  const activeTab = tabInicial;
+  const setActiveTab = (tab: TabMembresias) => navigate(tab === 'planes' ? '/membresias/planes' : '/membresias');
 
   // Membresias state
   const [membresias, setMembresias] = useState<MembresiaListItemResponse[]>([]);

@@ -1,169 +1,139 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { UsuarioAuthDto, LoginRequest } from '../types/auth.types';
 import { authService } from '../api/auth.service';
-import { useToast } from './ToastContext';
-import { parseApiError } from '../api/client';
+import { ApiError, EVENTOS, STORAGE, expirarSesion, limpiarSesionLocal, toApiError } from '../api/client';
+
+/** Motivo por el que se terminó la última sesión; el login lo muestra como mensaje fijo. */
+export type MotivoFinSesion = 'expirada' | 'inactividad' | 'cerrada' | null;
+const STORAGE_MOTIVO = 'gymos_motivo_fin_sesion';
+
+export type ResultadoLogin = { ok: true; usuario: UsuarioAuthDto } | { ok: false; error: ApiError };
 
 interface AuthContextType {
   user: UsuarioAuthDto | null;
-  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (credentials: LoginRequest) => Promise<boolean>;
-  loginDemo: (role: 'jefe' | 'recepcionista' | 'entrenador', subdominio?: string) => void;
+  login: (credentials: LoginRequest) => Promise<ResultadoLogin>;
   logout: () => Promise<void>;
+  /** Vuelve a pedir `/auth/me` para refrescar permisos (p. ej. tras un 403). */
+  refrescarUsuario: () => Promise<void>;
   hasPermission: (submodulo: string, accion?: 'leer' | 'crear' | 'editar' | 'eliminar') => boolean;
   isJefe: boolean;
   isRecepcionista: boolean;
   isEntrenador: boolean;
+  /** Lee y limpia el motivo del último fin de sesión. */
+  consumirMotivoFinSesion: () => MotivoFinSesion;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function leerUsuarioGuardado(): UsuarioAuthDto | null {
+  const token = localStorage.getItem(STORAGE.access);
+  const raw = localStorage.getItem(STORAGE.user);
+  if (!token || !raw) return null;
+  try {
+    return JSON.parse(raw) as UsuarioAuthDto;
+  } catch {
+    limpiarSesionLocal();
+    return null;
+  }
+}
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UsuarioAuthDto | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const { showToast } = useToast();
+  const [user, setUser] = useState<UsuarioAuthDto | null>(() => leerUsuarioGuardado());
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  // Load session from localStorage on mount
+  // Fin de sesión disparado por el interceptor (401 sin refresh, refresh fallido, usuario inactivo)
+  // o gimnasio suspendido (la sesión local ya fue limpiada; aquí solo se suelta el estado).
   useEffect(() => {
-    const savedToken = localStorage.getItem('gymos_access_token');
-    const savedUser = localStorage.getItem('gymos_user');
-
-    if (savedToken && savedUser) {
-      try {
-        setToken(savedToken);
-        setUser(JSON.parse(savedUser));
-      } catch (e) {
-        console.error('Failed to parse saved user', e);
-        localStorage.removeItem('gymos_user');
-        localStorage.removeItem('gymos_access_token');
-      }
-    }
-    setIsLoading(false);
-
-    // Listen to session expired events from axios interceptor
-    const handleSessionExpired = () => {
+    const onExpirada = () => {
+      if (!sessionStorage.getItem(STORAGE_MOTIVO)) sessionStorage.setItem(STORAGE_MOTIVO, 'expirada');
       setUser(null);
-      setToken(null);
-      showToast('error', 'Sesión expirada', 'Por favor vuelve a iniciar sesión');
     };
-
-    window.addEventListener('gymos_session_expired', handleSessionExpired);
+    const onSuspendido = () => setUser(null);
+    window.addEventListener(EVENTOS.sesionExpirada, onExpirada);
+    window.addEventListener(EVENTOS.gimnasioSuspendido, onSuspendido);
     return () => {
-      window.removeEventListener('gymos_session_expired', handleSessionExpired);
+      window.removeEventListener(EVENTOS.sesionExpirada, onExpirada);
+      window.removeEventListener(EVENTOS.gimnasioSuspendido, onSuspendido);
     };
-  }, [showToast]);
+  }, []);
 
-  const login = async (credentials: LoginRequest): Promise<boolean> => {
+  const login = async (credentials: LoginRequest): Promise<ResultadoLogin> => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
       const res = await authService.login(credentials);
-
-      localStorage.setItem('gymos_access_token', res.access_token);
-      localStorage.setItem('gymos_refresh_token', res.refresh_token);
-      localStorage.setItem('gymos_user', JSON.stringify(res.usuario));
-      localStorage.setItem('gymos_tenant_subdomain', res.usuario.subdominio);
-
-      setToken(res.access_token);
+      localStorage.setItem(STORAGE.access, res.access_token);
+      localStorage.setItem(STORAGE.refresh, res.refresh_token);
+      localStorage.setItem(STORAGE.user, JSON.stringify(res.usuario));
+      localStorage.setItem(STORAGE.subdominio, res.usuario.subdominio);
+      sessionStorage.removeItem(STORAGE_MOTIVO);
       setUser(res.usuario);
-
-      showToast('success', `¡Bienvenido, ${res.usuario.nombre}!`, `Sesión iniciada como ${res.usuario.rol}`);
-      return true;
+      return { ok: true, usuario: res.usuario };
     } catch (err) {
-      const msg = parseApiError(err);
-      showToast('error', 'Error al iniciar sesión', msg);
-      return false;
+      return { ok: false, error: toApiError(err) };
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Demo login function for effortless exploration and instant testing
-  const loginDemo = (role: 'jefe' | 'recepcionista' | 'entrenador', subdominio = 'entrena-a-e9cce5') => {
-    const mockUser: UsuarioAuthDto = {
-      id: '00000000-0000-0000-0000-000000000001',
-      nombre: role === 'jefe' ? 'Carlos (Jefe)' : role === 'recepcionista' ? 'María (Recepción)' : 'David (Entrenador)',
-      correo: `${role}@gymos.co`,
-      rol: role,
-      gimnasio_id: '9d8ed8dc-e879-4c43-bc84-43b80b0f0fe8',
-      subdominio,
-      permisos: role === 'jefe' ? ['*'] : role === 'recepcionista' ? [
-        'control_ingreso:leer', 'control_ingreso:crear',
-        'caja:leer', 'caja:crear', 'caja:editar',
-        'deportistas:leer', 'deportistas:crear', 'deportistas:editar',
-        'membresias:leer', 'membresias:crear',
-        'clases:leer', 'clases:crear',
-      ] : [
-        'entrenamiento:leer', 'entrenamiento:crear', 'entrenamiento:editar',
-        'clases:leer',
-        'deportistas:leer',
-      ],
-    };
-
-    const mockToken = 'mock_jwt_token_demo_gymos';
-    localStorage.setItem('gymos_access_token', mockToken);
-    localStorage.setItem('gymos_refresh_token', 'mock_refresh_token');
-    localStorage.setItem('gymos_user', JSON.stringify(mockUser));
-    localStorage.setItem('gymos_tenant_subdomain', subdominio);
-
-    setToken(mockToken);
-    setUser(mockUser);
-    showToast('info', `Modo Demo: ${mockUser.nombre}`, `Explorando GymOS con perfil de ${role}`);
-  };
-
   const logout = async () => {
-    const refreshToken = localStorage.getItem('gymos_refresh_token');
-    if (refreshToken && !refreshToken.startsWith('mock_')) {
+    const refreshToken = localStorage.getItem(STORAGE.refresh);
+    if (refreshToken) {
       try {
         await authService.logout(refreshToken);
       } catch (e) {
-        console.warn('Error during API logout call', e);
+        // La sesión local se limpia igual; el refresh vence solo en el servidor.
+        console.warn('No se pudo revocar el refresh token en el servidor', e);
       }
     }
-
-    localStorage.removeItem('gymos_access_token');
-    localStorage.removeItem('gymos_refresh_token');
-    localStorage.removeItem('gymos_user');
-
+    limpiarSesionLocal();
+    sessionStorage.removeItem(STORAGE.returnTo);
+    sessionStorage.setItem(STORAGE_MOTIVO, 'cerrada');
     setUser(null);
-    setToken(null);
-    showToast('info', 'Sesión cerrada', 'Has salido del sistema de forma segura');
   };
+
+  const refrescarUsuario = useCallback(async () => {
+    try {
+      const me = await authService.getMe();
+      localStorage.setItem(STORAGE.user, JSON.stringify(me));
+      setUser(me);
+    } catch {
+      // Si falla, el interceptor ya decidió (sesión expirada / suspendido). No hay nada más que hacer aquí.
+    }
+  }, []);
 
   const hasPermission = useCallback(
     (submodulo: string, accion?: 'leer' | 'crear' | 'editar' | 'eliminar'): boolean => {
       if (!user) return false;
       if (user.rol === 'jefe') return true;
       if (user.permisos.includes('*')) return true;
-
-      if (!accion) {
-        return user.permisos.some((p) => p.startsWith(`${submodulo}:`));
-      }
-
-      return (
-        user.permisos.includes(`${submodulo}:${accion}`) ||
-        user.permisos.includes(`${submodulo}:*`)
-      );
+      if (!accion) return user.permisos.some((p) => p.startsWith(`${submodulo}:`));
+      return user.permisos.includes(`${submodulo}:${accion}`) || user.permisos.includes(`${submodulo}:*`);
     },
     [user]
   );
+
+  const consumirMotivoFinSesion = (): MotivoFinSesion => {
+    const m = sessionStorage.getItem(STORAGE_MOTIVO) as MotivoFinSesion;
+    sessionStorage.removeItem(STORAGE_MOTIVO);
+    return m ?? null;
+  };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        token,
         isAuthenticated: !!user,
         isLoading,
         login,
-        loginDemo,
         logout,
+        refrescarUsuario,
         hasPermission,
         isJefe: user?.rol === 'jefe',
         isRecepcionista: user?.rol === 'recepcionista',
         isEntrenador: user?.rol === 'entrenador',
+        consumirMotivoFinSesion,
       }}
     >
       {children}

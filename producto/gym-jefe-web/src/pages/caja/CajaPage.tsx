@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   CreditCard,
   Plus,
@@ -13,6 +14,8 @@ import {
 } from 'lucide-react';
 import { cajaService } from '../../api/caja.service';
 import { useAuth } from '../../contexts/AuthContext';
+import { useCajaTurno } from '../../contexts/CajaTurnoContext';
+import { MensajeFijo } from '../../components/estados/Estados';
 import { useToast } from '../../contexts/ToastContext';
 import { parseApiError } from '../../api/client';
 import { Card, KpiCard } from '../../components/ui/Card';
@@ -28,16 +31,20 @@ import {
 } from '../../types/caja.types';
 
 export const CajaPage: React.FC = () => {
-  const { isJefe } = useAuth();
+  const { isJefe, isRecepcionista } = useAuth();
   const { showToast } = useToast();
+  const location = useLocation();
+  const cajaGlobal = useCajaTurno();
+  // Recepcionista sin turno: llega aquí redirigido y debe abrir caja antes de continuar (§C1).
+  const debeAbrirTurno = !!(location.state as { abrirTurno?: boolean } | null)?.abrirTurno;
 
   const [turno, setTurno] = useState<TurnoResumenDto | null>(null);
   const [movimientos, setMovimientos] = useState<MovimientoCajaItemDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Modals
-  const [showAbrirModal, setShowAbrirModal] = useState(false);
-  const [baseInicial, setBaseInicial] = useState('50000');
+  const [showAbrirModal, setShowAbrirModal] = useState(debeAbrirTurno);
+  const [baseInicial, setBaseInicial] = useState('');
 
   const [showCerrarModal, setShowCerrarModal] = useState(false);
   const [efectivoContado, setEfectivoContado] = useState('');
@@ -87,8 +94,9 @@ export const CajaPage: React.FC = () => {
       const res = await cajaService.abrirTurno({ base_inicial: Number(baseInicial) || 0 });
       setTurno(res);
       setShowAbrirModal(false);
-      showToast('success', 'Turno Abierto', 'Caja lista para procesar ventas y pagos');
+      showToast('success', 'Turno abierto', 'Caja lista para procesar ventas y pagos');
       loadCaja();
+      cajaGlobal.refrescar();
     } catch (err) {
       showToast('error', 'Error al abrir turno', parseApiError(err));
     } finally {
@@ -102,8 +110,9 @@ export const CajaPage: React.FC = () => {
     try {
       await cajaService.cerrarTurno({ efectivo_contado: Number(efectivoContado) });
       setShowCerrarModal(false);
-      showToast('success', 'Turno Cerrado', 'Arqueo completado exitosamente');
+      showToast('success', 'Turno cerrado', 'Arqueo completado exitosamente');
       loadCaja();
+      cajaGlobal.refrescar();
     } catch (err) {
       showToast('error', 'Error al cerrar turno', parseApiError(err));
     } finally {
@@ -262,6 +271,11 @@ export const CajaPage: React.FC = () => {
         </div>
       ) : (
         <Card style={{ textAlign: 'center', padding: '40px 20px', marginBottom: 28 }}>
+          {isRecepcionista && (
+            <MensajeFijo tono="info" style={{ marginBottom: 20, textAlign: 'left' }}>
+              Debes abrir el turno de caja para usar el resto del sistema.
+            </MensajeFijo>
+          )}
           <Lock size={48} color="var(--text-muted)" style={{ marginBottom: 12 }} />
           <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
             No hay turno de caja abierto en este momento

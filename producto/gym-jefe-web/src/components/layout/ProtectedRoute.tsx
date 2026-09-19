@@ -1,41 +1,35 @@
 import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { LoadingSpinner } from '../ui/Table';
+import { SinPermiso } from '../estados/Estados';
+import { STORAGE } from '../../api/client';
 
 interface ProtectedRouteProps {
+  /** Clave de la matriz de permisos. Bloquea la ruta aunque se escriba la URL a mano (§A5, capa 2). */
   requiredSubmodule?: string;
   requiredAction?: 'leer' | 'crear' | 'editar' | 'eliminar';
+  /** Rutas que solo el Jefe puede abrir (p. ej. Auditoría). */
+  soloJefe?: boolean;
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   requiredSubmodule,
-  requiredAction,
+  requiredAction = 'leer',
+  soloJefe = false,
 }) => {
-  const { isAuthenticated, isLoading, hasPermission } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <LoadingSpinner size={36} label="Cargando sesión..." />
-      </div>
-    );
-  }
+  const { isAuthenticated, hasPermission, isJefe } = useAuth();
+  const location = useLocation();
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    // Conserva la ruta para volver después del login (§A2 · Sesión expirada).
+    const destino = `${location.pathname}${location.search}`;
+    if (destino !== '/') sessionStorage.setItem(STORAGE.returnTo, destino);
+    return <Navigate to="/login" replace state={{ from: destino }} />;
   }
 
-  if (requiredSubmodule && !hasPermission(requiredSubmodule, requiredAction)) {
-    return (
-      <div style={{ padding: 40, textAlign: 'center' }}>
-        <h3 style={{ color: 'var(--danger)', marginBottom: 8 }}>Acceso Restringido</h3>
-        <p style={{ color: 'var(--text-secondary)' }}>
-          No tienes permisos configurados para acceder a este submódulo ({requiredSubmodule}).
-        </p>
-      </div>
-    );
-  }
+  if (soloJefe && !isJefe) return <SinPermiso />;
+
+  if (requiredSubmodule && !hasPermission(requiredSubmodule, requiredAction)) return <SinPermiso />;
 
   return <Outlet />;
 };

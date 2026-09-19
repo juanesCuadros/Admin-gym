@@ -11,6 +11,10 @@ COPY . .
 ARG VITE_API_URL=/api/v1
 ENV VITE_API_URL=$VITE_API_URL
 
+# Contacto de MVC que se muestra en la pantalla /bloqueado (correo o teléfono). Vacío = no se muestra.
+ARG VITE_MVC_CONTACTO=
+ENV VITE_MVC_CONTACTO=$VITE_MVC_CONTACTO
+
 RUN npm run build
 
 # Stage 2: Serve with Production Nginx Web Server

@@ -157,12 +157,8 @@ export const PantallaTvPage: React.FC = () => {
   }, [activeSubdomain, deviceToken, displayData?.tiempo_saludo_segundos]);
 
   // Rotate notices
-  const avisos = displayData?.avisos ||
-    tenant.pantalla_config?.avisos || [
-      '¡Bienvenidos a nuestra sede! Recuerda hidratarte durante tu rutina.',
-      'Por favor guardar las mancuernas y discos en su lugar al terminar.',
-      'Pregunta en recepción por nuestras valoraciones nutricionales personalizadas.',
-    ];
+  // Solo los avisos que devuelve la API; sin avisos inventados (§A7).
+  const avisos = displayData?.avisos ?? [];
 
   useEffect(() => {
     if (avisos.length <= 1) return;
@@ -538,7 +534,7 @@ export const PantallaTvPage: React.FC = () => {
               </div>
             </div>
           </div>
-        ) : (
+        ) : avisos.length > 0 ? (
           <div
             style={{
               background: 'rgba(255, 255, 255, 0.03)',
@@ -552,10 +548,10 @@ export const PantallaTvPage: React.FC = () => {
           >
             <Sparkles size={28} color="var(--accent)" />
             <div style={{ fontSize: '1.25rem', color: 'rgba(255,255,255,0.8)' }}>
-              {avisos[avisoIndex]}
+              {avisos[avisoIndex % avisos.length]}
             </div>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Main Grid: Today's Classes */}
