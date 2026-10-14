@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from app.presentation.api.v1.endpoints import (
-    auth, dashboard, gyms, credentials, payments, exercises, audit
+    auth, dashboard, gyms, credentials, payments, exercises, audit, plans, plan_requests, public
 )
 
 api_router = APIRouter()
@@ -12,3 +12,6 @@ api_router.include_router(credentials.router)
 api_router.include_router(payments.router)
 api_router.include_router(exercises.router)
 api_router.include_router(audit.router)
+api_router.include_router(plans.router)
+api_router.include_router(plan_requests.router)
+api_router.include_router(public.router)

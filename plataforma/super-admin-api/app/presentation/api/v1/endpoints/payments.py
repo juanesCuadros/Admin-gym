@@ -69,7 +69,9 @@ def register_payment(
         anulado_en=payment.anulado_en,
         idempotency_key=payment.idempotency_key,
         created_at=payment.created_at,
-        nueva_fecha_corte=nueva_corte
+        nueva_fecha_corte=nueva_corte,
+        fija_ancla=bool(payment.fija_ancla),
+        advertencia=None
     )
 
 @router.post("/admin/payments/{payment_id}/void", response_model=PaymentResponse, summary="Anular pago y recalcular fecha de corte")
@@ -85,6 +87,8 @@ def void_payment(
     """
     use_cases = PaymentUseCases(db)
     payment, nueva_corte = use_cases.void_payment(payment_id, data.motivo_anulacion, actor=current_user)
+    gym = use_cases.gym_repo.get_by_id(payment.gimnasio_id)
+    advertencia = PaymentUseCases.advertencia_anulacion(payment, gym, nueva_corte) if gym else None
 
     return PaymentResponse(
         id=payment.id,
@@ -99,7 +103,9 @@ def void_payment(
         anulado_en=payment.anulado_en,
         idempotency_key=payment.idempotency_key,
         created_at=payment.created_at,
-        nueva_fecha_corte=nueva_corte
+        nueva_fecha_corte=nueva_corte,
+        fija_ancla=bool(payment.fija_ancla),
+        advertencia=advertencia
     )
 
 @router.post("/admin/gyms/{gym_id}/subscriptions/price", response_model=SubscriptionResponse, summary="Actualizar precio mensual de la suscripción")

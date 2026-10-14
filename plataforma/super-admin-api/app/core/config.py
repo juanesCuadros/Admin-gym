@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     # Brute Force Protection (RF-00.4)
     MAX_LOGIN_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_MINUTES: int = 15
+    # Recuperación de contraseña (SA-RF-00.2 CA2): 1 hora
+    RECOVERY_TOKEN_MINUTES: int = 60
 
     # Database: Default to sqlite in-memory for testing, or PostgreSQL with RLS
     DATABASE_URL: str = Field(
@@ -50,6 +52,20 @@ class Settings(BaseSettings):
     BASE_DOMAIN: str = "gymos.io"
     DEFAULT_TRIAL_DAYS: int = 5
     CREDENTIALS_EXPIRE_HOURS: int = 72
+
+    # Registro autónomo (SA-RF-34)
+    SIGNUP_TOKEN_HORAS: int = 24
+    # Página pública (gymdeskcolombia.com) que recibe el token y llama a /public/signup/{token}
+    URL_CONFIRMACION_REGISTRO: str = "https://gymdeskcolombia.com/registro/confirmar"
+
+    # Correo saliente: "log" (desarrollo: solo registra en el log) o "resend" (API de Resend)
+    CORREO_MODO: str = "log"
+    CORREO_REMITENTE: str = "GymOS <no-responder@gymdeskcolombia.com>"
+    RESEND_API_KEY: Optional[str] = None
+
+    # Exportación al cancelar (SA-RF-30): carpeta del servidor propio y URL pública de la API
+    EXPORTS_DIR: str = "./data/exports"
+    PUBLIC_API_BASE_URL: str = "http://localhost:8000"
 
     # CORS (Without wildcard '*' to allow secure credentials)
     CORS_ORIGINS: List[str] = [

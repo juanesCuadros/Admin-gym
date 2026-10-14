@@ -1,32 +1,40 @@
 import re
 import unicodedata
 
-class SubdomainGenerator:
-    """Domain service for generating and validating tenant subdomains (RF-05)."""
+# SA-RF-05 CA3: palabras reservadas que nunca pueden ser subdominio de un gimnasio.
+SUBDOMINIOS_RESERVADOS = frozenset({"admin", "www", "api", "app", "mail"})
 
-    SUBDOMAIN_REGEX = re.compile(r'^[a-z0-9]([a-z0-9-]{1,48}[a-z0-9])$')
+LONGITUD_MINIMA = 3
+LONGITUD_MAXIMA = 63  # límite de etiqueta DNS (RFC 1035)
+
+
+class SubdomainGenerator:
+    """Generación y validación del subdominio del gimnasio (SA-RF-05)."""
+
+    # Solo a-z, 0-9 y '-'; no empieza ni termina en guion; de 3 a 63 caracteres (CA2).
+    # Mismo patrón que el CHECK de superadmin.gimnasios (migración 033).
+    SUBDOMAIN_REGEX = re.compile(r'^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])$')
 
     @classmethod
     def slugify(cls, name: str) -> str:
-        """Converts gym name to a clean, RFC-compliant DNS subdomain string."""
-        # Normalize unicode (decompose accents)
-        normalized = unicodedata.normalize('NFKD', name)
+        """`Gimnasio Ñandú` → `gimnasio-nandu`: minúsculas, sin tildes, espacios a guion (CA1)."""
+        normalized = unicodedata.normalize('NFKD', name or "")
         ascii_str = normalized.encode('ASCII', 'ignore').decode('utf-8').lower()
-        
-        # Replace whitespace and invalid chars with hyphen
-        clean = re.sub(r'[^a-z0-9]+', '-', ascii_str)
-        # Strip leading/trailing hyphens
-        clean = clean.strip('-')
-        
-        # Ensure length constraints (2 to 50 chars)
-        if len(clean) < 2:
-            clean = f"{clean}gym" if clean else "gym"
-        if len(clean) > 50:
-            clean = clean[:50].rstrip('-')
-            
+        clean = re.sub(r'[^a-z0-9]+', '-', ascii_str).strip('-')
+
+        if len(clean) > LONGITUD_MAXIMA:
+            clean = clean[:LONGITUD_MAXIMA].rstrip('-')
+        if len(clean) < LONGITUD_MINIMA:
+            clean = f"{clean}-gym" if clean else "gym"
+        if clean in SUBDOMINIOS_RESERVADOS:
+            clean = f"{clean}-gym"
         return clean
 
     @classmethod
+    def es_reservado(cls, subdomain: str) -> bool:
+        return subdomain in SUBDOMINIOS_RESERVADOS
+
+    @classmethod
     def is_valid(cls, subdomain: str) -> bool:
-        """Checks if a subdomain strictly satisfies the PostgreSQL CHECK constraint regex."""
-        return bool(cls.SUBDOMAIN_REGEX.match(subdomain))
+        """Formato válido (CA2) y no reservado (CA3)."""
+        return bool(cls.SUBDOMAIN_REGEX.match(subdomain or "")) and not cls.es_reservado(subdomain)

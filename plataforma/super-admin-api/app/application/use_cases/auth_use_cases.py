@@ -9,7 +9,7 @@ from app.core.security import (
     compute_sha256_hash, generate_cryptographic_token, decode_access_token
 )
 from app.core.exceptions import (
-    AuthenticationFailedException, AccountLockedException,
+    AuthenticationFailedException,
     EntityNotFoundException, BusinessRuleException
 )
 from app.core.config import settings
@@ -21,9 +21,10 @@ class AuthUseCases:
         self.audit_repo = AuditRepository(db)
 
     def login(self, correo: str, password: str, client_ip: Optional[str] = None) -> Tuple[str, UsuarioInterno]:
-        # 1. Check for account lockout (RF-00.4)
+        # 1. Bloqueo por intentos (SA-RF-00.4 CA1): durante el bloqueo, incluso la contraseña
+        #    correcta recibe el MISMO mensaje genérico que unas credenciales inválidas (no se revela).
         if self.user_repo.is_locked_out(correo):
-            raise AccountLockedException(lockout_minutes=settings.LOGIN_LOCKOUT_MINUTES)
+            raise AuthenticationFailedException()
 
         user = self.user_repo.get_by_email(correo)
         if not user or not user.activo:
@@ -67,7 +68,8 @@ class AuthUseCases:
         # Cryptographically secure random token (URL safe)
         raw_token = generate_cryptographic_token(32)
         token_hash = compute_sha256_hash(raw_token)
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=2)
+        # SA-RF-00.2 CA2: el enlace vence en 1 hora y es de un solo uso.
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.RECOVERY_TOKEN_MINUTES)
 
         recovery = TokenRecuperacion(
             usuario_id=user.id,

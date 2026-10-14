@@ -49,6 +49,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
+# La documentación interactiva (/docs, /redoc, /openapi.json) solo se publica fuera de producción.
+_ES_PRODUCCION = settings.ENVIRONMENT.strip().lower() == "production"
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
@@ -74,9 +77,9 @@ y auditoría inmutable mediante encadenamiento criptográfico de hashes (SHA-256
         {"name": "Catálogo Multimedia Global", "description": "Biblioteca centralizada de ejercicios, búsqueda, filtros e importación por datasets."},
         {"name": "Auditoría Inmutable", "description": "Registro criptográfico inalterable (hash-chain) y verificación de integridad."},
     ],
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    docs_url=None if _ES_PRODUCCION else "/docs",
+    redoc_url=None if _ES_PRODUCCION else "/redoc",
+    openapi_url=None if _ES_PRODUCCION else "/openapi.json",
     lifespan=lifespan
 )
 
@@ -124,14 +127,15 @@ def root():
     return {
         "name": settings.PROJECT_NAME,
         "version": settings.VERSION,
-        "docs_url": "/docs",
+        "docs_url": None if _ES_PRODUCCION else "/docs",
         "api_v1": settings.API_V1_STR
     }
 
-@app.get("/swagger-ui/index.html", include_in_schema=False)
-@app.get("/swagger-ui", include_in_schema=False)
-@app.get("/swagger-ui.html", include_in_schema=False)
-def swagger_ui_redirect():
-    """Redirecciona rutas tradicionales de Swagger (Spring Boot / Java) al Swagger de FastAPI."""
-    return RedirectResponse(url="/docs")
+if not _ES_PRODUCCION:
+    @app.get("/swagger-ui/index.html", include_in_schema=False)
+    @app.get("/swagger-ui", include_in_schema=False)
+    @app.get("/swagger-ui.html", include_in_schema=False)
+    def swagger_ui_redirect():
+        """Redirecciona rutas tradicionales de Swagger (Spring Boot / Java) al Swagger de FastAPI."""
+        return RedirectResponse(url="/docs")
 

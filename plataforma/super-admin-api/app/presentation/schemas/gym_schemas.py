@@ -2,6 +2,7 @@ from datetime import date, datetime
 from typing import Optional, List, Dict, Any
 from decimal import Decimal
 from pydantic import BaseModel, EmailStr, Field
+from app.presentation.schemas.payment_schemas import PaymentCreate
 
 class JefeAccountCreate(BaseModel):
     nombre: str = Field(..., min_length=2, max_length=150)
@@ -11,6 +12,7 @@ class JefeAccountCreate(BaseModel):
 class SubscriptionCreate(BaseModel):
     valor_mensual: Decimal = Field(..., ge=0, description="Monto mensual acordado")
     tipo_inicio: str = Field(..., pattern="^(prueba|cliente_activo)$", description="'prueba' (5 días) o 'cliente_activo'")
+    plan_id: str = Field(..., description="Plan de suscripción (SA-RF-33). Prueba ⇔ plan de tipo 'prueba'")
 
 class GymCreateStepByStep(BaseModel):
     # Paso 1: Identidad
@@ -53,7 +55,10 @@ class GymUpdate(BaseModel):
 
 class GymStateChangeRequest(BaseModel):
     nuevo_estado: str = Field(..., pattern="^(prueba|activo|suspendido|cancelado)$")
-    motivo: Optional[str] = Field(None, description="Requerido si el nuevo estado es cancelado")
+    motivo: Optional[str] = Field(None, description="Obligatorio (mín. 5 caracteres) para suspender o cancelar (SA-RF-09 CA4)")
+    pago: Optional[PaymentCreate] = Field(
+        None, description="Obligatorio para pasar a 'activo' (activar una prueba o reactivar): SA-RF-09 CA3"
+    )
 
 class GymCancelRequest(BaseModel):
     motivo: str = Field(..., min_length=5, description="Motivo formal de la cancelación (RF-10)")
@@ -78,6 +83,8 @@ class SubscriptionResponse(BaseModel):
     tipo_inicio: str
     vigente_desde: date
     vigente_hasta: Optional[date] = None
+    plan_id: Optional[str] = None
+    plan_nombre: Optional[str] = None
 
 class GymListItemResponse(BaseModel):
     id: str
@@ -90,6 +97,9 @@ class GymListItemResponse(BaseModel):
     fecha_inicio: date
     fecha_corte: Optional[date] = None
     dias_restantes: Optional[int] = None
+    estado_calculado: Optional[str] = None  # al_dia | por_vencer | en_gracia | bloqueado
+    motivo_bloqueo: Optional[str] = None
+    plan_nombre: Optional[str] = None
     logo_url: Optional[str] = None
     jefe_nombre: Optional[str] = None
     jefe_correo: Optional[str] = None
@@ -114,6 +124,9 @@ class GymDetailResponse(BaseModel):
     fecha_inicio: date
     fecha_corte: Optional[date] = None
     dias_restantes: Optional[int] = None
+    estado_calculado: Optional[str] = None
+    motivo_bloqueo: Optional[str] = None
+    plan_nombre: Optional[str] = None
     logo_url: Optional[str] = None
     banner_url: Optional[str] = None
     descripcion: Optional[str] = None
@@ -130,6 +143,19 @@ class GymDetailResponse(BaseModel):
     total_pagos_registrados: int = 0
     historial_pagos: List[PaymentResponse] = []
     actividad_reciente: List[AuditLogResponse] = []
+    # Solo en la respuesta de cancelar (contrato 3.4): el enlace se muestra una vez.
+    export_url: Optional[str] = None
+    export_expira_en: Optional[datetime] = None
+
+
+class GymDeleteRequest(BaseModel):
+    confirmar_subdominio: str = Field(..., min_length=1, description="Escriba el subdominio para confirmar")
+
+
+class GymDeleteResponse(BaseModel):
+    id: str
+    subdominio_liberado: str
+    eliminado_en: datetime
 
 class CredentialsIssuanceResponse(BaseModel):
     gimnasio_id: str

@@ -5,7 +5,7 @@ def test_register_payment_and_cutting_date(client, superadmin_auth_headers):
         json={
             "nombre": "Alpha Fitness",
             "jefe": {"nombre": "Pedro Jefe", "correo": "pedro@alphafit.com"},
-            "suscripcion": {"valor_mensual": 120000.0, "tipo_inicio": "cliente_activo"}
+            "suscripcion": {"valor_mensual": 120000.0, "tipo_inicio": "cliente_activo", "plan_id": "plan-mensual-sqlite"}
         },
         headers=superadmin_auth_headers
     )

@@ -11,6 +11,7 @@ from sqlalchemy.orm import relationship
 
 from app.infrastructure.database.base import Base
 from app.core.config import settings
+from app.core.fechas import hoy_bogota
 
 def _schema():
     return None if "sqlite" in settings.DATABASE_URL else "superadmin"
@@ -81,14 +82,15 @@ class Gimnasio(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     gimnasio_id = Column(String(36), nullable=False, unique=True, default=lambda: str(uuid.uuid4()))
     nombre = Column(String(255), nullable=False, index=True)
-    subdominio = Column(String(63), nullable=False, unique=True, index=True)
+    # Único solo entre gimnasios no eliminados (índice parcial ux_gym_subdominio_vivo, migración 032).
+    subdominio = Column(String(63), nullable=False, index=True)
     nit = Column(String(50), nullable=True)
     direccion = Column(String(255), nullable=True)
     ciudad = Column(String(100), nullable=True)
     telefono = Column(String(50), nullable=True)
     correo = Column(String(255), nullable=True)
     estado = Column(String(50), nullable=False, default="prueba")  # prueba, activo, suspendido, cancelado
-    fecha_inicio = Column(Date, nullable=False, default=date.today)
+    fecha_inicio = Column(Date, nullable=False, default=hoy_bogota)
     fecha_corte = Column(Date, nullable=True)
     logo_url = Column(Text, nullable=True)
     banner_url = Column(Text, nullable=True)
@@ -105,7 +107,7 @@ class Gimnasio(Base):
 
     # Relationships
     cuenta_jefe = relationship("CuentaJefe", back_populates="gimnasio", uselist=False, cascade="all, delete-orphan")
-    suscripciones = relationship("Suscripcion", back_populates="gimnasio", cascade="all, delete-orphan", order_by="desc(Suscripcion.vigente_desde)")
+    suscripciones = relationship("Suscripcion", back_populates="gimnasio", cascade="all, delete-orphan", order_by="[desc(Suscripcion.vigente_desde), desc(Suscripcion.created_at)]")
     pagos = relationship("Pago", back_populates="gimnasio", cascade="all, delete-orphan", order_by="desc(Pago.fecha_pago)")
     credenciales = relationship("EmisionCredenciales", back_populates="gimnasio", cascade="all, delete-orphan")
     provisioning_pasos = relationship("ProvisioningPaso", back_populates="gimnasio", cascade="all, delete-orphan")
@@ -126,6 +128,29 @@ class CuentaJefe(Base):
 
     gimnasio = relationship("Gimnasio", back_populates="cuenta_jefe")
 
+class PlanSuscripcion(Base):
+    """Catálogo de planes del SaaS (SA-RF-33). Tabla creada en la migración 003."""
+    __tablename__ = "planes_suscripcion"
+    __table_args__ = {"schema": _schema()}
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    codigo = Column(String(40), nullable=False, unique=True)
+    nombre = Column(Text, nullable=False)
+    descripcion = Column(Text, nullable=True)
+    tipo = Column(String(10), nullable=False)  # 'prueba' | 'pago'
+    precio = Column(Numeric(12, 0), nullable=False, default=0)  # COP, precio mensual
+    duracion_meses = Column(Integer, nullable=True)
+    dias_prueba = Column(Integer, nullable=True)
+    max_clientes_activos = Column(Integer, nullable=True)
+    max_staff = Column(Integer, nullable=True)
+    activo = Column(Boolean, nullable=False, default=True)
+    publico = Column(Boolean, nullable=False, default=True)
+    orden = Column(Integer, nullable=False, default=0)
+    version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
 class Suscripcion(Base):
     __tablename__ = "suscripciones"
     __table_args__ = {"schema": _schema()}
@@ -136,9 +161,32 @@ class Suscripcion(Base):
     tipo_inicio = Column(String(50), nullable=False)  # 'prueba', 'cliente_activo'
     vigente_desde = Column(Date, nullable=False)
     vigente_hasta = Column(Date, nullable=True)
+    plan_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}planes_suscripcion.id", ondelete="RESTRICT"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     gimnasio = relationship("Gimnasio", back_populates="suscripciones")
+    plan = relationship("PlanSuscripcion", lazy="joined")
+
+
+class SolicitudPlan(Base):
+    """Solicitud de cambio de plan hecha por el Jefe desde el Sistema Web (migración 003)."""
+    __tablename__ = "solicitudes_plan"
+    __table_args__ = {"schema": _schema()}
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    gimnasio_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}gimnasios.id", ondelete="CASCADE"), nullable=False)
+    plan_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}planes_suscripcion.id", ondelete="RESTRICT"), nullable=False)
+    estado = Column(String(20), nullable=False, default="pendiente")  # pendiente | aprobada | rechazada | cancelada
+    solicitado_por = Column(Text, nullable=False)
+    nota = Column(Text, nullable=True)
+    pago_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}pagos.id", ondelete="SET NULL"), nullable=True)
+    motivo_rechazo = Column(Text, nullable=True)
+    resuelta_por = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}usuarios_internos.id", ondelete="SET NULL"), nullable=True)
+    resuelta_en = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    gimnasio = relationship("Gimnasio")
+    plan = relationship("PlanSuscripcion")
 
 class Pago(Base):
     __tablename__ = "pagos"
@@ -151,7 +199,7 @@ class Pago(Base):
     gimnasio_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}gimnasios.id", ondelete="RESTRICT"), nullable=False, index=True)
     monto = Column(Numeric(12, 2), nullable=False)
     meses = Column(Integer, nullable=False)
-    fecha_pago = Column(Date, nullable=False, default=date.today)
+    fecha_pago = Column(Date, nullable=False, default=hoy_bogota)
     metodo = Column(String(100), nullable=False)
     nota = Column(Text, nullable=True)
     anulado = Column(Boolean, nullable=False, default=False, index=True)
@@ -159,6 +207,8 @@ class Pago(Base):
     anulado_por = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}usuarios_internos.id", ondelete="SET NULL"), nullable=True)
     anulado_en = Column(DateTime(timezone=True), nullable=True)
     idempotency_key = Column(String(100), nullable=False, unique=True)
+    # El pago se registró estando en prueba, suspendido o bloqueado: su fecha es la nueva ancla (§3).
+    fija_ancla = Column(Boolean, nullable=False, default=False)
     registrado_por = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}usuarios_internos.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
@@ -241,3 +291,44 @@ class Auditoria(Base):
     hash_previo = Column(String(64), nullable=True)
     hash_actual = Column(String(64), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class RegistroAutonomo(Base):
+    """Registro autónomo desde la web pública (SA-RF-34). Tabla de la migración 031."""
+    __tablename__ = "registros_autonomos"
+    __table_args__ = {"schema": _schema()}
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    nombre_gimnasio = Column(Text, nullable=False)
+    ciudad = Column(Text, nullable=False)
+    jefe_nombre = Column(Text, nullable=False)
+    jefe_correo = Column(String(255), nullable=False, index=True)
+    telefono = Column(Text, nullable=False)
+    telefono_normalizado = Column(String(15), nullable=False, index=True)
+    subdominio_sugerido = Column(String(63), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    expira_en = Column(DateTime(timezone=True), nullable=False)
+    usado_en = Column(DateTime(timezone=True), nullable=True)
+    gimnasio_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}gimnasios.id", ondelete="SET NULL"), nullable=True)
+    acepta_terminos_en = Column(DateTime(timezone=True), nullable=False)
+    ip = Column(String(45), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class ExportacionGimnasio(Base):
+    """Enlace de exportación ZIP al cancelar (SA-RF-30). Tabla de la migración 032."""
+    __tablename__ = "exportaciones_gimnasio"
+    __table_args__ = {"schema": _schema()}
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    gimnasio_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}gimnasios.id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    ruta_archivo = Column(Text, nullable=False)
+    tamano_bytes = Column(BigInteger().with_variant(Integer, "sqlite"), nullable=False, default=0)
+    expira_en = Column(DateTime(timezone=True), nullable=False)
+    eliminado_en = Column(DateTime(timezone=True), nullable=True)
+    descargas = Column(Integer, nullable=False, default=0)
+    creada_por = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}usuarios_internos.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    gimnasio = relationship("Gimnasio")

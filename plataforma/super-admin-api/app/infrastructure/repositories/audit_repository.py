@@ -27,10 +27,14 @@ class AuditRepository:
         entidad_id: Optional[str] = None,
         gimnasio_id: Optional[str] = None,
         detalle: Optional[Dict[str, Any]] = None,
-        impersonando: bool = False
+        impersonando: bool = False,
+        commit: bool = True
     ) -> Auditoria:
         """
         Creates an immutable, cryptographic hash-chained audit record (RF-25 / RNF-03).
+
+        Con commit=False solo hace flush: el registro queda en la misma transacción de la
+        operación auditada y el llamador hace un único commit (SA-RF-25 CA1).
         """
         latest = self.get_latest_entry()
         hash_previo = latest.hash_actual if latest else "0" * 64
@@ -39,7 +43,7 @@ class AuditRepository:
 
         # Sanitize sensitive data from details (RNF-01: secrets/passwords are never audited)
         sanitized_detalle = detalle.copy() if detalle else {}
-        for sensitive_key in ["password", "contrasena", "secret", "temp_password", "hash_password"]:
+        for sensitive_key in ["password", "contrasena", "secret", "temp_password", "hash_password", "token", "token_hash"]:
             if sensitive_key in sanitized_detalle:
                 sanitized_detalle[sensitive_key] = "[REDACTED_SECURITY]"
 
@@ -69,8 +73,11 @@ class AuditRepository:
             created_at=now_dt
         )
         self.db.add(audit_entry)
-        self.db.commit()
-        self.db.refresh(audit_entry)
+        if commit:
+            self.db.commit()
+            self.db.refresh(audit_entry)
+        else:
+            self.db.flush()
         return audit_entry
 
     def list_logs(

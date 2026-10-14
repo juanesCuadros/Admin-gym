@@ -1,6 +1,6 @@
 from datetime import date
 from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Body, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.session import get_db
@@ -11,17 +11,20 @@ from app.application.use_cases.gym_use_cases import GymUseCases
 from app.presentation.schemas.gym_schemas import (
     GymCreateStepByStep, GymUpdate, GymStateChangeRequest, GymCancelRequest,
     GymListItemResponse, GymDetailResponse, SubdomainCheckResponse,
-    CredentialsIssuanceResponse, JefeResponse, SubscriptionResponse
+    CredentialsIssuanceResponse, JefeResponse, SubscriptionResponse,
+    GymDeleteRequest, GymDeleteResponse
 )
+from app.application.use_cases.export_use_cases import ExportUseCases
 from app.presentation.schemas.payment_schemas import PaymentResponse
 from app.presentation.schemas.audit_schemas import AuditLogResponse
 from app.core.config import settings
+from app.core.fechas import hoy_bogota
 
 router = APIRouter(prefix="/admin/gyms", tags=["Gimnasios (Tenants)"])
 
 @router.get("/check-subdomain", response_model=SubdomainCheckResponse, summary="Validar disponibilidad de subdominio en vivo")
 def check_subdomain(
-    subdomain: str = Query(..., min_length=2, max_length=50),
+    subdomain: str = Query(..., min_length=1, max_length=100),
     db: Session = Depends(get_db),
     current_user: UsuarioInterno = Depends(get_current_admin_user)
 ):
@@ -42,14 +45,19 @@ def list_gyms(
     search: Optional[str] = Query(None, description="Búsqueda por nombre, subdominio, nit o ciudad"),
     estado: Optional[str] = Query(None, description="Filtrar por estado: prueba, activo, suspendido, cancelado"),
     order_by: str = Query("urgency", description="Orden: urgency (vencidos primero), nombre, fecha_corte, created_at"),
+    estado_calculado: Optional[str] = Query(
+        None,
+        pattern="^(al_dia|por_vencer|en_gracia|bloqueado|prueba_por_vencer)$",
+        description="Filtro por estado calculado (platform.estado_suscripcion). Excluye cancelados."
+    ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: UsuarioInterno = Depends(get_current_admin_user)
 ):
     """
-    RF-02 / RF-03: Tabla de gimnasios ordenada por urgencia (con los vencidos primero),
-    búsqueda, filtro por estado y paginación.
+    RF-02 / RF-03 / contrato 3.3: Tabla de gimnasios ordenada por urgencia, búsqueda, filtros por
+    estado guardado y calculado, y paginación. El estado calculado viene de la BD.
     """
     repo = GymRepository(db)
     items, total = repo.list_gyms(
@@ -57,13 +65,16 @@ def list_gyms(
         estado=estado,
         order_by=order_by,
         limit=limit,
-        offset=offset
+        offset=offset,
+        estado_calculado=estado_calculado,
     )
 
-    today = date.today()
+    today = hoy_bogota()
     result = []
-    for g in items:
-        dias_restantes = (g.fecha_corte - today).days if g.fecha_corte else None
+    for g, calc in items:
+        dias_restantes = calc["dias_restantes"]
+        if dias_restantes is None and g.fecha_corte and calc["estado_calculado"] is None:
+            dias_restantes = (g.fecha_corte - today).days  # Solo SQLite (sin la función de la BD).
         active_sub = g.suscripciones[0] if g.suscripciones else None
         result.append(
             GymListItemResponse(
@@ -77,6 +88,9 @@ def list_gyms(
                 fecha_inicio=g.fecha_inicio,
                 fecha_corte=g.fecha_corte,
                 dias_restantes=dias_restantes,
+                estado_calculado=calc["estado_calculado"],
+                motivo_bloqueo=calc["motivo_bloqueo"],
+                plan_nombre=active_sub.plan.nombre if active_sub and active_sub.plan else None,
                 logo_url=g.logo_url,
                 jefe_nombre=g.cuenta_jefe.nombre if g.cuenta_jefe else None,
                 jefe_correo=g.cuenta_jefe.correo if g.cuenta_jefe else None,
@@ -132,8 +146,11 @@ def get_gym_detail(
         from app.core.exceptions import EntityNotFoundException
         raise EntityNotFoundException("Gimnasio", gym_id)
 
-    today = date.today()
-    dias_restantes = (g.fecha_corte - today).days if (g := gym).fecha_corte else None
+    today = hoy_bogota()
+    calc = repo.estado_calculado(gym)
+    dias_restantes = calc["dias_restantes"]
+    if dias_restantes is None and gym.fecha_corte and calc["estado_calculado"] is None:
+        dias_restantes = (gym.fecha_corte - today).days  # Solo SQLite (sin la función de la BD).
 
     # Jefe
     jefe_data = None
@@ -154,7 +171,9 @@ def get_gym_detail(
             valor_mensual=float(s.valor_mensual),
             tipo_inicio=s.tipo_inicio,
             vigente_desde=s.vigente_desde,
-            vigente_hasta=s.vigente_hasta
+            vigente_hasta=s.vigente_hasta,
+            plan_id=s.plan_id,
+            plan_nombre=s.plan.nombre if s.plan else None
         )
         for s in gym.suscripciones
     ]
@@ -217,6 +236,9 @@ def get_gym_detail(
         fecha_inicio=gym.fecha_inicio,
         fecha_corte=gym.fecha_corte,
         dias_restantes=dias_restantes,
+        estado_calculado=calc["estado_calculado"],
+        motivo_bloqueo=calc["motivo_bloqueo"],
+        plan_nombre=suscripcion_actual.plan_nombre if suscripcion_actual else None,
         logo_url=gym.logo_url,
         banner_url=gym.banner_url,
         descripcion=gym.descripcion,
@@ -261,8 +283,8 @@ def change_gym_status(
     (prueba -> activo, activo <-> suspendido, * -> cancelado).
     """
     use_cases = GymUseCases(db)
-    use_cases.change_state(gym_id, data.nuevo_estado, data.motivo, actor=current_user)
-    return get_gym_detail(gym_id=gym_id, db=db, current_user=current_user)
+    use_cases.change_state(gym_id, data.nuevo_estado, data.motivo, actor=current_user, pago=data.pago)
+    return _con_exportacion(get_gym_detail(gym_id=gym_id, db=db, current_user=current_user), use_cases, db)
 
 @router.post("/{gym_id}/cancel", response_model=GymDetailResponse, summary="Cancelar un gimnasio formalmente")
 def cancel_gym(
@@ -272,8 +294,33 @@ def cancel_gym(
     current_user: UsuarioInterno = Depends(get_current_admin_user)
 ):
     """
-    RF-10: Cancelar un gimnasio (baja formal): congela el acceso y conserva los datos, no elimina.
+    RF-10 / SA-RF-30: Cancelar un gimnasio: bloqueo inmediato, conserva los datos y genera el ZIP
+    con su enlace de descarga de 30 días (`export_url`, se muestra una sola vez).
     """
     use_cases = GymUseCases(db)
     use_cases.cancel_gym(gym_id, data.motivo, actor=current_user)
-    return get_gym_detail(gym_id=gym_id, db=db, current_user=current_user)
+    return _con_exportacion(get_gym_detail(gym_id=gym_id, db=db, current_user=current_user), use_cases, db)
+
+
+def _con_exportacion(detalle: GymDetailResponse, use_cases: GymUseCases, db: Session) -> GymDetailResponse:
+    if use_cases.ultima_exportacion:
+        token, expira_en, _ = use_cases.ultima_exportacion
+        detalle.export_url = ExportUseCases(db).url_publica(token)
+        detalle.export_expira_en = expira_en
+    return detalle
+
+
+@router.delete("/{gym_id}", response_model=GymDeleteResponse, summary="Eliminar definitivamente un gimnasio cancelado")
+def delete_gym(
+    gym_id: str,
+    data: GymDeleteRequest = Body(...),
+    db: Session = Depends(get_db),
+    current_user: UsuarioInterno = Depends(get_current_admin_user)
+):
+    """
+    SA-RF-31: solo con 30 días cumplidos desde la cancelación (`409 AUN_NO_ELIMINABLE`) y escribiendo
+    el subdominio. Borra los datos del tenant, invalida el enlace de exportación y libera el subdominio.
+    MVC conserva sus pagos y su auditoría.
+    """
+    gym = ExportUseCases(db).eliminar_definitivo(gym_id, data.confirmar_subdominio, current_user)
+    return GymDeleteResponse(id=gym.id, subdominio_liberado=gym.subdominio, eliminado_en=gym.deleted_at)
