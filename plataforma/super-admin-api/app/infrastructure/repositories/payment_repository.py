@@ -24,6 +24,12 @@ class PaymentRepository:
             Pago.anulado.is_(False)
         ).order_by(Pago.fecha_pago.asc()).all()
 
+    def list_for_cutting(self, gym_id: str) -> List[Pago]:
+        """Historial completo (anulados incluidos) en orden de registro, para la regla del ancla."""
+        return self.db.query(Pago).filter(
+            Pago.gimnasio_id == gym_id
+        ).order_by(Pago.created_at.asc(), Pago.id.asc()).all()
+
     def save(self, payment: Pago) -> Pago:
         self.db.add(payment)
         self.db.commit()

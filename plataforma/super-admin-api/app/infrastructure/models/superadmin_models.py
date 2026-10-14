@@ -160,6 +160,8 @@ class Pago(Base):
     anulado_por = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}usuarios_internos.id", ondelete="SET NULL"), nullable=True)
     anulado_en = Column(DateTime(timezone=True), nullable=True)
     idempotency_key = Column(String(100), nullable=False, unique=True)
+    # El pago se registró estando en prueba, suspendido o bloqueado: su fecha es la nueva ancla (§3).
+    fija_ancla = Column(Boolean, nullable=False, default=False)
     registrado_por = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}usuarios_internos.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 

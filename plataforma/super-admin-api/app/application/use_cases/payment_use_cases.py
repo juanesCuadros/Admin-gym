@@ -9,13 +9,15 @@ from app.infrastructure.models.superadmin_models import (
 from app.infrastructure.repositories.payment_repository import PaymentRepository
 from app.infrastructure.repositories.gym_repository import GymRepository
 from app.infrastructure.repositories.audit_repository import AuditRepository
-from app.domain.services.cutting_date_calculator import CuttingDateCalculator
+from app.domain.services.cutting_date_calculator import CuttingDateCalculator, PagoCorte
 from app.core.exceptions import (
-    EntityNotFoundException, BusinessRuleException,
+    EntityNotFoundException, BusinessRuleException, EntityConflictException,
     IdempotencyConflictException
 )
+from app.core.config import settings
 from app.presentation.schemas.payment_schemas import PaymentCreate
 from app.core.fechas import hoy_bogota
+
 
 class PaymentUseCases:
     def __init__(self, db: Session):
@@ -24,30 +26,85 @@ class PaymentUseCases:
         self.gym_repo = GymRepository(db)
         self.audit_repo = AuditRepository(db)
 
-    def _recalculate_gym_cutting_date(self, gym: Gimnasio) -> Optional[date]:
-        """
-        Derives fecha_corte purely from the historical non-voided payments (RNF-04).
-        """
-        active_payments = self.payment_repo.list_active_by_gym(gym.id)
-        months_list = [p.meses for p in active_payments]
-
-        latest_subscription = self.db.query(Suscripcion).filter(
+    # ------------------------------------------------------------------
+    # Fecha de corte (§3). Ninguno de estos métodos hace commit: se usan dentro de la
+    # transacción del pago, la anulación, la reactivación o la aprobación de un plan.
+    # ------------------------------------------------------------------
+    def _tipo_inicio(self, gym: Gimnasio) -> str:
+        primera = self.db.query(Suscripcion).filter(
             Suscripcion.gimnasio_id == gym.id
-        ).order_by(Suscripcion.vigente_desde.desc()).first()
+        ).order_by(Suscripcion.vigente_desde.asc(), Suscripcion.created_at.asc()).first()
+        return primera.tipo_inicio if primera else "prueba"
 
-        tipo_inicio = latest_subscription.tipo_inicio if latest_subscription else "prueba"
+    def _dias_prueba(self, gym: Gimnasio) -> int:
+        return settings.DEFAULT_TRIAL_DAYS
 
-        nueva_fecha_corte = CuttingDateCalculator.calculate_cutting_date(
+    def calcular_corte(self, gym: Gimnasio) -> Optional[date]:
+        """Fecha de corte derivada del historial completo de pagos (RNF-04)."""
+        self.db.flush()
+        pagos = [
+            PagoCorte(p.fecha_pago, p.meses, bool(p.anulado), bool(p.fija_ancla))
+            for p in self.payment_repo.list_for_cutting(gym.id)
+        ]
+        return CuttingDateCalculator.calcular(
             fecha_inicio=gym.fecha_inicio,
-            tipo_inicio=tipo_inicio,
-            pagos_meses=months_list
+            tipo_inicio=self._tipo_inicio(gym),
+            pagos=pagos,
+            dias_prueba=self._dias_prueba(gym),
         )
 
-        gym.fecha_corte = nueva_fecha_corte
-        self.db.commit()
-        self.db.refresh(gym)
-        return nueva_fecha_corte
+    def recalcular_corte(self, gym: Gimnasio) -> Optional[date]:
+        """Recalcula y guarda la fecha de corte en caché (sin commit)."""
+        nueva = self.calcular_corte(gym)
+        gym.fecha_corte = nueva
+        self.db.flush()
+        return nueva
 
+    def validar_pago(self, fecha_pago: Optional[date], idempotency_key: str) -> None:
+        """Validaciones previas a cualquier escritura (SA-RF-16 CA1, CA2)."""
+        if fecha_pago and fecha_pago > hoy_bogota():
+            raise BusinessRuleException(
+                "La fecha del pago no puede ser posterior a hoy.", codigo="FECHA_PAGO_FUTURA"
+            )
+        if self.payment_repo.get_by_idempotency_key(idempotency_key):
+            raise IdempotencyConflictException(idempotency_key)
+
+    def agregar_pago(
+        self,
+        gym: Gimnasio,
+        monto: Decimal,
+        meses: int,
+        fecha_pago: Optional[date],
+        metodo: str,
+        nota: Optional[str],
+        idempotency_key: str,
+        actor: UsuarioInterno,
+    ) -> Tuple[Pago, Optional[date]]:
+        """Registra el pago, decide si fija el ancla y recalcula el corte. Sin commit."""
+        fecha_pago = fecha_pago or hoy_bogota()
+        self.validar_pago(fecha_pago, idempotency_key)
+
+        corte_vigente = self.calcular_corte(gym)
+        fija_ancla = CuttingDateCalculator.pago_fija_ancla(corte_vigente, fecha_pago, gym.estado)
+
+        payment = Pago(
+            gimnasio_id=gym.id,
+            monto=monto,
+            meses=meses,
+            fecha_pago=fecha_pago,
+            metodo=metodo.strip(),
+            nota=nota,
+            anulado=False,
+            fija_ancla=fija_ancla,
+            idempotency_key=idempotency_key,
+            registrado_por=actor.id
+        )
+        self.db.add(payment)
+        self.db.flush()
+        nueva_corte = self.recalcular_corte(gym)
+        return payment, nueva_corte
+
+    # ------------------------------------------------------------------
     def register_payment(
         self,
         gym_id: str,
@@ -58,52 +115,43 @@ class PaymentUseCases:
         if not gym:
             raise EntityNotFoundException("Gimnasio", gym_id)
 
-        # 1. Idempotency Check (RNF-04)
-        existing = self.payment_repo.get_by_idempotency_key(data.idempotency_key)
-        if existing:
-            raise IdempotencyConflictException(data.idempotency_key)
+        self.validar_pago(data.fecha_pago, data.idempotency_key)
+        try:
+            estado_anterior = gym.estado
+            payment, nueva_corte = self.agregar_pago(
+                gym, data.monto, data.meses, data.fecha_pago, data.metodo, data.nota,
+                data.idempotency_key, actor
+            )
 
-        # 2. Create Payment Record
-        payment = Pago(
-            gimnasio_id=gym.id,
-            monto=data.monto,
-            meses=data.meses,
-            fecha_pago=data.fecha_pago or hoy_bogota(),
-            metodo=data.metodo.strip(),
-            nota=data.nota,
-            anulado=False,
-            idempotency_key=data.idempotency_key,
-            registrado_por=actor.id
-        )
-        self.db.add(payment)
-        self.db.commit()
-        self.db.refresh(payment)
+            # prueba → activo: el pago va en la misma operación y fija el ancla (§2.1, P-08).
+            if gym.estado == "prueba":
+                gym.estado = "activo"
 
-        # 3. Recalculate cutting date derived from payment history (RF-17 / RNF-04)
-        nueva_corte = self._recalculate_gym_cutting_date(gym)
-
-        # If gym was in trial or suspended, automatically activate upon payment
-        if gym.estado in ["prueba", "suspendido"]:
-            gym.estado = "activo"
+            self.audit_repo.record_action(
+                actor_id=actor.id,
+                actor_nombre=actor.nombre,
+                accion="REGISTRO_PAGO",
+                entidad="pagos",
+                entidad_id=payment.id,
+                gimnasio_id=gym.id,
+                detalle={
+                    "monto": int(payment.monto),
+                    "meses": payment.meses,
+                    "metodo": payment.metodo,
+                    "fecha_pago": str(payment.fecha_pago),
+                    "fija_ancla": payment.fija_ancla,
+                    "estado_anterior": estado_anterior,
+                    "estado_nuevo": gym.estado,
+                    "nueva_fecha_corte": str(nueva_corte)
+                },
+                commit=False
+            )
             self.db.commit()
-            self.db.refresh(gym)
+        except Exception:
+            self.db.rollback()
+            raise
 
-        # 4. Audit Log
-        self.audit_repo.record_action(
-            actor_id=actor.id,
-            actor_nombre=actor.nombre,
-            accion="REGISTRO_PAGO",
-            entidad="pagos",
-            entidad_id=payment.id,
-            gimnasio_id=gym.id,
-            detalle={
-                "monto": float(payment.monto),
-                "meses": payment.meses,
-                "metodo": payment.metodo,
-                "nueva_fecha_corte": str(nueva_corte)
-            }
-        )
-
+        self.db.refresh(payment)
         return payment, nueva_corte
 
     def void_payment(
@@ -112,46 +160,51 @@ class PaymentUseCases:
         motivo_anulacion: str,
         actor: UsuarioInterno
     ) -> Tuple[Pago, Optional[date]]:
-        """Voids payment and recalculates cutting date from remaining history (RF-18)."""
+        """Anula el pago y recalcula la fecha de corte en la misma transacción (RF-18)."""
         payment = self.payment_repo.get_by_id(payment_id)
         if not payment:
             raise EntityNotFoundException("Pago", payment_id)
 
         if payment.anulado:
-            raise BusinessRuleException("Este pago ya ha sido anulado previamente.")
+            raise EntityConflictException("Este pago ya ha sido anulado previamente.", codigo="PAGO_YA_ANULADO")
 
         if not motivo_anulacion or len(motivo_anulacion.strip()) < 5:
-            raise BusinessRuleException("El motivo de anulación es obligatorio y debe tener al menos 5 caracteres.")
+            raise BusinessRuleException(
+                "El motivo de anulación es obligatorio y debe tener al menos 5 caracteres.",
+                codigo="MOTIVO_REQUERIDO"
+            )
 
         gym = self.gym_repo.get_by_id(payment.gimnasio_id)
         if not gym:
             raise EntityNotFoundException("Gimnasio", payment.gimnasio_id)
 
-        # Mark voided
-        payment.anulado = True
-        payment.motivo_anulacion = motivo_anulacion.strip()
-        payment.anulado_por = actor.id
-        payment.anulado_en = datetime.now(timezone.utc)
-        self.db.commit()
+        try:
+            payment.anulado = True
+            payment.motivo_anulacion = motivo_anulacion.strip()
+            payment.anulado_por = actor.id
+            payment.anulado_en = datetime.now(timezone.utc)
+            nueva_corte = self.recalcular_corte(gym)
 
-        # Recalculate cutting date derived strictly from remaining active payments
-        nueva_corte = self._recalculate_gym_cutting_date(gym)
+            self.audit_repo.record_action(
+                actor_id=actor.id,
+                actor_nombre=actor.nombre,
+                accion="ANULACION_PAGO",
+                entidad="pagos",
+                entidad_id=payment.id,
+                gimnasio_id=gym.id,
+                detalle={
+                    "pago_id": payment.id,
+                    "motivo": motivo_anulacion,
+                    "nueva_fecha_corte": str(nueva_corte)
+                },
+                commit=False
+            )
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
-        # Audit Log
-        self.audit_repo.record_action(
-            actor_id=actor.id,
-            actor_nombre=actor.nombre,
-            accion="ANULACION_PAGO",
-            entidad="pagos",
-            entidad_id=payment.id,
-            gimnasio_id=gym.id,
-            detalle={
-                "pago_id": payment.id,
-                "motivo": motivo_anulacion,
-                "nueva_fecha_corte": str(nueva_corte)
-            }
-        )
-
+        self.db.refresh(payment)
         return payment, nueva_corte
 
     def update_subscription_price(
