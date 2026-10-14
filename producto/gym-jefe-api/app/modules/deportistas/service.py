@@ -73,26 +73,30 @@ class DeportistasService:
 
         insert_query = text("""
             INSERT INTO platform.deportistas (
-                gimnasio_id, documento, nombre, correo, telefono,
+                gimnasio_id, tipo_documento, documento, nombre, correo, telefono,
                 sexo, fecha_nacimiento, altura_cm,
-                consentimiento_1581, consentimiento_fecha,
-                acudiente_nombre, activo, version,
-                created_at, updated_at
+                consentimiento_1581, consentimiento_fecha, consentimiento_version,
+                consentimiento_registrado_por, acudiente, acudiente_nombre,
+                activo, version, created_at, updated_at
             ) VALUES (
-                :gym_id, :documento, :nombre, :correo, :telefono,
+                :gym_id, :tipo_documento, :documento, :nombre, :correo, :telefono,
                 :sexo, :fecha_nacimiento, :altura_cm,
-                :consentimiento_1581, :consentimiento_fecha,
-                :acudiente_nombre, true, 1,
-                :now_utc, :now_utc
+                :consentimiento_1581, :consentimiento_fecha, :consentimiento_version,
+                :consentimiento_registrado_por, CAST(:acudiente AS jsonb), :acudiente_nombre,
+                true, 1, :now_utc, :now_utc
             )
-            RETURNING id, gimnasio_id, documento, nombre, correo, telefono,
+            RETURNING id, gimnasio_id, tipo_documento, documento, nombre, correo, telefono,
                       sexo, fecha_nacimiento, altura_cm,
-                      consentimiento_1581, consentimiento_fecha,
-                      acudiente_nombre, activo, version, created_at, updated_at;
+                      consentimiento_1581, consentimiento_fecha, consentimiento_version,
+                      consentimiento_registrado_por, acudiente, acudiente_nombre, activo, version,
+                      created_at, updated_at;
         """)
 
+        acudiente_json = req.acudiente.model_dump_json() if req.acudiente else None
+        acudiente_nom = req.acudiente.nombre if req.acudiente else req.acudiente_nombre
         params = {
             "gym_id": gym_id,
+            "tipo_documento": req.tipo_documento or "CC",
             "documento": req.documento,
             "nombre": req.nombre,
             "correo": str(req.correo) if req.correo else None,
@@ -102,7 +106,10 @@ class DeportistasService:
             "altura_cm": req.altura_cm,
             "consentimiento_1581": req.consentimiento_1581,
             "consentimiento_fecha": now_utc,
-            "acudiente_nombre": req.acudiente_nombre,
+            "consentimiento_version": req.consentimiento_version or "1.0",
+            "consentimiento_registrado_por": staff_id,
+            "acudiente": acudiente_json,
+            "acudiente_nombre": acudiente_nom,
             "now_utc": now_utc,
         }
 
@@ -117,7 +124,7 @@ class DeportistasService:
                     status_code=status.HTTP_409_CONFLICT,
                     detail={
                         "codigo": "DOCUMENTO_YA_REGISTRADO",
-                        "mensaje": f"Ya existe un deportista con el documento '{req.documento}' en este gimnasio.",
+                        "mensaje": f"Ya existe un deportista con el documento '{req.tipo_documento} {req.documento}' en este gimnasio.",
                     },
                 )
             raise HTTPException(
@@ -134,10 +141,12 @@ class DeportistasService:
             accion="CREAR",
             entidad="deportistas",
             entidad_id=str(row["id"]),
-            detalle={"documento": req.documento, "nombre": req.nombre},
+            detalle={"documento": req.documento, "nombre": req.nombre, "tipo_documento": req.tipo_documento},
         )
 
-        return DeportistaResponse(**row)
+        row_dict = dict(row)
+        row_dict["consentimiento_registrado_por_nombre"] = staff_nombre
+        return DeportistaResponse(**row_dict)
 
     # =====================================================================
     # 2. Listar Deportistas Paginado (RF-17, RNF-09)
@@ -200,6 +209,7 @@ class DeportistasService:
         items_query = text(f"""
             SELECT
                 d.id,
+                d.tipo_documento,
                 d.documento,
                 d.nombre,
                 d.correo,
@@ -286,6 +296,7 @@ class DeportistasService:
         search_query = text("""
             SELECT
                 d.id,
+                d.tipo_documento,
                 d.documento,
                 d.nombre,
                 d.correo,
@@ -369,12 +380,14 @@ class DeportistasService:
 
         # 1. Datos del deportista
         dep_query = text("""
-            SELECT id, gimnasio_id, documento, nombre, correo, telefono,
-                   sexo, fecha_nacimiento, altura_cm,
-                   consentimiento_1581, consentimiento_fecha,
-                   acudiente_nombre, activo, version, created_at, updated_at
-            FROM platform.deportistas
-            WHERE id = :id AND gimnasio_id = :gym_id AND deleted_at IS NULL;
+            SELECT d.id, d.gimnasio_id, d.tipo_documento, d.documento, d.nombre, d.correo, d.telefono,
+                   d.sexo, d.fecha_nacimiento, d.altura_cm,
+                   d.consentimiento_1581, d.consentimiento_fecha, d.consentimiento_version,
+                   d.consentimiento_registrado_por, sc.nombre as consentimiento_registrado_por_nombre,
+                   d.acudiente, d.acudiente_nombre, d.activo, d.version, d.created_at, d.updated_at
+            FROM platform.deportistas d
+            LEFT JOIN platform.staff sc ON sc.id = d.consentimiento_registrado_por
+            WHERE d.id = :id AND d.gimnasio_id = :gym_id AND d.deleted_at IS NULL;
         """)
         res_dep = await session.execute(dep_query, {"id": deportista_id, "gym_id": gym_id})
         row_dep = res_dep.mappings().one_or_none()
@@ -546,47 +559,55 @@ class DeportistasService:
         Compara `version = :version_esperada`. Si otra transacción lo modificó,
         responde 409 CONFLICT sin usar bloqueos pesimistas.
         """
-        # 1. Si se actualiza el documento, verificar que no colisione con otro deportista
-        if req.documento is not None:
+        # 1. Si se actualiza el documento o tipo_documento, verificar que no colisione con otro deportista
+        if req.documento is not None or req.tipo_documento is not None:
             check_doc = text("""
                 SELECT 1 FROM platform.deportistas
                 WHERE gimnasio_id = :gym_id
-                  AND documento = :doc
+                  AND tipo_documento = COALESCE(:tipo_doc, tipo_documento)
+                  AND documento = COALESCE(:doc, documento)
                   AND id != :id
                   AND deleted_at IS NULL;
             """)
-            res_doc = await session.execute(check_doc, {"gym_id": gym_id, "doc": req.documento, "id": deportista_id})
+            res_doc = await session.execute(
+                check_doc,
+                {"gym_id": gym_id, "tipo_doc": req.tipo_documento, "doc": req.documento, "id": deportista_id}
+            )
             if res_doc.scalar_one_or_none():
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail={
                         "codigo": "DOCUMENTO_YA_REGISTRADO",
-                        "mensaje": f"El documento '{req.documento}' ya está registrado en otro deportista de este gimnasio.",
+                        "mensaje": "Ya existe otro deportista con ese tipo y número de documento en este gimnasio.",
                     },
                 )
 
         now_utc = datetime.now(timezone.utc)
+        acudiente_json = req.acudiente.model_dump_json() if req.acudiente else None
+        acudiente_nom = req.acudiente.nombre if req.acudiente else req.acudiente_nombre
 
         update_query = text("""
             UPDATE platform.deportistas
-            SET documento = COALESCE(:documento, documento),
+            SET tipo_documento = COALESCE(:tipo_documento, tipo_documento),
+                documento = COALESCE(:documento, documento),
                 nombre = COALESCE(:nombre, nombre),
                 correo = CASE WHEN :correo_provided THEN :correo ELSE correo END,
                 telefono = CASE WHEN :telefono_provided THEN :telefono ELSE telefono END,
                 sexo = CASE WHEN :sexo_provided THEN :sexo ELSE sexo END,
                 fecha_nacimiento = CASE WHEN :fecha_nac_provided THEN :fecha_nacimiento ELSE fecha_nacimiento END,
                 altura_cm = CASE WHEN :altura_provided THEN :altura_cm ELSE altura_cm END,
-                acudiente_nombre = CASE WHEN :acudiente_provided THEN :acudiente_nombre ELSE acudiente_nombre END,
+                acudiente = CASE WHEN :acudiente_provided THEN CAST(:acudiente AS jsonb) ELSE acudiente END,
+                acudiente_nombre = CASE WHEN :acudiente_nom_provided THEN :acudiente_nombre ELSE acudiente_nombre END,
                 version = version + 1,
                 updated_at = :now_utc
             WHERE id = :id
               AND gimnasio_id = :gym_id
               AND version = :version_esperada
               AND deleted_at IS NULL
-            RETURNING id, gimnasio_id, documento, nombre, correo, telefono,
+            RETURNING id, gimnasio_id, tipo_documento, documento, nombre, correo, telefono,
                       sexo, fecha_nacimiento, altura_cm,
-                      consentimiento_1581, consentimiento_fecha,
-                      acudiente_nombre, activo, version, created_at, updated_at;
+                      consentimiento_1581, consentimiento_fecha, consentimiento_version,
+                      consentimiento_registrado_por, acudiente, acudiente_nombre, activo, version, created_at, updated_at;
         """)
 
         params = {
@@ -594,6 +615,7 @@ class DeportistasService:
             "gym_id": gym_id,
             "version_esperada": req.version,
             "now_utc": now_utc,
+            "tipo_documento": req.tipo_documento,
             "documento": req.documento,
             "nombre": req.nombre,
             "correo_provided": req.correo is not None,
@@ -606,8 +628,10 @@ class DeportistasService:
             "fecha_nacimiento": req.fecha_nacimiento,
             "altura_provided": req.altura_cm is not None,
             "altura_cm": req.altura_cm,
-            "acudiente_provided": req.acudiente_nombre is not None,
-            "acudiente_nombre": req.acudiente_nombre,
+            "acudiente_provided": req.acudiente is not None,
+            "acudiente": acudiente_json,
+            "acudiente_nom_provided": acudiente_nom is not None,
+            "acudiente_nombre": acudiente_nom,
         }
 
         try:
@@ -666,7 +690,17 @@ class DeportistasService:
             detalle={"version_previa": req.version, "nueva_version": row["version"]},
         )
 
-        return DeportistaResponse(**row)
+        staff_nombre_cons = None
+        if row["consentimiento_registrado_por"]:
+            res_s = await session.execute(
+                text("SELECT nombre FROM platform.staff WHERE id = :sid"),
+                {"sid": row["consentimiento_registrado_por"]}
+            )
+            staff_nombre_cons = res_s.scalar_one_or_none()
+
+        row_dict = dict(row)
+        row_dict["consentimiento_registrado_por_nombre"] = staff_nombre_cons
+        return DeportistaResponse(**row_dict)
 
     # =====================================================================
     # 6. Cambiar Estado Operativo (Activar / Desactivar)

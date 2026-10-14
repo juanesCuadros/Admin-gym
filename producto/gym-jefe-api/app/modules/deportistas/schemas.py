@@ -12,10 +12,24 @@ from app.core.timezone import today_local
 
 
 # =====================================================================
+# =====================================================================
 # 1. Registro y Edición de Deportistas (RF-17, RF-19)
 # =====================================================================
 
+TipoDocumento = Literal["CC", "TI", "CE", "PAS", "PPT", "RC"]
+
+
+class AcudienteDto(BaseModel):
+    nombre: str = Field(..., min_length=2, max_length=150, description="Nombre completo del acudiente")
+    tipo_documento: TipoDocumento = Field(..., description="Tipo de documento del acudiente")
+    documento: str = Field(..., min_length=3, max_length=30, description="Número de documento del acudiente")
+    telefono: str = Field(..., min_length=5, max_length=25, description="Número de teléfono o celular del acudiente")
+    parentesco: str = Field(..., min_length=2, max_length=50, description="Parentesco (padre, madre, tutor, etc.)")
+    autoriza: bool = Field(..., description="Autorización explícita del acudiente para tratamiento de datos y actividades")
+
+
 class CrearDeportistaRequest(BaseModel):
+    tipo_documento: TipoDocumento = Field("CC", description="Tipo de documento de identidad")
     documento: str = Field(..., min_length=3, max_length=30, description="Cédula o documento único en el gimnasio")
     nombre: str = Field(..., min_length=2, max_length=150, description="Nombre completo del deportista")
     correo: Optional[EmailStr] = Field(None, description="Correo electrónico (puede repetirse en planes familiares/pareja)")
@@ -24,7 +38,9 @@ class CrearDeportistaRequest(BaseModel):
     fecha_nacimiento: Optional[date] = Field(None, description="Fecha de nacimiento para cálculo de edad")
     altura_cm: Optional[Decimal] = Field(None, gt=0, max_digits=5, decimal_places=2, description="Estatura en centímetros")
     consentimiento_1581: bool = Field(..., description="Consentimiento explícito de tratamiento de datos bajo Ley 1581")
-    acudiente_nombre: Optional[str] = Field(None, max_length=150, description="Nombre del acudiente (obligatorio si menor de 18 años)")
+    consentimiento_version: str = Field("1.0", description="Versión del texto de consentimiento aceptado")
+    acudiente: Optional[AcudienteDto] = Field(None, description="Datos completos del acudiente (obligatorio si menor de 18 años)")
+    acudiente_nombre: Optional[str] = Field(None, max_length=150, description="Nombre del acudiente (retrocompatibilidad)")
 
     @field_validator("documento", "nombre")
     @classmethod
@@ -60,13 +76,19 @@ class CrearDeportistaRequest(BaseModel):
                 - self.fecha_nacimiento.year
                 - ((today.month, today.day) < (self.fecha_nacimiento.month, self.fecha_nacimiento.day))
             )
-            if age < 18 and (not self.acudiente_nombre or not self.acudiente_nombre.strip()):
-                raise ValueError("El nombre del acudiente es obligatorio para deportistas menores de 18 años.")
+            if age < 18:
+                if not self.acudiente and not (self.acudiente_nombre and self.acudiente_nombre.strip()):
+                    raise ValueError("El nombre del acudiente es obligatorio para deportistas menores de 18 años. ACUDIENTE_REQUERIDO")
+                if self.acudiente and not self.acudiente.autoriza:
+                    raise ValueError("La autorización del acudiente es obligatoria para registrar a un menor de 18 años. AUTORIZACION_ACUDIENTE_REQUERIDA")
+            if self.acudiente and not self.acudiente_nombre:
+                self.acudiente_nombre = self.acudiente.nombre
         return self
 
 
 class EditarDeportistaRequest(BaseModel):
     version: int = Field(..., description="Versión actual esperada para control de concurrencia optimista")
+    tipo_documento: Optional[TipoDocumento] = None
     documento: Optional[str] = Field(None, min_length=3, max_length=30)
     nombre: Optional[str] = Field(None, min_length=2, max_length=150)
     correo: Optional[EmailStr] = None
@@ -74,6 +96,7 @@ class EditarDeportistaRequest(BaseModel):
     sexo: Optional[Literal["M", "F", "otro"]] = None
     fecha_nacimiento: Optional[date] = None
     altura_cm: Optional[Decimal] = Field(None, gt=0, max_digits=5, decimal_places=2)
+    acudiente: Optional[AcudienteDto] = None
     acudiente_nombre: Optional[str] = Field(None, max_length=150)
 
     @field_validator("documento", "nombre", "telefono", "acudiente_nombre")
@@ -93,8 +116,13 @@ class EditarDeportistaRequest(BaseModel):
                 - self.fecha_nacimiento.year
                 - ((today.month, today.day) < (self.fecha_nacimiento.month, self.fecha_nacimiento.day))
             )
-            if age < 18 and (not self.acudiente_nombre or not self.acudiente_nombre.strip()):
-                raise ValueError("El nombre del acudiente es obligatorio para deportistas menores de 18 años.")
+            if age < 18:
+                if not self.acudiente and not (self.acudiente_nombre and self.acudiente_nombre.strip()):
+                    raise ValueError("El nombre del acudiente es obligatorio para deportistas menores de 18 años. ACUDIENTE_REQUERIDO")
+                if self.acudiente and not self.acudiente.autoriza:
+                    raise ValueError("La autorización del acudiente es obligatoria para registrar a un menor de 18 años. AUTORIZACION_ACUDIENTE_REQUERIDA")
+            if self.acudiente and not self.acudiente_nombre:
+                self.acudiente_nombre = self.acudiente.nombre
         return self
 
 
@@ -109,6 +137,7 @@ class CambiarEstadoDeportistaRequest(BaseModel):
 class DeportistaResponse(BaseModel):
     id: UUID
     gimnasio_id: UUID
+    tipo_documento: str = "CC"
     documento: str
     nombre: str
     correo: Optional[str] = None
@@ -118,6 +147,9 @@ class DeportistaResponse(BaseModel):
     altura_cm: Optional[Decimal] = None
     consentimiento_1581: bool
     consentimiento_fecha: Optional[datetime] = None
+    consentimiento_version: str = "1.0"
+    consentimiento_registrado_por_nombre: Optional[str] = None
+    acudiente: Optional[AcudienteDto] = None
     acudiente_nombre: Optional[str] = None
     activo: bool
     estado: Optional[str] = None
@@ -128,6 +160,7 @@ class DeportistaResponse(BaseModel):
 
 class DeportistaResumenResponse(BaseModel):
     id: UUID
+    tipo_documento: str = "CC"
     documento: str
     nombre: str
     correo: Optional[str] = None
@@ -149,6 +182,7 @@ class DeportistasPaginadosResponse(BaseModel):
 
 class DeportistaBuscarResponse(BaseModel):
     id: UUID
+    tipo_documento: str = "CC"
     documento: str
     nombre: str
     correo: Optional[str] = None
