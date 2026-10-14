@@ -78,6 +78,8 @@ class SubscriptionResponse(BaseModel):
     tipo_inicio: str
     vigente_desde: date
     vigente_hasta: Optional[date] = None
+    plan_id: Optional[str] = None
+    plan_nombre: Optional[str] = None
 
 class GymListItemResponse(BaseModel):
     id: str
@@ -90,6 +92,9 @@ class GymListItemResponse(BaseModel):
     fecha_inicio: date
     fecha_corte: Optional[date] = None
     dias_restantes: Optional[int] = None
+    estado_calculado: Optional[str] = None  # al_dia | por_vencer | en_gracia | bloqueado
+    motivo_bloqueo: Optional[str] = None
+    plan_nombre: Optional[str] = None
     logo_url: Optional[str] = None
     jefe_nombre: Optional[str] = None
     jefe_correo: Optional[str] = None
@@ -114,6 +119,9 @@ class GymDetailResponse(BaseModel):
     fecha_inicio: date
     fecha_corte: Optional[date] = None
     dias_restantes: Optional[int] = None
+    estado_calculado: Optional[str] = None
+    motivo_bloqueo: Optional[str] = None
+    plan_nombre: Optional[str] = None
     logo_url: Optional[str] = None
     banner_url: Optional[str] = None
     descripcion: Optional[str] = None

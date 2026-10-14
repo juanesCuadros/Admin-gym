@@ -106,7 +106,7 @@ class Gimnasio(Base):
 
     # Relationships
     cuenta_jefe = relationship("CuentaJefe", back_populates="gimnasio", uselist=False, cascade="all, delete-orphan")
-    suscripciones = relationship("Suscripcion", back_populates="gimnasio", cascade="all, delete-orphan", order_by="desc(Suscripcion.vigente_desde)")
+    suscripciones = relationship("Suscripcion", back_populates="gimnasio", cascade="all, delete-orphan", order_by="[desc(Suscripcion.vigente_desde), desc(Suscripcion.created_at)]")
     pagos = relationship("Pago", back_populates="gimnasio", cascade="all, delete-orphan", order_by="desc(Pago.fecha_pago)")
     credenciales = relationship("EmisionCredenciales", back_populates="gimnasio", cascade="all, delete-orphan")
     provisioning_pasos = relationship("ProvisioningPaso", back_populates="gimnasio", cascade="all, delete-orphan")
@@ -127,6 +127,29 @@ class CuentaJefe(Base):
 
     gimnasio = relationship("Gimnasio", back_populates="cuenta_jefe")
 
+class PlanSuscripcion(Base):
+    """Catálogo de planes del SaaS (SA-RF-33). Tabla creada en la migración 003."""
+    __tablename__ = "planes_suscripcion"
+    __table_args__ = {"schema": _schema()}
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    codigo = Column(String(40), nullable=False, unique=True)
+    nombre = Column(Text, nullable=False)
+    descripcion = Column(Text, nullable=True)
+    tipo = Column(String(10), nullable=False)  # 'prueba' | 'pago'
+    precio = Column(Numeric(12, 0), nullable=False, default=0)  # COP, precio mensual
+    duracion_meses = Column(Integer, nullable=True)
+    dias_prueba = Column(Integer, nullable=True)
+    max_clientes_activos = Column(Integer, nullable=True)
+    max_staff = Column(Integer, nullable=True)
+    activo = Column(Boolean, nullable=False, default=True)
+    publico = Column(Boolean, nullable=False, default=True)
+    orden = Column(Integer, nullable=False, default=0)
+    version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
 class Suscripcion(Base):
     __tablename__ = "suscripciones"
     __table_args__ = {"schema": _schema()}
@@ -137,9 +160,32 @@ class Suscripcion(Base):
     tipo_inicio = Column(String(50), nullable=False)  # 'prueba', 'cliente_activo'
     vigente_desde = Column(Date, nullable=False)
     vigente_hasta = Column(Date, nullable=True)
+    plan_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}planes_suscripcion.id", ondelete="RESTRICT"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     gimnasio = relationship("Gimnasio", back_populates="suscripciones")
+    plan = relationship("PlanSuscripcion", lazy="joined")
+
+
+class SolicitudPlan(Base):
+    """Solicitud de cambio de plan hecha por el Jefe desde el Sistema Web (migración 003)."""
+    __tablename__ = "solicitudes_plan"
+    __table_args__ = {"schema": _schema()}
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    gimnasio_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}gimnasios.id", ondelete="CASCADE"), nullable=False)
+    plan_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}planes_suscripcion.id", ondelete="RESTRICT"), nullable=False)
+    estado = Column(String(20), nullable=False, default="pendiente")  # pendiente | aprobada | rechazada | cancelada
+    solicitado_por = Column(Text, nullable=False)
+    nota = Column(Text, nullable=True)
+    pago_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}pagos.id", ondelete="SET NULL"), nullable=True)
+    motivo_rechazo = Column(Text, nullable=True)
+    resuelta_por = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}usuarios_internos.id", ondelete="SET NULL"), nullable=True)
+    resuelta_en = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    gimnasio = relationship("Gimnasio")
+    plan = relationship("PlanSuscripcion")
 
 class Pago(Base):
     __tablename__ = "pagos"

@@ -43,14 +43,19 @@ def list_gyms(
     search: Optional[str] = Query(None, description="Búsqueda por nombre, subdominio, nit o ciudad"),
     estado: Optional[str] = Query(None, description="Filtrar por estado: prueba, activo, suspendido, cancelado"),
     order_by: str = Query("urgency", description="Orden: urgency (vencidos primero), nombre, fecha_corte, created_at"),
+    estado_calculado: Optional[str] = Query(
+        None,
+        pattern="^(al_dia|por_vencer|en_gracia|bloqueado|prueba_por_vencer)$",
+        description="Filtro por estado calculado (platform.estado_suscripcion). Excluye cancelados."
+    ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: UsuarioInterno = Depends(get_current_admin_user)
 ):
     """
-    RF-02 / RF-03: Tabla de gimnasios ordenada por urgencia (con los vencidos primero),
-    búsqueda, filtro por estado y paginación.
+    RF-02 / RF-03 / contrato 3.3: Tabla de gimnasios ordenada por urgencia, búsqueda, filtros por
+    estado guardado y calculado, y paginación. El estado calculado viene de la BD.
     """
     repo = GymRepository(db)
     items, total = repo.list_gyms(
@@ -58,13 +63,16 @@ def list_gyms(
         estado=estado,
         order_by=order_by,
         limit=limit,
-        offset=offset
+        offset=offset,
+        estado_calculado=estado_calculado,
     )
 
     today = hoy_bogota()
     result = []
-    for g in items:
-        dias_restantes = (g.fecha_corte - today).days if g.fecha_corte else None
+    for g, calc in items:
+        dias_restantes = calc["dias_restantes"]
+        if dias_restantes is None and g.fecha_corte and calc["estado_calculado"] is None:
+            dias_restantes = (g.fecha_corte - today).days  # Solo SQLite (sin la función de la BD).
         active_sub = g.suscripciones[0] if g.suscripciones else None
         result.append(
             GymListItemResponse(
@@ -78,6 +86,9 @@ def list_gyms(
                 fecha_inicio=g.fecha_inicio,
                 fecha_corte=g.fecha_corte,
                 dias_restantes=dias_restantes,
+                estado_calculado=calc["estado_calculado"],
+                motivo_bloqueo=calc["motivo_bloqueo"],
+                plan_nombre=active_sub.plan.nombre if active_sub and active_sub.plan else None,
                 logo_url=g.logo_url,
                 jefe_nombre=g.cuenta_jefe.nombre if g.cuenta_jefe else None,
                 jefe_correo=g.cuenta_jefe.correo if g.cuenta_jefe else None,
@@ -134,7 +145,10 @@ def get_gym_detail(
         raise EntityNotFoundException("Gimnasio", gym_id)
 
     today = hoy_bogota()
-    dias_restantes = (g.fecha_corte - today).days if (g := gym).fecha_corte else None
+    calc = repo.estado_calculado(gym)
+    dias_restantes = calc["dias_restantes"]
+    if dias_restantes is None and gym.fecha_corte and calc["estado_calculado"] is None:
+        dias_restantes = (gym.fecha_corte - today).days  # Solo SQLite (sin la función de la BD).
 
     # Jefe
     jefe_data = None
@@ -155,7 +169,9 @@ def get_gym_detail(
             valor_mensual=float(s.valor_mensual),
             tipo_inicio=s.tipo_inicio,
             vigente_desde=s.vigente_desde,
-            vigente_hasta=s.vigente_hasta
+            vigente_hasta=s.vigente_hasta,
+            plan_id=s.plan_id,
+            plan_nombre=s.plan.nombre if s.plan else None
         )
         for s in gym.suscripciones
     ]
@@ -218,6 +234,9 @@ def get_gym_detail(
         fecha_inicio=gym.fecha_inicio,
         fecha_corte=gym.fecha_corte,
         dias_restantes=dias_restantes,
+        estado_calculado=calc["estado_calculado"],
+        motivo_bloqueo=calc["motivo_bloqueo"],
+        plan_nombre=suscripcion_actual.plan_nombre if suscripcion_actual else None,
         logo_url=gym.logo_url,
         banner_url=gym.banner_url,
         descripcion=gym.descripcion,
