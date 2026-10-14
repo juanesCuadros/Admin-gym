@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy import text
@@ -416,6 +416,87 @@ class CajaService:
         resumen.diferencia = diferencia
         return resumen
 
+    @classmethod
+    async def _validar_y_calcular_descuento(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        staff_rol: str,
+        precio_lista: Decimal,
+        precio_cobrado: Optional[Decimal],
+        motivo_descuento: Optional[str]
+    ) -> Tuple[Decimal, Decimal, Optional[str]]:
+        """
+        Valida y calcula el descuento aplicable según GW-RF-53 y Contrato 1.2:
+        Retorna (precio_cobrado_final, descuento_pct, motivo_final).
+        - Si precio_cobrado is None: se cobra precio_lista, descuento_pct = 0, motivo = None.
+        - Si precio_cobrado >= precio_lista: se cobra precio_cobrado, descuento_pct = 0, motivo = None.
+        - Si precio_cobrado < precio_lista:
+          1. Validar tenant.permitir_descuentos -> 403 DESCUENTOS_DESHABILITADOS
+          2. Validar permiso de descuento (staff_rol == 'jefe' o permisos_rol.puede_editar en 'caja') -> 403 SIN_PERMISO_DESCUENTO
+          3. Validar motivo obligatorio y no vacío -> 422 MOTIVO_DESCUENTO_REQUERIDO
+          4. Calcular descuento_pct = round(((precio_lista - precio_cobrado) / precio_lista) * Decimal("100"), 2)
+          5. Validar que descuento_pct <= tenant.tope_descuento_pct -> 422 DESCUENTO_SUPERA_TOPE
+        """
+        if precio_cobrado is None:
+            return (precio_lista, Decimal("0.0"), None)
+
+        if precio_cobrado >= precio_lista:
+            return (precio_cobrado, Decimal("0.0"), None)
+
+        # Precio cobrado menor a precio de lista -> Aplica regla de descuento (GW-RF-53, Contrato 1.2)
+        q_t = text("SELECT permitir_descuentos, tope_descuento_pct FROM platform.tenant WHERE id = :gym_id")
+        res_t = await session.execute(q_t, {"gym_id": gym_id})
+        row_t = res_t.mappings().first()
+        permitir_descuentos = row_t["permitir_descuentos"] if (row_t and row_t["permitir_descuentos"] is not None) else True
+        tope_descuento_pct = Decimal(str(row_t["tope_descuento_pct"])) if (row_t and row_t["tope_descuento_pct"] is not None) else Decimal("100.0")
+
+        if not permitir_descuentos:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"codigo": "DESCUENTOS_DESHABILITADOS", "mensaje": "Los descuentos se encuentran deshabilitados para este gimnasio"}
+            )
+
+        if staff_rol != "jefe":
+            q_p = text("""
+                SELECT puede_editar
+                FROM platform.permisos_rol
+                WHERE gimnasio_id = :gym_id AND rol = :rol AND submodulo = 'caja'
+            """)
+            res_p = await session.execute(q_p, {"gym_id": gym_id, "rol": staff_rol})
+            puede_editar = bool(res_p.scalar_one_or_none())
+            if not puede_editar:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={"codigo": "SIN_PERMISO_DESCUENTO", "mensaje": "No tiene permisos para autorizar o aplicar descuentos en caja"}
+                )
+
+        if not motivo_descuento or not motivo_descuento.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"codigo": "MOTIVO_DESCUENTO_REQUERIDO", "mensaje": "Debe proporcionar una justificación o motivo para el descuento aplicado"}
+            )
+
+        if precio_lista > 0:
+            descuento_pct = round(((precio_lista - precio_cobrado) / precio_lista) * Decimal("100"), 2)
+        else:
+            descuento_pct = Decimal("0.0")
+
+        if descuento_pct > tope_descuento_pct:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "codigo": "DESCUENTO_SUPERA_TOPE",
+                    "mensaje": f"El descuento aplicado ({descuento_pct}%) supera el tope máximo permitido ({tope_descuento_pct}%)",
+                    "detalles": {
+                        "tope_pct": float(tope_descuento_pct),
+                        "descuento_pct": float(descuento_pct)
+                    }
+                }
+            )
+
+        return (precio_cobrado, descuento_pct, motivo_descuento.strip())
+
     # =========================================================================
     # 2. PUNTO DE VENTA ATÓMICO Y KARDEX (RF-11, RF-12)
     # =========================================================================
@@ -426,6 +507,8 @@ class CajaService:
         session: AsyncSession,
         gym_id: UUID,
         staff_id: UUID,
+        staff_rol: str,
+        staff_nombre: str,
         idempotency_key: str,
         data: RegistrarVentaRequest
     ) -> VentaResponseDto:
@@ -504,24 +587,33 @@ class CajaService:
                         }
                     )
 
-        # 4. Cálculo de Precios Autoritativos y Subtotales
+        # 4. Cálculo de Precios Autoritativos, Descuentos y Subtotales
         items_procesados = []
         total_calculado = Decimal("0.0")
 
         for it in data.items:
             if it.tipo == "producto":
-                # REGLA DE SEGURIDAD: Precio autoritativo tomado directo de platform.productos.precio
-                precio_unitario = Decimal(str(productos_map[it.producto_id]["precio"]))
+                # REGLA DE SEGURIDAD: Precio lista tomado directo de platform.productos.precio
+                precio_lista = Decimal(str(productos_map[it.producto_id]["precio"]))
             else:
-                # Pases de día y pases de clase toman el valor enviado
+                # Pases de día y pases de clase toman el valor base enviado
                 if it.precio_unitario is None:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail={"codigo": "PRECIO_UNITARIO_REQUERIDO", "mensaje": f"Debe proporcionar precio_unitario para '{it.descripcion}'"}
                     )
-                precio_unitario = it.precio_unitario
+                precio_lista = it.precio_unitario
 
-            subtotal = precio_unitario * it.cantidad
+            precio_cobrado_unit, desc_pct, mot_desc = await cls._validar_y_calcular_descuento(
+                session=session,
+                gym_id=gym_id,
+                staff_rol=staff_rol,
+                precio_lista=precio_lista,
+                precio_cobrado=it.precio_cobrado,
+                motivo_descuento=it.motivo_descuento
+            )
+
+            subtotal = precio_cobrado_unit * it.cantidad
             total_calculado += subtotal
 
             items_procesados.append({
@@ -529,8 +621,12 @@ class CajaService:
                 "producto_id": it.producto_id,
                 "descripcion": it.descripcion.strip(),
                 "cantidad": it.cantidad,
-                "precio_unitario": precio_unitario,
-                "subtotal": subtotal
+                "precio_unitario": precio_cobrado_unit,
+                "subtotal": subtotal,
+                "precio_lista": precio_lista,
+                "precio_cobrado": precio_cobrado_unit,
+                "descuento_pct": desc_pct,
+                "motivo_descuento": mot_desc
             })
 
         # 5. Validación de Pago en Efectivo y Cambio
@@ -581,9 +677,11 @@ class CajaService:
         for it in items_procesados:
             insert_item_query = text("""
                 INSERT INTO platform.venta_items (
-                    gimnasio_id, venta_id, tipo, producto_id, descripcion, cantidad, precio_unitario, subtotal
+                    gimnasio_id, venta_id, tipo, producto_id, descripcion, cantidad, precio_unitario, subtotal,
+                    precio_lista, precio_cobrado, descuento_pct, motivo_descuento
                 ) VALUES (
-                    :gym_id, :venta_id, :tipo, :producto_id, :descripcion, :cantidad, :precio_unitario, :subtotal
+                    :gym_id, :venta_id, :tipo, :producto_id, :descripcion, :cantidad, :precio_unitario, :subtotal,
+                    :precio_lista, :precio_cobrado, :descuento_pct, :motivo_descuento
                 ) RETURNING id
             """)
             res_it = await session.execute(insert_item_query, {
@@ -594,7 +692,11 @@ class CajaService:
                 "descripcion": it["descripcion"],
                 "cantidad": it["cantidad"],
                 "precio_unitario": it["precio_unitario"],
-                "subtotal": it["subtotal"]
+                "subtotal": it["subtotal"],
+                "precio_lista": it["precio_lista"],
+                "precio_cobrado": it["precio_cobrado"],
+                "descuento_pct": it["descuento_pct"],
+                "motivo_descuento": it["motivo_descuento"]
             })
             item_id = res_it.scalar_one()
 
@@ -628,7 +730,11 @@ class CajaService:
                 descripcion=it["descripcion"],
                 cantidad=it["cantidad"],
                 precio_unitario=it["precio_unitario"],
-                subtotal=it["subtotal"]
+                subtotal=it["subtotal"],
+                precio_lista=it["precio_lista"],
+                precio_cobrado=it["precio_cobrado"],
+                descuento_pct=it["descuento_pct"],
+                motivo_descuento=it["motivo_descuento"]
             ))
 
         return VentaResponseDto(
@@ -791,16 +897,14 @@ class CajaService:
             }
         )
 
-    # =========================================================================
-    # 3. PAGOS DE MEMBRESÍA LIGADOS AL TURNO (RF-15, RF-16, RF-25)
-    # =========================================================================
-
     @classmethod
     async def registrar_pago_membresia(
         cls,
         session: AsyncSession,
         gym_id: UUID,
         staff_id: UUID,
+        staff_rol: str,
+        staff_nombre: str,
         idempotency_key: str,
         data: RegistrarPagoMembresiaRequest
     ) -> PagoMembresiaResponseDto:
@@ -828,9 +932,11 @@ class CajaService:
 
         # 3. Bloqueo de la membresía para extensión de vigencia
         memb_query = text("""
-            SELECT id, deportista_id, fecha_inicio, fecha_vencimiento, cancelada
-            FROM platform.membresias
-            WHERE id = :membresia_id AND gimnasio_id = :gym_id
+            SELECT m.id, m.deportista_id, m.fecha_inicio, m.fecha_vencimiento, m.cancelada,
+                   m.plan_precio_vendido, p.precio as plan_precio
+            FROM platform.membresias m
+            JOIN platform.planes p ON p.id = m.plan_id
+            WHERE m.id = :membresia_id AND m.gimnasio_id = :gym_id
             FOR UPDATE
         """)
         res_memb = await session.execute(memb_query, {"membresia_id": data.membresia_id, "gym_id": gym_id})
@@ -846,6 +952,19 @@ class CajaService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"codigo": "MEMBRESIA_CANCELADA", "mensaje": "No se pueden registrar pagos a una membresía cancelada"}
             )
+
+        # Validación y cálculo de descuento (GW-RF-53, Contrato 1.2)
+        precio_lista = Decimal(str(memb["plan_precio_vendido"] or memb["plan_precio"] or data.monto))
+        precio_evaluar = data.precio_cobrado if data.precio_cobrado is not None else data.monto
+        precio_cobrado_final, desc_pct, mot_desc = await cls._validar_y_calcular_descuento(
+            session=session,
+            gym_id=gym_id,
+            staff_rol=staff_rol,
+            precio_lista=precio_lista,
+            precio_cobrado=precio_evaluar,
+            motivo_descuento=data.motivo_descuento
+        )
+        monto_a_cobrar = precio_cobrado_final if data.precio_cobrado is not None else data.monto
 
         # 4. Cálculo de nueva fecha de vencimiento según Regla C2 (GW-RF-25 CA1 y CA2)
         hoy = today_local()
@@ -890,12 +1009,12 @@ class CajaService:
         # 5. Cálculo de cambio
         cambio_devuelto = None
         if data.tipo_medio == "efectivo" and data.valor_recibido is not None:
-            if data.valor_recibido < data.monto:
+            if data.valor_recibido < monto_a_cobrar:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={"codigo": "PAGO_INSUFICIENTE", "mensaje": f"El valor recibido ({data.valor_recibido}) es menor al valor a pagar ({data.monto})"}
+                    detail={"codigo": "PAGO_INSUFICIENTE", "mensaje": f"El valor recibido ({data.valor_recibido}) es menor al valor a pagar ({monto_a_cobrar})"}
                 )
-            cambio_devuelto = data.valor_recibido - data.monto
+            cambio_devuelto = data.valor_recibido - monto_a_cobrar
 
         # 6. Inserción con Savepoint ante carreras simultáneas de idempotencia
         try:
@@ -903,22 +1022,28 @@ class CajaService:
                 insert_pago = text("""
                     INSERT INTO platform.pagos_membresia (
                         gimnasio_id, turno_id, membresia_id, monto, metodo, tipo_medio,
-                        dias_agregados, idempotency_key, registrado_por, created_at
+                        dias_agregados, idempotency_key, registrado_por, created_at,
+                        precio_lista, precio_cobrado, descuento_pct, motivo_descuento
                     ) VALUES (
                         :gym_id, :turno_id, :membresia_id, :monto, :metodo, :tipo_medio,
-                        :dias_agregados, :idempotency_key, :registrado_por, now()
+                        :dias_agregados, :idempotency_key, :registrado_por, now(),
+                        :precio_lista, :precio_cobrado, :descuento_pct, :motivo_descuento
                     ) RETURNING id, created_at
                 """)
                 res_p = await session.execute(insert_pago, {
                     "gym_id": gym_id,
                     "turno_id": turno_id,
                     "membresia_id": data.membresia_id,
-                    "monto": data.monto,
+                    "monto": monto_a_cobrar,
                     "metodo": data.metodo.strip(),
                     "tipo_medio": data.tipo_medio,
                     "dias_agregados": data.dias_agregados,
                     "idempotency_key": clean_key,
-                    "registrado_por": staff_id
+                    "registrado_por": staff_id,
+                    "precio_lista": precio_lista,
+                    "precio_cobrado": precio_cobrado_final,
+                    "descuento_pct": desc_pct,
+                    "motivo_descuento": mot_desc
                 })
                 row_p = res_p.mappings().one()
                 pago_id = row_p["id"]
@@ -940,11 +1065,15 @@ class CajaService:
             id=pago_id,
             turno_id=turno_id,
             membresia_id=data.membresia_id,
-            monto=data.monto,
+            monto=monto_a_cobrar,
             metodo=data.metodo.strip(),
             tipo_medio=data.tipo_medio,
             dias_agregados=data.dias_agregados,
             nueva_fecha_vencimiento=nueva_fecha_venc,
+            precio_lista=precio_lista,
+            precio_cobrado=precio_cobrado_final,
+            descuento_pct=desc_pct,
+            motivo_descuento=mot_desc,
             valor_recibido=data.valor_recibido,
             cambio_devuelto=cambio_devuelto,
             anulado=False,
@@ -1434,7 +1563,8 @@ class CajaService:
 
         # Consultar ítems de la venta previa
         it_query = text("""
-            SELECT id, tipo, producto_id, descripcion, cantidad, precio_unitario, subtotal
+            SELECT id, tipo, producto_id, descripcion, cantidad, precio_unitario, subtotal,
+                   precio_lista, precio_cobrado, descuento_pct, motivo_descuento
             FROM platform.venta_items
             WHERE venta_id = :venta_id AND gimnasio_id = :gym_id
         """)
@@ -1447,7 +1577,11 @@ class CajaService:
                 descripcion=r["descripcion"],
                 cantidad=r["cantidad"],
                 precio_unitario=Decimal(str(r["precio_unitario"])),
-                subtotal=Decimal(str(r["subtotal"]))
+                subtotal=Decimal(str(r["subtotal"])),
+                precio_lista=Decimal(str(r["precio_lista"])) if r["precio_lista"] is not None else None,
+                precio_cobrado=Decimal(str(r["precio_cobrado"])) if r["precio_cobrado"] is not None else None,
+                descuento_pct=Decimal(str(r["descuento_pct"])) if r["descuento_pct"] is not None else None,
+                motivo_descuento=r["motivo_descuento"]
             ) for r in res_it.mappings()
         ]
 
@@ -1480,11 +1614,12 @@ class CajaService:
         idempotency_key: str
     ) -> Optional[PagoMembresiaResponseDto]:
         p_query = text("""
-            SELECT p.id, p.turno_id, p.membresia_id, p.monto, p.metodo, p.tipo_medio,
+            SELECT p.id, p.turno_id, p.membresia_id, p.paquete_id, p.monto, p.metodo, p.tipo_medio,
                    p.dias_agregados, p.anulado, p.motivo_anulacion, p.idempotency_key, p.created_at,
+                   p.precio_lista, p.precio_cobrado, p.descuento_pct, p.motivo_descuento,
                    m.fecha_vencimiento
             FROM platform.pagos_membresia p
-            JOIN platform.membresias m ON m.id = p.membresia_id
+            LEFT JOIN platform.membresias m ON m.id = p.membresia_id
             WHERE p.gimnasio_id = :gym_id AND p.idempotency_key = :key
         """)
         res_p = await session.execute(p_query, {"gym_id": gym_id, "key": idempotency_key})
@@ -1496,11 +1631,16 @@ class CajaService:
             id=p["id"],
             turno_id=p["turno_id"],
             membresia_id=p["membresia_id"],
+            paquete_id=p["paquete_id"],
             monto=Decimal(str(p["monto"])),
             metodo=p["metodo"],
             tipo_medio=p["tipo_medio"],
             dias_agregados=p["dias_agregados"],
             nueva_fecha_vencimiento=p["fecha_vencimiento"],
+            precio_lista=Decimal(str(p["precio_lista"])) if p["precio_lista"] is not None else None,
+            precio_cobrado=Decimal(str(p["precio_cobrado"])) if p["precio_cobrado"] is not None else None,
+            descuento_pct=Decimal(str(p["descuento_pct"])) if p["descuento_pct"] is not None else None,
+            motivo_descuento=p["motivo_descuento"],
             valor_recibido=None,
             cambio_devuelto=None,
             anulado=p["anulado"],

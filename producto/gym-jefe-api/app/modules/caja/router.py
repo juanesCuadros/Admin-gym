@@ -209,6 +209,8 @@ async def registrar_venta(
         session=session,
         gym_id=current_staff.gimnasio_id,
         staff_id=current_staff.id,
+        staff_rol=current_staff.rol,
+        staff_nombre=current_staff.nombre,
         idempotency_key=x_idempotency_key,
         data=data
     )
@@ -277,6 +279,8 @@ async def registrar_pago_membresia(
         session=session,
         gym_id=current_staff.gimnasio_id,
         staff_id=current_staff.id,
+        staff_rol=current_staff.rol,
+        staff_nombre=current_staff.nombre,
         idempotency_key=x_idempotency_key,
         data=data
     )
