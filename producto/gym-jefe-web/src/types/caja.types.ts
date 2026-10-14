@@ -39,6 +39,10 @@ export interface VentaItemRequest {
   descripcion: string;
   cantidad: number;
   precio_unitario?: number;
+  /** Contrato 1.2 (GW-RF-53): si se omite se cobra el precio de lista. */
+  precio_cobrado?: number;
+  /** Contrato 1.2: obligatorio si `precio_cobrado` es menor al precio de lista. */
+  motivo_descuento?: string;
 }
 
 export interface RegistrarVentaRequest {
@@ -57,6 +61,10 @@ export interface VentaItemResponseDto {
   cantidad: number;
   precio_unitario: number;
   subtotal: number;
+  /** Contrato 1.2 (pendiente de backend). */
+  precio_lista?: number;
+  precio_cobrado?: number;
+  descuento_pct?: number;
 }
 
 export interface VentaResponseDto {
@@ -72,6 +80,8 @@ export interface VentaResponseDto {
   motivo_anulacion?: string | null;
   items: VentaItemResponseDto[];
   created_at: string;
+  idempotency_key?: string;
+  idempotente_reintento?: boolean;
 }
 
 export interface RegistrarPagoMembresiaRequest {
