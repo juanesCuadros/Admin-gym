@@ -71,6 +71,36 @@ class DeportistasService:
         """
         now_utc = datetime.now(timezone.utc)
 
+        # GW-RF-17 / Contrato 2.3: Validación de límite del plan para clientes activos
+        res_plan = await session.execute(
+            text("SELECT max_clientes_activos, nombre FROM platform.plan_actual(:gym_id)"),
+            {"gym_id": gym_id}
+        )
+        row_plan = res_plan.mappings().first()
+        if row_plan and row_plan["max_clientes_activos"] is not None:
+            res_count = await session.execute(
+                text("""
+                    SELECT count(*) FROM platform.deportistas
+                    WHERE gimnasio_id = :gym_id AND deleted_at IS NULL AND activo = true
+                """),
+                {"gym_id": gym_id}
+            )
+            actuales = res_count.scalar_one()
+            limite = row_plan["max_clientes_activos"]
+            if actuales >= limite:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "codigo": "LIMITE_PLAN_CLIENTES",
+                        "mensaje": f"Se ha alcanzado el límite de {limite} clientes activos del plan '{row_plan['nombre']}'. Mejora tu plan para continuar registrando deportistas.",
+                        "detalles": {
+                            "limite": limite,
+                            "actuales": actuales,
+                            "plan_nombre": row_plan["nombre"]
+                        }
+                    }
+                )
+
         insert_query = text("""
             INSERT INTO platform.deportistas (
                 gimnasio_id, tipo_documento, documento, nombre, correo, telefono,

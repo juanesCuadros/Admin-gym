@@ -137,6 +137,36 @@ class PersonalService:
                 detail={"codigo": "CORREO_DUPLICADO", "mensaje": f"Ya existe un miembro del personal registrado con el correo {data.correo}"},
             )
 
+        # Contrato 2.7: Validación de límite del plan para staff
+        res_plan = await session.execute(
+            text("SELECT max_staff, nombre FROM platform.plan_actual(:gym_id)"),
+            {"gym_id": gym_id}
+        )
+        row_plan = res_plan.mappings().first()
+        if row_plan and row_plan["max_staff"] is not None:
+            res_count = await session.execute(
+                text("""
+                    SELECT count(*) FROM platform.staff
+                    WHERE gimnasio_id = :gym_id AND deleted_at IS NULL AND activo = true
+                """),
+                {"gym_id": gym_id}
+            )
+            actuales = res_count.scalar_one()
+            limite = row_plan["max_staff"]
+            if actuales >= limite:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "codigo": "LIMITE_PLAN_STAFF",
+                        "mensaje": f"Se ha alcanzado el límite de {limite} miembros de personal del plan '{row_plan['nombre']}'. Mejora tu plan para continuar registrando personal.",
+                        "detalles": {
+                            "limite": limite,
+                            "actuales": actuales,
+                            "plan_nombre": row_plan["nombre"]
+                        }
+                    }
+                )
+
         new_id = uuid.uuid4()
         h_pwd = hash_password(data.password)
 
