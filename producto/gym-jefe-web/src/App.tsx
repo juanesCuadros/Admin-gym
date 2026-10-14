@@ -30,6 +30,7 @@ import { EntrenamientoPage } from './pages/entrenamiento/EntrenamientoPage';
 import { ProductosPage } from './pages/inventario/ProductosPage';
 import { MovimientosStockPage } from './pages/inventario/MovimientosStockPage';
 import { ReporteIngresosPage } from './pages/reportes/ReporteIngresosPage';
+import { ReporteMembresiasPage } from './pages/reportes/ReporteMembresiasPage';
 
 // Administración
 import { PersonalPage } from './pages/personal/PersonalPage';
@@ -47,7 +48,6 @@ import './styles/components.css';
 // Rutas del menú (§B2) que aún no tienen pantalla: estado vacío honesto, sin datos falsos.
 const IngresosHoyPage = enConstruccion('Ingresos de hoy');
 const RutinasAsignadasPage = enConstruccion('Rutinas asignadas');
-const ReporteMembresiasPage = enConstruccion('Reportes · Membresías');
 const ReporteAsistenciaPage = enConstruccion('Reportes · Asistencia');
 const AuditoriaPage = enConstruccion('Auditoría');
 
