@@ -650,3 +650,129 @@ a:hover {
 .nota-pago h2 {
   font-size: 1.25rem;
 }
+
+/* ---------- Formularios ---------- */
+.formulario {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.formulario fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.campo label {
+  font-weight: 600;
+}
+
+.campo input:not([type='checkbox']) {
+  font: inherit;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #8a8f8c;
+  border-radius: 8px;
+  background: var(--color-superficie);
+  color: var(--color-texto);
+}
+
+.campo input:not([type='checkbox']):focus-visible {
+  border-color: var(--color-foco);
+}
+
+.campo-con-error input:not([type='checkbox']) {
+  border-color: var(--color-error);
+  border-width: 2px;
+}
+
+.campo-ayuda {
+  font-size: 0.9rem;
+  color: var(--color-texto-suave);
+  overflow-wrap: anywhere;
+}
+
+.campo-error {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-error);
+}
+
+.obligatorio {
+  color: var(--color-error);
+}
+
+.campo-casilla {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  align-items: start;
+}
+
+.campo-casilla input[type='checkbox'] {
+  width: 22px;
+  height: 22px;
+  margin: 2px 0 0;
+  accent-color: var(--color-primario);
+}
+
+.campo-casilla label {
+  font-weight: 400;
+}
+
+.campo-casilla .campo-error {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+}
+
+.direccion {
+  overflow-wrap: anywhere;
+}
+
+.insignia {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.insignia-ok {
+  background: var(--color-exito-fondo);
+  color: var(--color-exito);
+}
+
+/* ---------- Pantallas de resultado ---------- */
+.resultado {
+  text-align: left;
+}
+
+.resultado h1:focus {
+  outline: none;
+}
+
+.resultado-icono {
+  display: inline-grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-primario-suave);
+  color: var(--color-primario);
+  margin-bottom: 12px;
+}
