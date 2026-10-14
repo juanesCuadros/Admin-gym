@@ -19,6 +19,7 @@ from app.core.exceptions import (
     InvalidStateTransitionException, BusinessRuleException
 )
 from app.core.config import settings
+from app.core.fechas import hoy_bogota
 from app.presentation.schemas.gym_schemas import (
     GymCreateStepByStep, GymUpdate, CredentialsIssuanceResponse
 )
@@ -73,7 +74,7 @@ class GymUseCases:
 
         # 2. State & dates resolution
         initial_state = "prueba" if data.suscripcion.tipo_inicio == "prueba" else "activo"
-        today = date.today()
+        today = hoy_bogota()
         fecha_corte = today + timedelta(days=settings.DEFAULT_TRIAL_DAYS) if initial_state == "prueba" else None
 
         shared_gimnasio_id = str(uuid.uuid4())

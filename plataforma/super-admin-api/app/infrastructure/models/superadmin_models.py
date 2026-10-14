@@ -11,6 +11,7 @@ from sqlalchemy.orm import relationship
 
 from app.infrastructure.database.base import Base
 from app.core.config import settings
+from app.core.fechas import hoy_bogota
 
 def _schema():
     return None if "sqlite" in settings.DATABASE_URL else "superadmin"
@@ -88,7 +89,7 @@ class Gimnasio(Base):
     telefono = Column(String(50), nullable=True)
     correo = Column(String(255), nullable=True)
     estado = Column(String(50), nullable=False, default="prueba")  # prueba, activo, suspendido, cancelado
-    fecha_inicio = Column(Date, nullable=False, default=date.today)
+    fecha_inicio = Column(Date, nullable=False, default=hoy_bogota)
     fecha_corte = Column(Date, nullable=True)
     logo_url = Column(Text, nullable=True)
     banner_url = Column(Text, nullable=True)
@@ -151,7 +152,7 @@ class Pago(Base):
     gimnasio_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}gimnasios.id", ondelete="RESTRICT"), nullable=False, index=True)
     monto = Column(Numeric(12, 2), nullable=False)
     meses = Column(Integer, nullable=False)
-    fecha_pago = Column(Date, nullable=False, default=date.today)
+    fecha_pago = Column(Date, nullable=False, default=hoy_bogota)
     metodo = Column(String(100), nullable=False)
     nota = Column(Text, nullable=True)
     anulado = Column(Boolean, nullable=False, default=False, index=True)

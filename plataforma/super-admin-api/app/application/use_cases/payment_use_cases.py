@@ -15,6 +15,7 @@ from app.core.exceptions import (
     IdempotencyConflictException
 )
 from app.presentation.schemas.payment_schemas import PaymentCreate
+from app.core.fechas import hoy_bogota
 
 class PaymentUseCases:
     def __init__(self, db: Session):
@@ -67,7 +68,7 @@ class PaymentUseCases:
             gimnasio_id=gym.id,
             monto=data.monto,
             meses=data.meses,
-            fecha_pago=data.fecha_pago or date.today(),
+            fecha_pago=data.fecha_pago or hoy_bogota(),
             metodo=data.metodo.strip(),
             nota=data.nota,
             anulado=False,

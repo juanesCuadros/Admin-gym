@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_, desc, asc, case
 from app.infrastructure.models.superadmin_models import Gimnasio, CuentaJefe, Suscripcion, Pago, EmisionCredenciales
 from app.infrastructure.models.platform_models import Tenant, Staff
+from app.core.fechas import hoy_bogota
 
 class GymRepository:
     def __init__(self, db: Session):
@@ -56,7 +57,7 @@ class GymRepository:
             )
 
         total = query.count()
-        today = date.today()
+        today = hoy_bogota()
 
         # Urgency ordering:
         # 1. Suspended or Expired (fecha_corte < today)
@@ -86,7 +87,7 @@ class GymRepository:
 
     def get_dashboard_metrics(self) -> Dict[str, Any]:
         """Calculates global executive metrics for RF-01."""
-        today = date.today()
+        today = hoy_bogota()
         five_days_ahead = today + timedelta(days=5)
 
         # Count by status

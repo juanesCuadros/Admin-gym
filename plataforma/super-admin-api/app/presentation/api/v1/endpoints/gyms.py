@@ -16,6 +16,7 @@ from app.presentation.schemas.gym_schemas import (
 from app.presentation.schemas.payment_schemas import PaymentResponse
 from app.presentation.schemas.audit_schemas import AuditLogResponse
 from app.core.config import settings
+from app.core.fechas import hoy_bogota
 
 router = APIRouter(prefix="/admin/gyms", tags=["Gimnasios (Tenants)"])
 
@@ -60,7 +61,7 @@ def list_gyms(
         offset=offset
     )
 
-    today = date.today()
+    today = hoy_bogota()
     result = []
     for g in items:
         dias_restantes = (g.fecha_corte - today).days if g.fecha_corte else None
@@ -132,7 +133,7 @@ def get_gym_detail(
         from app.core.exceptions import EntityNotFoundException
         raise EntityNotFoundException("Gimnasio", gym_id)
 
-    today = date.today()
+    today = hoy_bogota()
     dias_restantes = (g.fecha_corte - today).days if (g := gym).fecha_corte else None
 
     # Jefe
