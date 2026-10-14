@@ -1,6 +1,6 @@
 # GymOS — Matriz de trazabilidad: requisitos consolidados vs. código
 
-Generada el 16-sep-2026 cruzando `requisitos_consolidados_superadmin.md` y
+Generada el 16-sep-2026 y actualizada el 13-oct-2026 con los commits del 19-sep (`e6ca662`…`ea081a5`), cruzando `requisitos_consolidados_superadmin.md` y
 `requisitos_consolidados_sistema-web.md` (v2, con `00_decisiones-consolidacion.md`) contra el
 código real de `plataforma/super-admin-api`, `producto/gym-jefe-api` e `infra/db/01_schema.sql`.
 
@@ -60,8 +60,8 @@ no en la suma.
 | Regla | Estado | Evidencia / brecha | Plan |
 |---|---|---|---|
 | §2.1 Estados guardados y transiciones | ✅ | `gym_use_cases.py:267-275`: `prueba→activo/cancelado`, `activo→suspendido/cancelado`, `suspendido→activo/cancelado`, `cancelado→∅`. Coincide con la tabla | 13.7 |
-| §2.2 Estados calculados (`al_dia`, `por_vencer`, `en_gracia`, `bloqueado`) | ❌ | No hay ninguna función que derive el estado desde `fecha_corte`. `gym_repository.py:111-119` solo cuenta `por_vencer` y `pruebas_por_vencer` para el tablero | 13.12–13.16 |
-| §2.3 Efecto del bloqueo en GW | ⚠️ | Solo existe `platform.tenant.activo` (booleano manual). El producto lo revisa en `dependencies.py:83` y `auth/service.py:171,292` con `GIMNASIO_SUSPENDIDO`. No hay bloqueo por fecha ni pantalla de "servicio bloqueado" con contacto | 15.1–15.6 |
+| §2.2 Estados calculados (`al_dia`, `por_vencer`, `en_gracia`, `bloqueado`) | ⚠️ | **13-oct:** existe `platform.estado_suscripcion()` en BD (`migrations/001_auth_y_suscripcion.sql:54`) y el GW la usa. **El panel del SA no la usa**: `gym_repository.py:111-119` sigue contando solo `por_vencer` y `pruebas_por_vencer` | 13.12–13.16 |
+| §2.3 Efecto del bloqueo en GW | ✅ | **13-oct:** la API bloquea por estado calculado (`dependencies.py:44-53`), el login no valida contraseña si está bloqueado (`auth/service.py:275`) y existe `BloqueadoPage`. ❓ landing "no disponible" | 15.1–15.6 |
 | §2.4 Flujo de cancelación (export 30 días, eliminación manual, liberar subdominio) | ❌ | `cancel_gym` (`gym_use_cases.py:315`) solo cambia estado y congela. No hay exportación, ni contador de 30 días, ni eliminación, ni liberación de subdominio | 13.19–13.22 |
 | §3 Fecha de corte con ancla y suma en un paso | ⚠️ | `cutting_date_calculator.py:20-43`: `add_months(fecha_inicio, Σ meses)` con ajuste a fin de mes ✅ (CA1, CA2, CA3, CA6). **Sin regla del ancla**: un pago en bloqueado/suspendido suma sobre `fecha_inicio` (❌ CA5). CA4 pasa por accidente (sin ancla nueva, suma sobre el corte) | 14.10–14.15 |
 | §3 Valor mensual no retroactivo | ✅ | `payments.py:105` crea registro nuevo en `superadmin.suscripciones` | 13.11 |
@@ -102,7 +102,7 @@ no en la suma.
 
 | RF | Prio | Estado | Evidencia / brecha | Plan |
 |---|---|---|---|---|
-| SA-RF-11 Mostrar una vez | Must | ⚠️ | `emisiones_credenciales` + 72 h ✅ (`config.py:52`). **CA7 (cambio obligatorio en el primer ingreso) no existe en el producto**: `auth/service.py` no tiene ninguna bandera de "debe cambiar" | 13.9, 13.37 |
+| SA-RF-11 Mostrar una vez | Must | ✅ | `emisiones_credenciales` + 72 h ✅ (`config.py:52`). **13-oct:** CA7 ✅ — `platform.credencial_jefe()` y `marcar_password_jefe_cambiada()` (migración 001), usados en `auth/service.py:149-165` | 13.9, 13.37 |
 | SA-RF-12 Regenerar y enviar | Must | ✅ | `credentials.py:12`. El antiguo `/resend` (`:25`) sigue existiendo aunque el RF-13 se fusionó: hay que retirarlo o dejarlo documentado | 13.9 |
 | SA-RF-29 Editar correo del Jefe | Should | ❌ | No hay endpoint | 13.38 |
 
@@ -155,15 +155,15 @@ no en la suma.
 |---|---|---|---|
 | Estado del deportista (8 estados, orden de precedencia) | ✅ | `membresias/domain.py:36-151` evalúa en el mismo orden. **Nombres distintos a los consolidados**: `inactivo`→`desactivado`, `cancelada`→`cancelado`, `mora`→`en_gracia` (P-22, decisión 9). Es un rename, no una regla | Bloque 2 |
 | `venc` derivado de pagos + días congelados | ⚠️ | `fecha_vencimiento` es columna en `membresias` que se **muta** al pagar/anular/descongelar. No se recalcula desde el historial (GW-RF-16 CA1) | 3.10, 4.9 |
-| GW-RF-51 Estado de la suscripción del gimnasio | ⚠️ | Solo `tenant.activo` manual. Sin contador (CA1), sin gracia (CA2), sin bloqueo por corte ni prueba vencida (CA3). CA4 turno abierto ❓ | 15.1–15.6 |
+| GW-RF-51 Estado de la suscripción del gimnasio | ✅ | **13-oct:** `platform.estado_suscripcion()` + `/my-gym/suscripcion` + `FranjaSuscripcion.tsx` (CA1, CA2) + bloqueo en API y login (CA3), con tests en `tests/test_suscripcion.py`. CA4 turno abierto ❓. Depende de §3: la fecha de corte sigue sin regla del ancla | 15.1–15.6 |
 
 ### Módulo 01 · Autenticación
 
 | RF | Prio | Estado | Evidencia / brecha | Plan |
 |---|---|---|---|---|
-| GW-RF-00.1 Login access + refresh | Must | ⚠️ | Access + refresh ✅ (`auth/service.py:237-256`). **Refresh no rota** (`:269-300` solo valida el hash) y no hay familia de tokens: CA1 ❌. Subdominio ✅ (`:160-171`). **Primer ingreso obligatorio ❌** (CA3). CA4 recepcionista sin turno ❓ (probablemente no) | 1.1–1.8, 1.13, 1.14 |
+| GW-RF-00.1 Login access + refresh | Must | ⚠️ | **13-oct:** rotación con familia ✅ (`sesiones_staff.familia_id`, `auth/service.py:189-235`, `tests/test_auth_refresh_rotacion.py`). Subdominio ✅. Primer ingreso obligatorio ✅ para el Jefe; **para el staff que crea el Jefe no** (ver GW-RF-39). CA4 recepcionista sin turno ❌ (el login no consulta turnos) | 1.1–1.8, 1.13, 1.14 |
 | GW-RF-00.2 Recuperar | Must | ✅ | `tokens_recuperacion_staff` | 1.9, 1.10 |
-| GW-RF-00.3 Logout / expiración | Must | ⚠️ | Logout ✅. **Expiración fija 30 min** (`config.py:25`); el parámetro por gimnasio no existe | 1.8 |
+| GW-RF-00.3 Logout / expiración | Must | ✅ | Logout ✅. **13-oct:** `tenant.duracion_sesion_minutos` (15–480, por defecto 60) expuesto en `/my-gym/info` (`ea081a5`). ❓ que el frontend cierre por inactividad con ese valor | 1.8 |
 | GW-RF-00.4 Bloqueo por intentos | Should | ⚠️ | 5/15 ✅. Mensaje `CUENTA_BLOQUEADA_TEMPORALMENTE` (`auth/service.py:191`) no es genérico | 1.5 |
 
 ### Módulo 02 · MyGymOS
@@ -173,7 +173,7 @@ no en la suma.
 | GW-RF-45 Información general | Must | ✅ | `my_gym/` con auditoría y OCC | 11.1 |
 | GW-RF-46 Mi landing | Should | ✅ | QR SVG/PNG (`my_gym/`). ❓ edición de contenido dentro de plantilla | 11.5 |
 | GW-RF-47 Métodos de pago | Must | ✅ | `tenant.metodos_pago jsonb` | 11.9 |
-| GW-RF-48 Parámetros | Must | ⚠️ | Existen 3 de 9: `dias_gracia_mora`, `dias_umbral_por_vencer`, `tope_dias_congelamiento` (`01_schema.sql:297-299`). **Faltan**: mínimo congelamiento, permitir descuentos, tope %, duración de sesión, ventana de reserva, límite para cancelar | 11.2, 11.3, 11.10 |
+| GW-RF-48 Parámetros | Must | ⚠️ | Existen 4 de 9: `dias_gracia_mora`, `dias_umbral_por_vencer`, `tope_dias_congelamiento` y (13-oct) `duracion_sesion_minutos`. **Faltan**: mínimo congelamiento, permitir descuentos, tope %, ventana de reserva, límite para cancelar | 11.2, 11.3, 11.10 |
 
 ### Módulo 03 · Personal
 
@@ -293,7 +293,7 @@ Ordenado por lo que desbloquea más casos, no por tamaño:
 
 | # | Trabajo | RF que destraba | Casos del plan |
 |---|---|---|---|
-| 1 | Estado calculado del gimnasio desde `fecha_corte` + bloqueo automático en `dependencies.py` del producto (una función pura como `evaluar_estado_puro`, pero para el gimnasio) | SA-RF-32, SA-RF-01, SA-RF-02, GW-RF-51 | 13.12–13.16, 15.1–15.6 |
+| 1 | ~~Estado calculado del gimnasio + bloqueo en el producto~~ **Hecho en el GW (19-sep).** Falta que el panel del SA use `platform.estado_suscripcion()` en Inicio, tabla de urgencia y filtros | SA-RF-32, SA-RF-01, SA-RF-02, GW-RF-51 | 13.12–13.16, 15.1–15.6 |
 | 2 | Regla del ancla en `CuttingDateCalculator` (recibir el historial completo con fechas, no solo la lista de meses) | SA-RF-17 CA5, §3 | 14.10–14.15 |
 | 3 | Reactivar con pago obligatorio y sin pisar el `activo` de cada staff (guardar el estado previo o solo re-activar los que estaban activos al suspender) | SA-RF-09 | 13.33–13.35 |
 | 4 | Turno único por gimnasio: cambiar `ux_turno_abierto_por_staff` → `(gimnasio_id) WHERE estado='abierto'`; cierre de turno ajeno con atribución | GW-RF-08 | 3.17, 3.18 |
@@ -302,7 +302,7 @@ Ordenado por lo que desbloquea más casos, no por tamaño:
 | 7 | Descuentos: columnas `precio_lista`/`precio_cobrado`/`motivo_descuento` + 3 parámetros del tenant | GW-RF-53, GW-RF-48, GW-RF-41 | 3.23–3.26 |
 | 8 | Cerrar la puerta trasera de RLS (quitar los `OR … IS NULL`; los jobs usan un rol con `BYPASSRLS`) | SA/GW-RNF-02 | 0.4 |
 | 9 | Exportación ZIP + enlace 30 días + eliminación definitiva + liberar subdominio | SA-RF-30, SA-RF-31, §2.4 | 13.19–13.22 |
-| 10 | Rotación de refresh con familia; cambio obligatorio en primer ingreso (SA y staff) | GW-RF-00.1, SA-RF-11 CA7, GW-RF-39 | 1.13, 1.14, 9.10 |
+| 10 | ~~Rotación de refresh con familia~~ (hecho 19-sep); cambio obligatorio en primer ingreso para el staff creado por el Jefe y para el SA | GW-RF-00.1, SA-RF-11 CA7, GW-RF-39 | 1.13, 1.14, 9.10 |
 | 11 | Parámetros faltantes del tenant (6) y su uso en congelar/reservar/sesión | GW-RF-48, GW-RF-26, GW-RF-33 | 11.10, 4.16, 6.14 |
 | 12 | Cookie de sesión en el SA; mensaje genérico en bloqueo; token de recuperación a 1 h; subdominio 63 y reservados | SA-RF-00.x, SA-RF-05 | 13.23–13.31 |
 | 13 | "Entrar como", notas internas, editar correo del Jefe (los tres son Should) | SA-RF-19/20/28/29 | 13.38–13.40 |
