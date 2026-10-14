@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from app.core.audit import AuditService
 from app.core.timezone import now_local, today_local
+from app.modules.caja.reglas import calcular_vencimiento_renovacion_c2
 from app.modules.caja.schemas import (
     AbrirTurnoRequest,
     AnularPagoMembresiaRequest,
@@ -846,13 +847,45 @@ class CajaService:
                 detail={"codigo": "MEMBRESIA_CANCELADA", "mensaje": "No se pueden registrar pagos a una membresía cancelada"}
             )
 
-        # 4. Cálculo de nueva fecha de vencimiento (RF-25: suma días, no se pierde lo pagado)
+        # 4. Cálculo de nueva fecha de vencimiento según Regla C2 (GW-RF-25 CA1 y CA2)
         hoy = today_local()
         venc_actual: date = memb["fecha_vencimiento"]
+
+        # Consultar días de gracia del tenant
+        q_tenant_gracia = text("SELECT dias_gracia_mora FROM platform.tenant WHERE id = :gym_id")
+        res_tg = await session.execute(q_tenant_gracia, {"gym_id": gym_id})
+        dias_gracia = res_tg.scalar() or 3
+
+        tuvo_checkin_en_gracia = False
         if venc_actual < hoy:
-            nueva_fecha_venc = hoy + timedelta(days=data.dias_agregados)
-        else:
-            nueva_fecha_venc = venc_actual + timedelta(days=data.dias_agregados)
+            # Ventana de gracia: [venc_actual + 1, venc_actual + dias_gracia]
+            f_desde_gracia = venc_actual + timedelta(days=1)
+            f_hasta_gracia = venc_actual + timedelta(days=dias_gracia)
+            q_chk = text("""
+                SELECT EXISTS(
+                    SELECT 1 FROM platform.checkins
+                    WHERE gimnasio_id = :gym_id
+                      AND deportista_id = :dep_id
+                      AND tipo = 'ingreso'
+                      AND resultado IN ('abrio', 'alerta_mora')
+                      AND CAST(ts_utc AT TIME ZONE 'America/Bogota' AS date) BETWEEN :f_desde AND :f_hasta
+                )
+            """)
+            res_chk = await session.execute(q_chk, {
+                "gym_id": gym_id,
+                "dep_id": memb["deportista_id"],
+                "f_desde": f_desde_gracia,
+                "f_hasta": f_hasta_gracia
+            })
+            tuvo_checkin_en_gracia = bool(res_chk.scalar())
+
+        _, nueva_fecha_venc = calcular_vencimiento_renovacion_c2(
+            venc_actual=venc_actual,
+            hoy=hoy,
+            dias_duracion=data.dias_agregados,
+            dias_gracia_mora=dias_gracia,
+            tuvo_checkin_en_gracia=tuvo_checkin_en_gracia
+        )
 
         # 5. Cálculo de cambio
         cambio_devuelto = None
