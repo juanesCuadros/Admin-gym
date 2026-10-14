@@ -776,3 +776,15 @@ a:hover {
   color: var(--color-primario);
   margin-bottom: 12px;
 }
+
+.resultado-icono-exito {
+  background: var(--color-exito-fondo);
+  color: var(--color-exito);
+}
+
+.direccion-final {
+  font-size: 1.2rem;
+  padding: 12px 14px;
+  background: var(--color-primario-suave);
+  border-radius: 8px;
+}
