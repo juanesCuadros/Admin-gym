@@ -170,6 +170,17 @@ class AuthService:
         debe_cambiar, expira_en = await cls._estado_password_temporal(
             session, gym_id, staff["rol"], staff["debe_cambiar_password"], staff["password_temporal_expira_en"]
         )
+
+        requiere_abrir_caja = False
+        if staff["rol"] == "recepcionista":
+            # GW-RF-00.1 CA4 / Contrato 2.8: true solo para recepcionista sin turno abierto en el gimnasio
+            res_turno = await session.execute(
+                text("SELECT 1 FROM platform.turnos_caja WHERE gimnasio_id = :gym_id AND estado = 'abierto' LIMIT 1"),
+                {"gym_id": gym_id}
+            )
+            tiene_turno = res_turno.scalar_one_or_none() is not None
+            requiere_abrir_caja = not tiene_turno
+
         return UsuarioAuthDto(
             id=staff["id"],
             nombre=staff["nombre"],
@@ -180,6 +191,7 @@ class AuthService:
             permisos=permisos,
             debe_cambiar_password=debe_cambiar,
             password_temporal_expira_en=expira_en,
+            requiere_abrir_caja=requiere_abrir_caja,
         )
 
     # ------------------------------------------------------------------

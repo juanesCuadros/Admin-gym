@@ -71,6 +71,8 @@ class UsuarioAuthDto(BaseModel):
     # Contraseña temporal (GW-RF-00.1 CA3): el frontend manda a /cambiar-clave y bloquea la navegación
     debe_cambiar_password: bool = False
     password_temporal_expira_en: Optional[datetime] = None
+    # GW-RF-00.1 CA4 / Contrato 2.8: true solo para recepcionista sin turno abierto en el gimnasio
+    requiere_abrir_caja: bool = False
 
 
 class LoginResponseDto(BaseModel):
