@@ -1501,6 +1501,212 @@ CREATE POLICY tenant_isolation ON platform.paquetes
 
 
 -- =====================================================================
+-- CARRIL 3 (030_sa_corte_y_estado.sql)
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1. Regla del ancla en la fecha de corte (requisitos SA §3, SA-RF-17)
+-- ---------------------------------------------------------------------
+-- true = el pago se registró con el gimnasio en prueba, suspendido o bloqueado (d >= 4):
+-- su fecha_pago es la nueva ancla. Se decide al registrar el pago y no cambia después, para que
+-- anular otros pagos no mueva el ancla (CA3) y anular el propio pago deje el corte en el ancla (CA6).
+ALTER TABLE superadmin.pagos
+  ADD COLUMN IF NOT EXISTS fija_ancla boolean NOT NULL DEFAULT false;
+
+-- ---------------------------------------------------------------------
+-- 2. Estado calculado en el panel del SA (SA-RF-01, 02, 32; contrato 3.3)
+-- ---------------------------------------------------------------------
+-- El panel lee el estado calculado de la MISMA función que usa el Sistema Web, para no duplicar
+-- la regla de §2.2 en Python. La 001 solo dio EXECUTE a gymos_platform.
+GRANT EXECUTE ON FUNCTION platform.estado_suscripcion(uuid) TO gymos_superadmin;
+
+
+-- =====================================================================
+-- CARRIL 3 (031_sa_registro_autonomo.sql)
+-- =====================================================================
+
+-- Cada solicitud de registro desde gymdeskcolombia.com. El gimnasio se crea solo cuando el Jefe
+-- confirma el correo con el enlace (token de un solo uso, 24 h). El token se guarda como hash.
+CREATE TABLE IF NOT EXISTS superadmin.registros_autonomos (
+  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  nombre_gimnasio       text        NOT NULL CHECK (length(btrim(nombre_gimnasio)) >= 2),
+  ciudad                text        NOT NULL,
+  jefe_nombre           text        NOT NULL,
+  jefe_correo           citext      NOT NULL,
+  telefono              text        NOT NULL,
+  telefono_normalizado  text        NOT NULL CHECK (telefono_normalizado ~ '^[0-9]{7,15}$'),
+  subdominio_sugerido   text        NOT NULL,
+  token_hash            text        NOT NULL UNIQUE,
+  expira_en             timestamptz NOT NULL,
+  usado_en              timestamptz,
+  gimnasio_id           uuid        REFERENCES superadmin.gimnasios(id) ON DELETE SET NULL,
+  acepta_terminos_en    timestamptz NOT NULL,
+  ip                    text,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT registro_vigencia CHECK (expira_en > created_at),
+  CONSTRAINT registro_uso_coherente CHECK (usado_en IS NOT NULL OR gimnasio_id IS NULL)
+);
+CREATE INDEX IF NOT EXISTS ix_registro_correo   ON superadmin.registros_autonomos(jefe_correo);
+CREATE INDEX IF NOT EXISTS ix_registro_telefono ON superadmin.registros_autonomos(telefono_normalizado);
+
+-- Una prueba por correo y una por teléfono (SA-RF-34 "Abuso"): solo un registro confirmado por cada uno.
+-- Sigue contando aunque el gimnasio se elimine después (gimnasio_id pasa a NULL, usado_en se conserva).
+CREATE UNIQUE INDEX IF NOT EXISTS ux_registro_prueba_por_correo
+  ON superadmin.registros_autonomos(jefe_correo) WHERE usado_en IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_registro_prueba_por_telefono
+  ON superadmin.registros_autonomos(telefono_normalizado) WHERE usado_en IS NOT NULL;
+
+GRANT SELECT, INSERT, UPDATE ON superadmin.registros_autonomos TO gymos_superadmin;
+
+
+-- =====================================================================
+-- CARRIL 3 (032_sa_cancelacion_y_eliminacion.sql)
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- 1. Enlaces de exportación (SA-RF-30): ZIP en el servidor propio, enlace de 30 días.
+--    El token se guarda como hash SHA-256; el enlace en claro solo sale en la respuesta de cancelar.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS superadmin.exportaciones_gimnasio (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  gimnasio_id    uuid        NOT NULL REFERENCES superadmin.gimnasios(id) ON DELETE CASCADE,
+  token_hash     text        NOT NULL UNIQUE,
+  ruta_archivo   text        NOT NULL,
+  tamano_bytes   bigint      NOT NULL DEFAULT 0 CHECK (tamano_bytes >= 0),
+  expira_en      timestamptz NOT NULL,
+  eliminado_en   timestamptz,               -- eliminación definitiva: el enlace responde 410
+  descargas      integer     NOT NULL DEFAULT 0 CHECK (descargas >= 0),
+  creada_por     uuid        REFERENCES superadmin.usuarios_internos(id) ON DELETE SET NULL,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT export_vigencia CHECK (expira_en > created_at)
+);
+CREATE INDEX IF NOT EXISTS ix_export_gym ON superadmin.exportaciones_gimnasio(gimnasio_id, created_at DESC);
+GRANT SELECT, INSERT, UPDATE ON superadmin.exportaciones_gimnasio TO gymos_superadmin;
+
+-- ---------------------------------------------------------------------
+-- 2. El subdominio queda libre tras la eliminación definitiva (SA-RF-05 CA5, SA-RF-31 CA3).
+--    El registro del gimnasio se conserva (soft delete) porque MVC guarda sus pagos y auditoría;
+--    la unicidad pasa a aplicar solo entre gimnasios no eliminados.
+-- ---------------------------------------------------------------------
+ALTER TABLE superadmin.gimnasios DROP CONSTRAINT IF EXISTS gimnasios_subdominio_key;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_gym_subdominio_vivo
+  ON superadmin.gimnasios(subdominio) WHERE deleted_at IS NULL;
+
+-- ---------------------------------------------------------------------
+-- 3. Exportación de datos del tenant (SA-RF-30 CA1)
+--    Devuelve {"columnas": [...], "filas": [{...}]} de un conjunto: deportistas, membresias,
+--    pagos (pagos_membresia) o asistencia (checkins). Solo para gimnasios CANCELADOS.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION superadmin.exportar_datos_tenant(p_gimnasio_id uuid, p_conjunto text)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  v_tabla text;
+  v_orden text;
+  v_columnas jsonb;
+  v_filas jsonb;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM superadmin.gimnasios g
+                  WHERE g.gimnasio_id = p_gimnasio_id AND g.estado = 'cancelado' AND g.deleted_at IS NULL) THEN
+    RAISE EXCEPTION 'GIMNASIO_NO_EXPORTABLE' USING ERRCODE = 'P0001';
+  END IF;
+
+  CASE p_conjunto
+    WHEN 'deportistas' THEN v_tabla := 'deportistas';     v_orden := 'created_at, id';
+    WHEN 'membresias'  THEN v_tabla := 'membresias';      v_orden := 'fecha_inicio, id';
+    WHEN 'pagos'       THEN v_tabla := 'pagos_membresia'; v_orden := 'created_at, id';
+    WHEN 'asistencia'  THEN v_tabla := 'checkins';        v_orden := 'ts_utc, id';
+    ELSE RAISE EXCEPTION 'CONJUNTO_DESCONOCIDO: %', p_conjunto USING ERRCODE = 'P0001';
+  END CASE;
+
+  SELECT COALESCE(jsonb_agg(a.attname ORDER BY a.attnum), '[]'::jsonb) INTO v_columnas
+    FROM pg_attribute a
+   WHERE a.attrelid = format('platform.%I', v_tabla)::regclass AND a.attnum > 0 AND NOT a.attisdropped;
+
+  EXECUTE format(
+    'SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY %s), ''[]''::jsonb) FROM platform.%I t WHERE t.gimnasio_id = $1',
+    v_orden, v_tabla
+  ) INTO v_filas USING p_gimnasio_id;
+
+  RETURN jsonb_build_object('columnas', v_columnas, 'filas', v_filas);
+END$$;
+
+-- ---------------------------------------------------------------------
+-- 4. Eliminación definitiva de los datos del tenant (SA-RF-31 CA1, CA3)
+--    Solo si el gimnasio está cancelado hace 30 días o más (fechas de Bogotá).
+--    Borra TODAS las filas de platform con ese gimnasio_id y la fila de platform.tenant.
+--    Varias FK internas del tenant son RESTRICT (p. ej. membresias → planes, ventas → turnos_caja),
+--    así que un DELETE en cascada desde tenant falla según el orden. Como se borra el tenant
+--    completo, se desactivan los disparadores de integridad solo dentro de esta transacción
+--    (session_replication_role = replica, local) y se borra tabla por tabla. Recorre el catálogo,
+--    así incluye también las tablas que agreguen otras migraciones. Devuelve las filas borradas.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION superadmin.eliminar_datos_tenant(p_gimnasio_id uuid)
+RETURNS bigint
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  t record;
+  v_n bigint;
+  v_total bigint := 0;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM superadmin.gimnasios g
+     WHERE g.gimnasio_id = p_gimnasio_id AND g.estado = 'cancelado' AND g.deleted_at IS NULL
+       AND g.fecha_cancelacion IS NOT NULL
+       AND ((now() AT TIME ZONE 'America/Bogota')::date
+            - (g.fecha_cancelacion AT TIME ZONE 'America/Bogota')::date) >= 30
+  ) THEN
+    RAISE EXCEPTION 'AUN_NO_ELIMINABLE' USING ERRCODE = 'P0001';
+  END IF;
+
+  PERFORM set_config('session_replication_role', 'replica', true);
+  FOR t IN
+    SELECT c.relname
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_attribute a ON a.attrelid = c.oid
+     WHERE n.nspname = 'platform' AND c.relkind = 'r'
+       AND a.attname = 'gimnasio_id' AND NOT a.attisdropped
+  LOOP
+    EXECUTE format('DELETE FROM platform.%I WHERE gimnasio_id = $1', t.relname) USING p_gimnasio_id;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    v_total := v_total + v_n;
+  END LOOP;
+  DELETE FROM platform.tenant WHERE id = p_gimnasio_id;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_total := v_total + v_n;
+  PERFORM set_config('session_replication_role', 'origin', true);
+
+  RETURN v_total;
+END$$;
+
+REVOKE ALL ON FUNCTION superadmin.exportar_datos_tenant(uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION superadmin.eliminar_datos_tenant(uuid)       FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION superadmin.exportar_datos_tenant(uuid, text) TO gymos_superadmin;
+GRANT EXECUTE ON FUNCTION superadmin.eliminar_datos_tenant(uuid)       TO gymos_superadmin;
+
+
+-- =====================================================================
+-- CARRIL 3 (033_sa_subdominio.sql)
+-- =====================================================================
+
+ALTER TABLE superadmin.gimnasios DROP CONSTRAINT IF EXISTS gimnasios_subdominio_check;
+ALTER TABLE superadmin.gimnasios DROP CONSTRAINT IF EXISTS gimnasios_subdominio_formato;
+ALTER TABLE superadmin.gimnasios ADD CONSTRAINT gimnasios_subdominio_formato CHECK (
+  subdominio ~ '^[a-z0-9]([a-z0-9-]{1,61}[a-z0-9])$'
+  AND subdominio NOT IN ('admin', 'www', 'api', 'app', 'mail')
+);
+
+
+-- =====================================================================
 -- PERMISOS POR USUARIO DE BD (aislamiento entre esquemas)
 -- =====================================================================
 
