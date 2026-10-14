@@ -5,7 +5,6 @@ Cada prueba corre en una transacción que se revierte al final. La conexión es 
 permisos que se prueban son los reales del Super-Admin. Para sembrar datos del tenant (que el SA
 no puede escribir) se usa `como_superusuario(sesion)`.
 """
-import contextlib
 import uuid
 from typing import Optional
 
@@ -61,17 +60,6 @@ def pg_session(pg_engine):
     session.close()
     transaction.rollback()
     connection.close()
-
-
-@contextlib.contextmanager
-def como_superusuario(session: Session):
-    """Ejecuta un bloque con el rol de superusuario dentro de la misma transacción."""
-    session.flush()
-    session.execute(text("RESET ROLE"))
-    try:
-        yield session
-    finally:
-        session.execute(text("SET LOCAL ROLE gymos_superadmin"))
 
 
 @pytest.fixture

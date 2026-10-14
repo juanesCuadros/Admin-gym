@@ -1,7 +1,23 @@
 """Ayudas para las pruebas contra PostgreSQL: crean datos por la API real, sin atajos."""
+import contextlib
 import uuid
 from datetime import date
 from typing import Optional
+
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+
+@contextlib.contextmanager
+def como_superusuario(session: Session):
+    """Ejecuta un bloque con el rol de superusuario dentro de la misma transacción
+    (para sembrar datos del tenant que el SA no puede escribir)."""
+    session.flush()
+    session.execute(text("RESET ROLE"))
+    try:
+        yield session
+    finally:
+        session.execute(text("SET LOCAL ROLE gymos_superadmin"))
 
 
 def plan_id(client, headers, codigo: str) -> str:
