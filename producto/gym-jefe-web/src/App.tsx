@@ -34,6 +34,7 @@ import { ConfigGeneralPage } from './pages/configuracion/ConfigGeneralPage';
 import { ConfigLandingPage } from './pages/configuracion/ConfigLandingPage';
 import { ConfigMetodosPagoPage } from './pages/configuracion/ConfigMetodosPagoPage';
 import { ConfigParametrosPage } from './pages/configuracion/ConfigParametrosPage';
+import { MiSuscripcionPage } from './pages/configuracion/MiSuscripcionPage';
 
 import { enConstruccion, PantallaTvAccesoPage } from './pages/enConstruccion/EnConstruccionPage';
 
@@ -140,6 +141,11 @@ export const App: React.FC = () => {
                       <Route path="/configuracion/landing" element={<ConfigLandingPage />} />
                       <Route path="/configuracion/metodos-pago" element={<ConfigMetodosPagoPage />} />
                       <Route path="/configuracion/parametros" element={<ConfigParametrosPage />} />
+                    </Route>
+
+                    {/* Mi suscripción: solo el Jefe (contrato 2.6) */}
+                    <Route element={<ProtectedRoute soloJefe />}>
+                      <Route path="/configuracion/suscripcion" element={<MiSuscripcionPage />} />
                     </Route>
 
                     <Route element={<ProtectedRoute soloJefe />}>
