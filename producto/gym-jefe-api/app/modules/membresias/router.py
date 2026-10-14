@@ -16,7 +16,10 @@ from app.modules.membresias.schemas import (
     CancelarMembresiaRequest,
     CongelarMembresiaRequest,
     CongelamientoItemResponse,
+    CrearPaqueteRequest,
+    CrearPaqueteResponse,
     CrearPlanRequest,
+    DetallePaqueteResponse,
     EditarPlanRequest,
     FichaMembresiaResponse,
     MembresiaResponse,
@@ -317,4 +320,48 @@ async def descongelar_membresia(
         staff_id=staff.staff_id,
         staff_nombre=staff.nombre,
         membresia_id=id,
+    )
+
+
+# =============================================================================
+# 4. PLANES GRUPALES Y PAQUETES (GW-RF-52, Contrato 1.3)
+# =============================================================================
+
+@router.post(
+    "/membresias/paquetes",
+    response_model=CrearPaqueteResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear paquete de membresías para plan grupal (GW-RF-52, Contrato 1.3)",
+    description="Crea N membresías atómicas ligadas a un paquete con validación de titular mayor de edad y cupo exacto."
+)
+async def crear_paquete(
+    req: CrearPaqueteRequest,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    staff: Annotated[AuthenticatedStaff, Depends(require_permission("membresias", "crear"))],
+):
+    return await MembresiasService.crear_paquete(
+        session=session,
+        gym_id=staff.gimnasio_id,
+        staff_id=staff.staff_id,
+        staff_nombre=staff.nombre,
+        req=req,
+    )
+
+
+@router.get(
+    "/membresias/paquetes/{id}",
+    response_model=DetallePaqueteResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Consultar detalle de paquete y sus membresías (GW-RF-52, Contrato 1.3)",
+    description="Retorna la información del paquete, su titular y todas las membresías individuales asociadas."
+)
+async def obtener_paquete(
+    id: Annotated[UUID, Path(description="UUID del paquete a consultar")],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    staff: Annotated[AuthenticatedStaff, Depends(require_permission("membresias", "leer"))],
+):
+    return await MembresiasService.obtener_paquete(
+        session=session,
+        gym_id=staff.gimnasio_id,
+        paquete_id=id,
     )

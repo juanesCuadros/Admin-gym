@@ -23,14 +23,19 @@ from app.modules.membresias.schemas import (
     CancelarMembresiaRequest,
     CongelarMembresiaRequest,
     CongelamientoItemResponse,
+    CrearPaqueteRequest,
+    CrearPaqueteResponse,
     CrearPlanRequest,
+    DetallePaqueteResponse,
     EditarPlanRequest,
     FichaMembresiaResponse,
     MembresiaListItemResponse,
     MembresiaResponse,
     MembresiasPaginadasResponse,
+    PaqueteMembresiaItemDto,
     PlanResponse,
     PlanesListResponse,
+    TitularResumenDto,
 )
 
 
@@ -1057,3 +1062,260 @@ class MembresiasService:
         )
 
         return [MembresiaResponse(**item) for item in enriquecidos]
+
+    # =========================================================================
+    # 4. PLANES GRUPALES Y PAQUETES (GW-RF-52, Contrato 1.3)
+    # =========================================================================
+
+    @classmethod
+    async def crear_paquete(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        staff_id: UUID,
+        staff_nombre: str,
+        req: CrearPaqueteRequest,
+    ) -> CrearPaqueteResponse:
+        hoy = today_local()
+
+        # 1. Validar que no haya beneficiarios duplicados en la petición (Contrato 1.3: 409 BENEFICIARIO_DUPLICADO)
+        if len(req.beneficiarios) != len(set(req.beneficiarios)):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"codigo": "BENEFICIARIO_DUPLICADO", "mensaje": "La lista de beneficiarios contiene deportistas duplicados"}
+            )
+
+        # 2. Validar que el titular esté incluido en los beneficiarios (Contrato 1.3: 422 TITULAR_NO_ES_BENEFICIARIO)
+        if req.titular_id not in req.beneficiarios:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"codigo": "TITULAR_NO_ES_BENEFICIARIO", "mensaje": "El titular debe ser uno de los beneficiarios del paquete"}
+            )
+
+        # 3. Consultar y validar plan tarifario
+        q_plan = text("""
+            SELECT id, nombre, precio, duracion_dias, tipo, cupo_personas, activo
+            FROM platform.planes
+            WHERE id = :plan_id AND gimnasio_id = :gym_id
+        """)
+        res_plan = await session.execute(q_plan, {"plan_id": req.plan_id, "gym_id": gym_id})
+        plan = res_plan.mappings().first()
+        if not plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"codigo": "PLAN_NO_ENCONTRADO", "mensaje": "El plan tarifario especificado no existe"}
+            )
+        if not plan["activo"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"codigo": "PLAN_INACTIVO", "mensaje": "El plan tarifario seleccionado se encuentra inactivo"}
+            )
+
+        # 4. Validar cantidad exacta de beneficiarios (CA1, Contrato 1.3: 422 BENEFICIARIOS_INCOMPLETOS)
+        cupo_requerido = plan["cupo_personas"]
+        cupo_recibido = len(req.beneficiarios)
+        if cupo_recibido != cupo_requerido:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "codigo": "BENEFICIARIOS_INCOMPLETOS",
+                    "mensaje": f"El plan requiere exactamente {cupo_requerido} beneficiarios, pero se recibieron {cupo_recibido}",
+                    "detalles": {"requeridos": cupo_requerido, "recibidos": cupo_recibido}
+                }
+            )
+
+        # 5. Validar deportistas beneficiarios y mayoría de edad del titular (CA2, Contrato 1.3: 422 TITULAR_MENOR_DE_EDAD)
+        q_deps = text("""
+            SELECT id, nombre, fecha_nacimiento, activo
+            FROM platform.deportistas
+            WHERE gimnasio_id = :gym_id AND id = ANY(:ids) AND deleted_at IS NULL
+        """)
+        res_deps = await session.execute(q_deps, {"gym_id": gym_id, "ids": req.beneficiarios})
+        deps_map = {r["id"]: r for r in res_deps.mappings()}
+
+        for b_id in req.beneficiarios:
+            if b_id not in deps_map:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"codigo": "DEPORTISTA_NO_ENCONTRADO", "mensaje": f"El deportista con ID {b_id} no existe o no pertenece a este gimnasio"}
+                )
+            if not deps_map[b_id]["activo"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"codigo": "DEPORTISTA_INACTIVO", "mensaje": f"El beneficiario '{deps_map[b_id]['nombre']}' se encuentra inactivo"}
+                )
+
+        titular = deps_map[req.titular_id]
+        fn_titular = titular["fecha_nacimiento"]
+        if not fn_titular:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"codigo": "TITULAR_MENOR_DE_EDAD", "mensaje": "El titular debe ser mayor de 18 años (fecha de nacimiento requerida)"}
+            )
+        edad_titular = (hoy.year - fn_titular.year) - ((hoy.month, hoy.day) < (fn_titular.month, fn_titular.day))
+        if edad_titular < 18:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"codigo": "TITULAR_MENOR_DE_EDAD", "mensaje": "El titular del paquete debe ser mayor de 18 años"}
+            )
+
+        # 6. Crear el registro del paquete en platform.paquetes
+        q_paq = text("""
+            INSERT INTO platform.paquetes (
+                gimnasio_id, plan_id, titular_id, created_at, updated_at
+            ) VALUES (
+                :gym_id, :plan_id, :titular_id, now(), now()
+            ) RETURNING id
+        """)
+        res_paq = await session.execute(q_paq, {
+            "gym_id": gym_id,
+            "plan_id": req.plan_id,
+            "titular_id": req.titular_id
+        })
+        paquete_id = res_paq.scalar_one()
+
+        # 7. Asignación de precio dividido en enteros con sobrante al titular (GW-RF-52)
+        plan_precio_total = int(plan["precio"])
+        n = len(req.beneficiarios)
+        precio_base_indiv = Decimal(plan_precio_total // n)
+        sobrante = Decimal(plan_precio_total % n)
+
+        # 8. Creación de N membresías individuales ligadas al paquete (atómico en la misma transacción, CA3)
+        fecha_inicio_base = req.fecha_inicio or hoy
+        duracion_dias = plan["duracion_dias"]
+        membresias_creadas = []
+
+        for b_id in req.beneficiarios:
+            dep_info = deps_map[b_id]
+            # Beneficiario con membresía vigente: Su membresía del paquete empieza cuando vence la actual (GW-RF-52)
+            q_vigente = text("""
+                SELECT fecha_vencimiento
+                FROM platform.membresias
+                WHERE gimnasio_id = :gym_id AND deportista_id = :b_id AND cancelada = false
+                  AND fecha_vencimiento >= :hoy
+                ORDER BY fecha_vencimiento DESC
+                LIMIT 1
+            """)
+            res_vig = await session.execute(q_vigente, {"gym_id": gym_id, "b_id": b_id, "hoy": hoy})
+            row_vig = res_vig.mappings().first()
+
+            if row_vig and row_vig["fecha_vencimiento"] >= fecha_inicio_base:
+                f_inicio = row_vig["fecha_vencimiento"] + timedelta(days=1)
+            else:
+                f_inicio = fecha_inicio_base
+
+            f_venc = f_inicio + timedelta(days=duracion_dias)
+
+            # Si es el titular, recibe el sobrante
+            p_asignado = (precio_base_indiv + sobrante) if b_id == req.titular_id else precio_base_indiv
+
+            q_ins_m = text("""
+                INSERT INTO platform.membresias (
+                    gimnasio_id, deportista_id, plan_id, paquete_id, fecha_inicio, fecha_vencimiento,
+                    cancelada, plan_precio_vendido, plan_duracion_dias_vendida, precio_asignado,
+                    created_at, updated_at
+                ) VALUES (
+                    :gym_id, :dep_id, :plan_id, :paq_id, :f_ini, :f_venc,
+                    false, :precio_vendido, :duracion_vendida, :precio_asignado,
+                    now(), now()
+                ) RETURNING id
+            """)
+            res_m = await session.execute(q_ins_m, {
+                "gym_id": gym_id,
+                "dep_id": b_id,
+                "plan_id": req.plan_id,
+                "paq_id": paquete_id,
+                "f_ini": f_inicio,
+                "f_venc": f_venc,
+                "precio_vendido": p_asignado,
+                "duracion_vendida": duracion_dias,
+                "precio_asignado": p_asignado
+            })
+            m_id = res_m.scalar_one()
+
+            membresias_creadas.append(PaqueteMembresiaItemDto(
+                id=m_id,
+                deportista_id=b_id,
+                deportista_nombre=dep_info["nombre"],
+                fecha_inicio=f_inicio,
+                fecha_vencimiento=f_venc,
+                precio_asignado=p_asignado
+            ))
+
+        # 9. Auditoría inmutable de creación de paquete
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=gym_id,
+            actor_id=staff_id,
+            actor_nombre=staff_nombre,
+            accion="CREAR_PAQUETE_MEMBRESIAS",
+            entidad="paquetes",
+            entidad_id=str(paquete_id),
+            detalle={
+                "plan_id": str(req.plan_id),
+                "plan_nombre": plan["nombre"],
+                "titular_id": str(req.titular_id),
+                "titular_nombre": titular["nombre"],
+                "total_beneficiarios": n,
+                "membresias_ids": [str(it.id) for it in membresias_creadas]
+            }
+        )
+
+        return CrearPaqueteResponse(
+            paquete_id=paquete_id,
+            membresias=membresias_creadas
+        )
+
+    @classmethod
+    async def obtener_paquete(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        paquete_id: UUID,
+    ) -> DetallePaqueteResponse:
+        q_paq = text("""
+            SELECT pq.id, pq.titular_id, p.nombre as plan_nombre,
+                   d.nombre as titular_nombre, d.telefono as titular_telefono
+            FROM platform.paquetes pq
+            JOIN platform.planes p ON p.id = pq.plan_id
+            JOIN platform.deportistas d ON d.id = pq.titular_id
+            WHERE pq.id = :paq_id AND pq.gimnasio_id = :gym_id
+        """)
+        res_paq = await session.execute(q_paq, {"paq_id": paquete_id, "gym_id": gym_id})
+        paq = res_paq.mappings().first()
+        if not paq:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"codigo": "PAQUETE_NO_ENCONTRADO", "mensaje": "Paquete de membresías no encontrado"}
+            )
+
+        q_membs = text("""
+            SELECT m.id, m.deportista_id, d.nombre as deportista_nombre,
+                   m.fecha_inicio, m.fecha_vencimiento, m.precio_asignado
+            FROM platform.membresias m
+            JOIN platform.deportistas d ON d.id = m.deportista_id
+            WHERE m.paquete_id = :paq_id AND m.gimnasio_id = :gym_id
+            ORDER BY m.created_at ASC
+        """)
+        res_membs = await session.execute(q_membs, {"paq_id": paquete_id, "gym_id": gym_id})
+        membs = [
+            PaqueteMembresiaItemDto(
+                id=r["id"],
+                deportista_id=r["deportista_id"],
+                deportista_nombre=r["deportista_nombre"],
+                fecha_inicio=r["fecha_inicio"],
+                fecha_vencimiento=r["fecha_vencimiento"],
+                precio_asignado=Decimal(str(r["precio_asignado"] or 0))
+            ) for r in res_membs.mappings()
+        ]
+
+        return DetallePaqueteResponse(
+            id=paq["id"],
+            plan_nombre=paq["plan_nombre"],
+            titular=TitularResumenDto(
+                id=paq["titular_id"],
+                nombre=paq["titular_nombre"],
+                telefono=paq["titular_telefono"]
+            ),
+            membresias=membs
+        )

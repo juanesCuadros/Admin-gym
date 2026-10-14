@@ -930,81 +930,183 @@ class CajaService:
             )
         turno_id = turno["id"]
 
-        # 3. Bloqueo de la membresía para extensión de vigencia
-        memb_query = text("""
-            SELECT m.id, m.deportista_id, m.fecha_inicio, m.fecha_vencimiento, m.cancelada,
-                   m.plan_precio_vendido, p.precio as plan_precio
-            FROM platform.membresias m
-            JOIN platform.planes p ON p.id = m.plan_id
-            WHERE m.id = :membresia_id AND m.gimnasio_id = :gym_id
-            FOR UPDATE
-        """)
-        res_memb = await session.execute(memb_query, {"membresia_id": data.membresia_id, "gym_id": gym_id})
-        memb = res_memb.mappings().first()
-
-        if not memb:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"codigo": "MEMBRESIA_NO_ENCONTRADA", "mensaje": "La membresía especificada no existe"}
-            )
-        if memb["cancelada"]:
+        # 3. Validación de destino: membresía individual o paquete grupal (GW-RF-52, Contrato 1.3)
+        if not data.membresia_id and not data.paquete_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"codigo": "MEMBRESIA_CANCELADA", "mensaje": "No se pueden registrar pagos a una membresía cancelada"}
+                detail={"codigo": "DESTINO_PAGO_REQUERIDO", "mensaje": "Debe especificar membresia_id o paquete_id"}
+            )
+        if data.membresia_id and data.paquete_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"codigo": "DESTINO_PAGO_AMBIGUO", "mensaje": "Especifique membresia_id o paquete_id, no ambos"}
             )
 
-        # Validación y cálculo de descuento (GW-RF-53, Contrato 1.2)
-        precio_lista = Decimal(str(memb["plan_precio_vendido"] or memb["plan_precio"] or data.monto))
-        precio_evaluar = data.precio_cobrado if data.precio_cobrado is not None else data.monto
-        precio_cobrado_final, desc_pct, mot_desc = await cls._validar_y_calcular_descuento(
-            session=session,
-            gym_id=gym_id,
-            staff_rol=staff_rol,
-            precio_lista=precio_lista,
-            precio_cobrado=precio_evaluar,
-            motivo_descuento=data.motivo_descuento
-        )
-        monto_a_cobrar = precio_cobrado_final if data.precio_cobrado is not None else data.monto
-
-        # 4. Cálculo de nueva fecha de vencimiento según Regla C2 (GW-RF-25 CA1 y CA2)
         hoy = today_local()
-        venc_actual: date = memb["fecha_vencimiento"]
-
         # Consultar días de gracia del tenant
         q_tenant_gracia = text("SELECT dias_gracia_mora FROM platform.tenant WHERE id = :gym_id")
         res_tg = await session.execute(q_tenant_gracia, {"gym_id": gym_id})
         dias_gracia = res_tg.scalar() or 3
 
-        tuvo_checkin_en_gracia = False
-        if venc_actual < hoy:
-            # Ventana de gracia: [venc_actual + 1, venc_actual + dias_gracia]
-            f_desde_gracia = venc_actual + timedelta(days=1)
-            f_hasta_gracia = venc_actual + timedelta(days=dias_gracia)
-            q_chk = text("""
-                SELECT EXISTS(
-                    SELECT 1 FROM platform.checkins
-                    WHERE gimnasio_id = :gym_id
-                      AND deportista_id = :dep_id
-                      AND tipo = 'ingreso'
-                      AND resultado IN ('abrio', 'alerta_mora')
-                      AND CAST(ts_utc AT TIME ZONE 'America/Bogota' AS date) BETWEEN :f_desde AND :f_hasta
-                )
+        if data.membresia_id:
+            # --- Caso A: Pago de Membresía Individual ---
+            memb_query = text("""
+                SELECT m.id, m.deportista_id, m.fecha_inicio, m.fecha_vencimiento, m.cancelada,
+                       m.plan_precio_vendido, p.precio as plan_precio, p.duracion_dias as plan_duracion
+                FROM platform.membresias m
+                JOIN platform.planes p ON p.id = m.plan_id
+                WHERE m.id = :membresia_id AND m.gimnasio_id = :gym_id
+                FOR UPDATE
             """)
-            res_chk = await session.execute(q_chk, {
-                "gym_id": gym_id,
-                "dep_id": memb["deportista_id"],
-                "f_desde": f_desde_gracia,
-                "f_hasta": f_hasta_gracia
-            })
-            tuvo_checkin_en_gracia = bool(res_chk.scalar())
+            res_memb = await session.execute(memb_query, {"membresia_id": data.membresia_id, "gym_id": gym_id})
+            memb = res_memb.mappings().first()
 
-        _, nueva_fecha_venc = calcular_vencimiento_renovacion_c2(
-            venc_actual=venc_actual,
-            hoy=hoy,
-            dias_duracion=data.dias_agregados,
-            dias_gracia_mora=dias_gracia,
-            tuvo_checkin_en_gracia=tuvo_checkin_en_gracia
-        )
+            if not memb:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"codigo": "MEMBRESIA_NO_ENCONTRADA", "mensaje": "La membresía especificada no existe"}
+                )
+            if memb["cancelada"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"codigo": "MEMBRESIA_CANCELADA", "mensaje": "No se pueden registrar pagos a una membresía cancelada"}
+                )
+
+            precio_lista = Decimal(str(memb["plan_precio_vendido"] or memb["plan_precio"] or data.monto))
+            precio_evaluar = data.precio_cobrado if data.precio_cobrado is not None else data.monto
+            precio_cobrado_final, desc_pct, mot_desc = await cls._validar_y_calcular_descuento(
+                session=session,
+                gym_id=gym_id,
+                staff_rol=staff_rol,
+                precio_lista=precio_lista,
+                precio_cobrado=precio_evaluar,
+                motivo_descuento=data.motivo_descuento
+            )
+            monto_a_cobrar = precio_cobrado_final if data.precio_cobrado is not None else data.monto
+
+            venc_actual: date = memb["fecha_vencimiento"]
+            dias_sumar = data.dias_agregados if data.dias_agregados > 0 else (memb["plan_duracion"] or 30)
+
+            tuvo_checkin_en_gracia = False
+            if venc_actual < hoy:
+                f_desde_gracia = venc_actual + timedelta(days=1)
+                f_hasta_gracia = venc_actual + timedelta(days=dias_gracia)
+                q_chk = text("""
+                    SELECT EXISTS(
+                        SELECT 1 FROM platform.checkins
+                        WHERE gimnasio_id = :gym_id
+                          AND deportista_id = :dep_id
+                          AND tipo = 'ingreso'
+                          AND resultado IN ('abrio', 'alerta_mora')
+                          AND CAST(ts_utc AT TIME ZONE 'America/Bogota' AS date) BETWEEN :f_desde AND :f_hasta
+                    )
+                """)
+                res_chk = await session.execute(q_chk, {
+                    "gym_id": gym_id,
+                    "dep_id": memb["deportista_id"],
+                    "f_desde": f_desde_gracia,
+                    "f_hasta": f_hasta_gracia
+                })
+                tuvo_checkin_en_gracia = bool(res_chk.scalar())
+
+            _, nueva_fecha_venc = calcular_vencimiento_renovacion_c2(
+                venc_actual=venc_actual,
+                hoy=hoy,
+                dias_duracion=dias_sumar,
+                dias_gracia_mora=dias_gracia,
+                tuvo_checkin_en_gracia=tuvo_checkin_en_gracia
+            )
+
+            # Actualizar vencimiento en platform.membresias
+            await session.execute(text("""
+                UPDATE platform.membresias
+                SET fecha_vencimiento = :nueva_fecha, updated_at = now()
+                WHERE id = :membresia_id
+            """), {"nueva_fecha": nueva_fecha_venc, "membresia_id": data.membresia_id})
+
+        else:
+            # --- Caso B: Pago de Paquete Grupal (un solo pago cubre N membresías, GW-RF-52) ---
+            q_paq = text("""
+                SELECT pq.id, pq.plan_id, p.nombre as plan_nombre, p.precio as plan_precio, p.duracion_dias
+                FROM platform.paquetes pq
+                JOIN platform.planes p ON p.id = pq.plan_id
+                WHERE pq.id = :paquete_id AND pq.gimnasio_id = :gym_id
+            """)
+            res_paq = await session.execute(q_paq, {"paquete_id": data.paquete_id, "gym_id": gym_id})
+            paq = res_paq.mappings().first()
+            if not paq:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"codigo": "PAQUETE_NO_ENCONTRADO", "mensaje": "El paquete de membresías especificado no existe"}
+                )
+
+            q_membs = text("""
+                SELECT m.id, m.deportista_id, m.fecha_inicio, m.fecha_vencimiento, m.cancelada
+                FROM platform.membresias m
+                WHERE m.paquete_id = :paquete_id AND m.gimnasio_id = :gym_id
+                ORDER BY m.id
+                FOR UPDATE
+            """)
+            res_membs = await session.execute(q_membs, {"paquete_id": data.paquete_id, "gym_id": gym_id})
+            membs = res_membs.mappings().all()
+            if not membs:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"codigo": "MEMBRESIAS_PAQUETE_NO_ENCONTRADAS", "mensaje": "No se encontraron membresías asociadas a este paquete"}
+                )
+
+            precio_lista = Decimal(str(paq["plan_precio"]))
+            precio_evaluar = data.precio_cobrado if data.precio_cobrado is not None else data.monto
+            precio_cobrado_final, desc_pct, mot_desc = await cls._validar_y_calcular_descuento(
+                session=session,
+                gym_id=gym_id,
+                staff_rol=staff_rol,
+                precio_lista=precio_lista,
+                precio_cobrado=precio_evaluar,
+                motivo_descuento=data.motivo_descuento
+            )
+            monto_a_cobrar = precio_cobrado_final if data.precio_cobrado is not None else data.monto
+            dias_sumar = data.dias_agregados if data.dias_agregados > 0 else paq["duracion_dias"]
+
+            nueva_fecha_venc = None
+            # Extender cada membresía del paquete con Regla C2
+            for m in membs:
+                v_act: date = m["fecha_vencimiento"]
+                chk_gracia = False
+                if v_act < hoy:
+                    f_d = v_act + timedelta(days=1)
+                    f_h = v_act + timedelta(days=dias_gracia)
+                    q_chk = text("""
+                        SELECT EXISTS(
+                            SELECT 1 FROM platform.checkins
+                            WHERE gimnasio_id = :gym_id
+                              AND deportista_id = :dep_id
+                              AND tipo = 'ingreso'
+                              AND resultado IN ('abrio', 'alerta_mora')
+                              AND CAST(ts_utc AT TIME ZONE 'America/Bogota' AS date) BETWEEN :f_desde AND :f_hasta
+                        )
+                    """)
+                    res_c = await session.execute(q_chk, {
+                        "gym_id": gym_id,
+                        "dep_id": m["deportista_id"],
+                        "f_desde": f_d,
+                        "f_hasta": f_h
+                    })
+                    chk_gracia = bool(res_c.scalar())
+
+                _, nv = calcular_vencimiento_renovacion_c2(
+                    venc_actual=v_act,
+                    hoy=hoy,
+                    dias_duracion=dias_sumar,
+                    dias_gracia_mora=dias_gracia,
+                    tuvo_checkin_en_gracia=chk_gracia
+                )
+                await session.execute(text("""
+                    UPDATE platform.membresias
+                    SET fecha_vencimiento = :nv, updated_at = now()
+                    WHERE id = :mid
+                """), {"nv": nv, "mid": m["id"]})
+                nueva_fecha_venc = nv
 
         # 5. Cálculo de cambio
         cambio_devuelto = None
@@ -1021,11 +1123,11 @@ class CajaService:
             async with session.begin_nested():
                 insert_pago = text("""
                     INSERT INTO platform.pagos_membresia (
-                        gimnasio_id, turno_id, membresia_id, monto, metodo, tipo_medio,
+                        gimnasio_id, turno_id, membresia_id, paquete_id, monto, metodo, tipo_medio,
                         dias_agregados, idempotency_key, registrado_por, created_at,
                         precio_lista, precio_cobrado, descuento_pct, motivo_descuento
                     ) VALUES (
-                        :gym_id, :turno_id, :membresia_id, :monto, :metodo, :tipo_medio,
+                        :gym_id, :turno_id, :membresia_id, :paquete_id, :monto, :metodo, :tipo_medio,
                         :dias_agregados, :idempotency_key, :registrado_por, now(),
                         :precio_lista, :precio_cobrado, :descuento_pct, :motivo_descuento
                     ) RETURNING id, created_at
@@ -1034,6 +1136,7 @@ class CajaService:
                     "gym_id": gym_id,
                     "turno_id": turno_id,
                     "membresia_id": data.membresia_id,
+                    "paquete_id": data.paquete_id,
                     "monto": monto_a_cobrar,
                     "metodo": data.metodo.strip(),
                     "tipo_medio": data.tipo_medio,
@@ -1054,17 +1157,11 @@ class CajaService:
                 return existente_carrera
             raise
 
-        # 7. Actualizar vencimiento en platform.membresias
-        await session.execute(text("""
-            UPDATE platform.membresias
-            SET fecha_vencimiento = :nueva_fecha, updated_at = now()
-            WHERE id = :membresia_id
-        """), {"nueva_fecha": nueva_fecha_venc, "membresia_id": data.membresia_id})
-
         return PagoMembresiaResponseDto(
             id=pago_id,
             turno_id=turno_id,
             membresia_id=data.membresia_id,
+            paquete_id=data.paquete_id,
             monto=monto_a_cobrar,
             metodo=data.metodo.strip(),
             tipo_medio=data.tipo_medio,
@@ -1098,7 +1195,7 @@ class CajaService:
         """
         # 1. Obtener membresía y duración base
         q_m = text("""
-            SELECT m.fecha_inicio, m.plan_duracion_dias_vendida, m.deportista_id, p.duracion_dias as plan_duracion
+            SELECT m.fecha_inicio, m.plan_duracion_dias_vendida, m.deportista_id, m.paquete_id, p.duracion_dias as plan_duracion
             FROM platform.membresias m
             JOIN platform.planes p ON p.id = m.plan_id
             WHERE m.id = :m_id AND m.gimnasio_id = :gym_id
@@ -1111,22 +1208,38 @@ class CajaService:
         duracion_ini = m["plan_duracion_dias_vendida"] or m["plan_duracion"] or 30
         curr_venc: date = m["fecha_inicio"] + timedelta(days=duracion_ini)
         dep_id = m["deportista_id"]
+        paq_id = m["paquete_id"]
 
         # 2. Configuración de gracia del tenant
         q_tg = text("SELECT dias_gracia_mora FROM platform.tenant WHERE id = :gym_id")
         res_tg = await session.execute(q_tg, {"gym_id": gym_id})
         dias_gracia = res_tg.scalar() or 3
 
-        # 3. Pagos activos no anulados (excluye el pago recién anulado)
-        q_pagos = text("""
-            SELECT id, dias_agregados,
-                   CAST(created_at AT TIME ZONE 'America/Bogota' AS date) as fecha_pago,
-                   created_at
-            FROM platform.pagos_membresia
-            WHERE gimnasio_id = :gym_id AND membresia_id = :m_id AND anulado = false
-            ORDER BY created_at ASC
-        """)
-        res_p = await session.execute(q_pagos, {"gym_id": gym_id, "m_id": membresia_id})
+        # 3. Pagos activos no anulados (excluye el pago recién anulado, incluye pagos de paquete)
+        if paq_id is not None:
+            q_pagos = text("""
+                SELECT id, dias_agregados,
+                       CAST(created_at AT TIME ZONE 'America/Bogota' AS date) as fecha_pago,
+                       created_at
+                FROM platform.pagos_membresia
+                WHERE gimnasio_id = :gym_id 
+                  AND (membresia_id = :m_id OR paquete_id = :paq_id)
+                  AND anulado = false
+                ORDER BY created_at ASC
+            """)
+            res_p = await session.execute(q_pagos, {"gym_id": gym_id, "m_id": membresia_id, "paq_id": paq_id})
+        else:
+            q_pagos = text("""
+                SELECT id, dias_agregados,
+                       CAST(created_at AT TIME ZONE 'America/Bogota' AS date) as fecha_pago,
+                       created_at
+                FROM platform.pagos_membresia
+                WHERE gimnasio_id = :gym_id 
+                  AND membresia_id = :m_id
+                  AND anulado = false
+                ORDER BY created_at ASC
+            """)
+            res_p = await session.execute(q_pagos, {"gym_id": gym_id, "m_id": membresia_id})
         pagos = res_p.mappings().all()
 
         # 4. Congelamientos cerrados ordenados cronológicamente

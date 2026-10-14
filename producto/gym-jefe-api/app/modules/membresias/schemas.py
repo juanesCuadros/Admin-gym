@@ -149,3 +149,41 @@ class FichaMembresiaResponse(BaseModel):
     membresia: MembresiaResponse
     congelamientos: List[CongelamientoItemResponse]
     pagos: List[Dict[str, Any]]
+
+
+# =============================================================================
+# 4. PLANES GRUPALES Y PAQUETES (GW-RF-52, Contrato 1.3)
+# =============================================================================
+
+class CrearPaqueteRequest(BaseModel):
+    plan_id: UUID = Field(..., description="UUID del plan grupal/paquete a contratar")
+    titular_id: UUID = Field(..., description="UUID del deportista titular (debe ser mayor de edad y beneficiario)")
+    beneficiarios: List[UUID] = Field(..., min_length=1, description="Lista de UUIDs de todos los beneficiarios (incluyendo al titular)")
+    fecha_inicio: Optional[date] = Field(None, description="Fecha de inicio general (default hoy local)")
+
+
+class PaqueteMembresiaItemDto(BaseModel):
+    id: UUID
+    deportista_id: UUID
+    deportista_nombre: str
+    fecha_inicio: date
+    fecha_vencimiento: date
+    precio_asignado: Decimal
+
+
+class CrearPaqueteResponse(BaseModel):
+    paquete_id: UUID
+    membresias: List[PaqueteMembresiaItemDto]
+
+
+class TitularResumenDto(BaseModel):
+    id: UUID
+    nombre: str
+    telefono: Optional[str] = None
+
+
+class DetallePaqueteResponse(BaseModel):
+    id: UUID
+    plan_nombre: str
+    titular: TitularResumenDto
+    membresias: List[PaqueteMembresiaItemDto]
