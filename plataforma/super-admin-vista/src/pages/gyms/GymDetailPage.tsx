@@ -66,6 +66,8 @@ export const GymDetailPage: React.FC = () => {
   const [isUpdatePriceOpen, setIsUpdatePriceOpen] = useState<boolean>(false);
   const [isChangePlanOpen, setIsChangePlanOpen] = useState<boolean>(false);
   const [issuedCreds, setIssuedCreds] = useState<CredentialsIssuanceResponse | null>(null);
+  // SA-RF-09 CA5: al anular el pago de reactivación el estado no se revierte; se avisa.
+  const [advertenciaAnulacion, setAdvertenciaAnulacion] = useState<string | null>(null);
 
   // General tab editable form state
   const [isEditingGeneral, setIsEditingGeneral] = useState(false);
@@ -589,6 +591,14 @@ export const GymDetailPage: React.FC = () => {
         ))}
       </div>
 
+      {advertenciaAnulacion && (
+        <Alert
+          type="warning"
+          title="El estado no se revirtió"
+          message={advertenciaAnulacion.replace(/d{4}-d{2}-d{2}/g, (f) => formatFecha(f))}
+          onClose={() => setAdvertenciaAnulacion(null)}
+        />
+      )}
       {gym.motivo_bloqueo && (
         <Alert type="error" title="Acceso bloqueado en el Sistema Web" message={gym.motivo_bloqueo} />
       )}
@@ -1026,14 +1036,20 @@ export const GymDetailPage: React.FC = () => {
         isOpen={!!selectedVoidPayment}
         onClose={() => setSelectedVoidPayment(null)}
         payment={selectedVoidPayment}
-        onSuccess={refetch}
+        onSuccess={(anulado) => {
+          if (anulado?.advertencia) setAdvertenciaAnulacion(anulado.advertencia);
+          refetch();
+        }}
       />
 
       <ChangeStatusModal
         isOpen={isChangeStatusOpen}
         onClose={() => setIsChangeStatusOpen(false)}
         gym={gym}
-        onSuccess={refetch}
+        onSuccess={() => {
+          setAdvertenciaAnulacion(null);
+          refetch();
+        }}
       />
 
       <CancelGymModal

@@ -1,36 +1,42 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ConfirmationDialog } from '@/components/actions/ConfirmationDialog';
 import { FormField } from '@/components/forms/FormField';
 import { TextInput } from '@/components/forms/TextInput';
+import { Alert } from '@/components/feedback/Alert';
 import { Payment } from '@/types/payment.types';
-import { usePayments } from '@/hooks/usePayments';
+import { paymentService } from '@/services/paymentService';
 import { useToast } from '@/hooks/useToast';
 import { parseApiError } from '@/services/api/errorHandler';
+import { formatCOP, formatFecha } from '@/utils/format';
 
 export interface VoidPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   payment: Payment | null;
-  onSuccess?: () => void;
+  /** Recibe el pago anulado; si trae `advertencia` (SA-RF-09 CA5), la ficha la muestra. */
+  onSuccess?: (anulado: Payment | null) => void;
 }
 
-export const VoidPaymentModal: React.FC<VoidPaymentModalProps> = ({
-  isOpen,
-  onClose,
-  payment,
-  onSuccess,
-}) => {
-  const { voidPayment } = usePayments(payment?.gimnasio_id);
-  const { success, error: toastError } = useToast();
+/** Anular pago (`POST /admin/payments/{id}/void`, SA-RF-18). */
+export const VoidPaymentModal: React.FC<VoidPaymentModalProps> = ({ isOpen, onClose, payment, onSuccess }) => {
+  const { success } = useToast();
 
   const [motivo, setMotivo] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (isOpen) {
+      setMotivo('');
+      setErrorMsg(null);
+    }
+  }, [isOpen]);
+
   if (!payment) return null;
 
   const handleConfirm = async () => {
-    if (!motivo.trim() || motivo.trim().length < 5) {
+    if (isSubmitting) return;
+    if (motivo.trim().length < 5) {
       setErrorMsg('El motivo de anulación es obligatorio (mínimo 5 caracteres).');
       return;
     }
@@ -38,19 +44,21 @@ export const VoidPaymentModal: React.FC<VoidPaymentModalProps> = ({
     setIsSubmitting(true);
     setErrorMsg(null);
     try {
-      const updated = await voidPayment(payment.id, motivo.trim());
+      const updated = await paymentService.voidPayment(payment.id, { motivo_anulacion: motivo.trim() });
       success(
-        `Pago anulado correctamente. La fecha de corte se recalculó automáticamente a: ${
-          updated.nueva_fecha_corte || 'Derivada'
-        }.`
+        'Pago anulado.' +
+          (updated.nueva_fecha_corte ? ` La fecha de corte quedó en ${formatFecha(updated.nueva_fecha_corte)}.` : '')
       );
-      if (onSuccess) onSuccess();
+      onSuccess?.(updated);
       onClose();
-      setMotivo('');
     } catch (err) {
       const parsed = parseApiError(err);
+      if (parsed.codigo === 'PAGO_YA_ANULADO') {
+        setErrorMsg('Este pago ya estaba anulado. Recarga la ficha para ver el estado actual.');
+        onSuccess?.(null);
+        return;
+      }
       setErrorMsg(parsed.message);
-      toastError(parsed.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -59,32 +67,24 @@ export const VoidPaymentModal: React.FC<VoidPaymentModalProps> = ({
   return (
     <ConfirmationDialog
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={isSubmitting ? () => undefined : onClose}
       onConfirm={handleConfirm}
-      title="Anular Recaudo de Pago (RF-18)"
-      message={`¿Estás seguro de anular el pago por $${payment.monto.toLocaleString('es-CO')} (${payment.meses} meses)? Esta acción conservará el registro histórico como anulado y recalculará inmediatamente la fecha de corte del gimnasio.`}
-      confirmLabel="Anular Pago"
+      title="Anular pago"
+      message={`¿Anular el pago de ${formatCOP(payment.monto)} (${payment.meses} ${payment.meses === 1 ? 'mes' : 'meses'}) del ${formatFecha(payment.fecha_pago)}? Queda marcado como anulado, no se borra, y la fecha de corte se recalcula: el gimnasio puede quedar bloqueado.`}
+      confirmLabel="Anular pago"
       isDestructive
       isLoading={isSubmitting}
     >
-      <div style={{ marginTop: '16px' }}>
-        <FormField
-          label="Motivo Formal de la Anulación"
-          required
-          error={errorMsg || undefined}
-          helperText="Se registrará de forma inmutable en el historial y en la auditoría criptográfica."
-        >
-          <TextInput
-            value={motivo}
-            onChange={(e) => {
-              setMotivo(e.target.value);
-              if (errorMsg) setErrorMsg(null);
-            }}
-            placeholder="ej. Comprobante rechazado por banco emisor o reversión acordada"
-            hasError={!!errorMsg}
-          />
-        </FormField>
-      </div>
+      {errorMsg && <Alert type="error" message={errorMsg} />}
+      <FormField label="Motivo de la anulación" required helperText="Queda en el historial y en la auditoría.">
+        <TextInput
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          disabled={isSubmitting}
+          placeholder="ej. El banco rechazó la transferencia"
+          hasError={!!errorMsg}
+        />
+      </FormField>
     </ConfirmationDialog>
   );
 };
