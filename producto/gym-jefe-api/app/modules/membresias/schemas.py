@@ -85,6 +85,8 @@ class CancelarMembresiaRequest(BaseModel):
 
 class CongelarMembresiaRequest(BaseModel):
     motivo: Optional[str] = Field(None, max_length=255, description="Motivo opcional del congelamiento")
+    dias: Optional[int] = Field(None, ge=1, description="Días programados de congelamiento")
+    fecha_fin: Optional[date] = Field(None, description="Fecha programada de fin del congelamiento")
 
 
 class MembresiaResponse(BaseModel):

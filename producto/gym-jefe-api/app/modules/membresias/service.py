@@ -610,11 +610,14 @@ class MembresiasService:
     ) -> CongelamientoItemResponse:
         hoy = today_local()
 
-        # 1. Validar membresía
+        # 1. Validar membresía y calcular estado de negocio (GW-RF-26 CA1)
         q_m = text("""
-            SELECT id, fecha_vencimiento, cancelada
-            FROM platform.membresias
-            WHERE id = :id AND gimnasio_id = :gym_id
+            SELECT m.id, m.fecha_vencimiento, m.cancelada, m.plan_id, p.nombre as plan_nombre,
+                   d.activo as deportista_activo
+            FROM platform.membresias m
+            JOIN platform.planes p ON p.id = m.plan_id
+            JOIN platform.deportistas d ON d.id = m.deportista_id
+            WHERE m.id = :id AND m.gimnasio_id = :gym_id
             FOR UPDATE
         """)
         res_m = await session.execute(q_m, {"id": membresia_id, "gym_id": gym_id})
@@ -629,10 +632,28 @@ class MembresiasService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"codigo": "MEMBRESIA_CANCELADA", "mensaje": "No se puede congelar una membresía cancelada"}
             )
-        if m["fecha_vencimiento"] < hoy:
+
+        # Evaluar estado puro de negocio (CA1: solo activo o por_vencer)
+        gracia, umbral = await cls._obtener_config_tenant(session, gym_id)
+        calc = MembresiaDomainService.evaluar_estado_puro(
+            hoy=hoy,
+            activo_deportista=m["deportista_activo"],
+            tiene_membresia=True,
+            ultima_cancelada=m["cancelada"],
+            fecha_vencimiento=m["fecha_vencimiento"],
+            congelamiento_activo=False,
+            dias_gracia_mora=gracia,
+            dias_umbral_por_vencer=umbral,
+            membresia_id=m["id"],
+            plan_nombre=m["plan_nombre"]
+        )
+        if calc.estado not in ("activo", "por_vencer"):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"codigo": "MEMBRESIA_VENCIDA", "mensaje": "No se puede congelar una membresía vencida"}
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "codigo": "MEMBRESIA_NO_CONGELABLE",
+                    "mensaje": f"Solo se puede congelar una membresía en estado 'activo' o 'por_vencer' (estado actual: '{calc.estado}')"
+                }
             )
 
         # 2. Anticipar congelamiento activo vigente (409 CONFLICT)
@@ -647,10 +668,32 @@ class MembresiasService:
                 detail={"codigo": "MEMBRESIA_YA_CONGELADA", "mensaje": "La membresía ya se encuentra congelada actualmente"}
             )
 
-        # 3. Validar tope de días configurable por gimnasio
-        q_tope = text("SELECT tope_dias_congelamiento FROM platform.tenant WHERE id = :gym_id")
-        res_tope = await session.execute(q_tope, {"gym_id": gym_id})
-        tope = res_tope.scalar() or 30
+        # 3. Validar mínimo de días y tope acumulado configurable (GW-RF-26 CA3)
+        q_tenant = text("""
+            SELECT COALESCE(minimo_dias_congelamiento, 1) as minimo_dias,
+                   COALESCE(tope_dias_congelamiento, 30) as tope_dias
+            FROM platform.tenant WHERE id = :gym_id
+        """)
+        res_t = await session.execute(q_tenant, {"gym_id": gym_id})
+        t_row = res_t.mappings().first()
+        minimo_dias = t_row["minimo_dias"] if t_row else 1
+        tope_dias = t_row["tope_dias"] if t_row else 30
+
+        dias_a_congelar: Optional[int] = None
+        if req.dias is not None:
+            dias_a_congelar = req.dias
+        elif req.fecha_fin is not None:
+            dias_a_congelar = (req.fecha_fin - hoy).days
+
+        if dias_a_congelar is not None and dias_a_congelar < minimo_dias:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "codigo": "CONGELAMIENTO_MENOR_MINIMO",
+                    "mensaje": f"El período a congelar ({dias_a_congelar} días) es menor al mínimo permitido ({minimo_dias} días)",
+                    "detalles": {"minimo_dias": minimo_dias, "dias_solicitados": dias_a_congelar}
+                }
+            )
 
         q_prev = text("""
             SELECT COALESCE(SUM(dias), 0) FROM platform.congelamientos
@@ -659,21 +702,23 @@ class MembresiasService:
         res_prev = await session.execute(q_prev, {"gym_id": gym_id, "memb_id": membresia_id})
         dias_consumidos = res_prev.scalar() or 0
 
-        if dias_consumidos >= tope:
+        dias_validar = dias_a_congelar if dias_a_congelar is not None else 1
+        if dias_consumidos + dias_validar > tope_dias:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={
                     "codigo": "TOPE_CONGELAMIENTO_ALCANZADO",
-                    "mensaje": f"Se ha alcanzado el tope máximo de {tope} días de congelamiento permitidos para esta membresía"
+                    "mensaje": f"Se ha alcanzado o superaría el tope máximo de {tope_dias} días de congelamiento permitidos para esta membresía",
+                    "detalles": {"tope_dias": tope_dias, "dias_consumidos": dias_consumidos}
                 }
             )
 
-        # 4. Insertar congelamiento abierto
+        # 4. Insertar congelamiento abierto (fecha_fin IS NULL mientras esté vigente)
         q_ins = text("""
             INSERT INTO platform.congelamientos (
-                gimnasio_id, membresia_id, fecha_inicio, fecha_fin, registrado_por
+                gimnasio_id, membresia_id, fecha_inicio, fecha_fin, dias, registrado_por
             ) VALUES (
-                :gym_id, :memb_id, :hoy, NULL, :staff_id
+                :gym_id, :memb_id, :hoy, NULL, :dias, :staff_id
             ) RETURNING id, fecha_inicio, fecha_fin, dias, created_at
         """)
         try:
@@ -681,6 +726,7 @@ class MembresiasService:
                 "gym_id": gym_id,
                 "memb_id": membresia_id,
                 "hoy": hoy,
+                "dias": dias_a_congelar,
                 "staff_id": staff_id,
             })
             cong = res_ins.mappings().one()
@@ -698,14 +744,19 @@ class MembresiasService:
             accion="CONGELAR_MEMBRESIA",
             entidad="congelamientos",
             entidad_id=cong["id"],
-            detalle={"membresia_id": str(membresia_id), "fecha_inicio": str(hoy), "motivo": req.motivo}
+            detalle={
+                "membresia_id": str(membresia_id),
+                "fecha_inicio": str(hoy),
+                "dias_programados": dias_a_congelar,
+                "motivo": req.motivo
+            }
         )
 
         return CongelamientoItemResponse(
             id=cong["id"],
             fecha_inicio=cong["fecha_inicio"],
             fecha_fin=None,
-            dias=None,
+            dias=cong["dias"],
             vigente=True,
             registrado_por_nombre=staff_nombre,
             created_at=cong["created_at"]
@@ -724,7 +775,7 @@ class MembresiasService:
 
         # 1. Bloquear y obtener congelamiento vigente
         q_open = text("""
-            SELECT id, fecha_inicio FROM platform.congelamientos
+            SELECT id, fecha_inicio, dias FROM platform.congelamientos
             WHERE gimnasio_id = :gym_id AND membresia_id = :memb_id AND fecha_fin IS NULL
             FOR UPDATE
         """)
@@ -749,17 +800,18 @@ class MembresiasService:
         dias_previos = res_prev.scalar() or 0
 
         dias_reales = max(1, (hoy - cong["fecha_inicio"]).days)
+        dias_efectivos = min(dias_reales, cong["dias"]) if cong.get("dias") else dias_reales
         dias_disponibles = max(0, tope - dias_previos)
-        dias_a_extender = min(dias_reales, dias_disponibles)
+        dias_a_extender = min(dias_efectivos, dias_disponibles)
 
-        # 3. Cerrar congelamiento y extender vigencia
+        # 3. Cerrar congelamiento y extender vigencia por días efectivos (GW-RF-26 CA4)
         q_close = text("""
             UPDATE platform.congelamientos
             SET fecha_fin = :hoy, dias = :dias
             WHERE id = :id
             RETURNING id, fecha_inicio, fecha_fin, dias, created_at
         """)
-        res_close = await session.execute(q_close, {"hoy": hoy, "dias": dias_reales, "id": cong["id"]})
+        res_close = await session.execute(q_close, {"hoy": hoy, "dias": dias_a_extender, "id": cong["id"]})
         closed_cong = res_close.mappings().one()
 
         if dias_a_extender > 0:
