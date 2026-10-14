@@ -37,7 +37,7 @@ def _signup(client, correo=None, telefono=None, nombre=None, **extra):
 
 def _ultimo_token(correo):
     msg = [m for m in AdaptadorCorreoLog.bandeja if m.destinatario == correo][-1]
-    return re.search(r"token=([A-Za-z0-9_\-]+)", msg.texto).group(1)
+    return re.search(r"/registro/confirmar/([A-Za-z0-9_\-]+)", msg.texto).group(1)
 
 
 def test_planes_publicos_sin_autenticacion(pg_client):

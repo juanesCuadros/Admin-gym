@@ -83,7 +83,7 @@ class SignupUseCases:
         self.db.add(registro)
         self.db.commit()
 
-        enlace = f"{settings.URL_CONFIRMACION_REGISTRO}?token={token}"
+        enlace = f"{settings.URL_CONFIRMACION_REGISTRO.rstrip('/')}/{token}"
         self.correo.enviar(
             registro.jefe_correo,
             "Confirma el registro de tu gimnasio en GymOS",

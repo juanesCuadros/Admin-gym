@@ -32,6 +32,8 @@ services:
       FIRST_SUPERADMIN_PASSWORD: ChangeMeToStrongPassword2026!
       BASE_DOMAIN: localhost
       CORS_ORIGINS: '["http://localhost:3001"]'
+      URL_CONFIRMACION_REGISTRO: http://localhost:3002/registro/confirmar
+      CORREO_MODO: log
     ports: ["8002:8000"]
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/health || exit 1"]
