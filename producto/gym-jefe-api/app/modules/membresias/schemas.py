@@ -100,6 +100,8 @@ class MembresiaResponse(BaseModel):
     dias_restantes_o_vencido: int
     congelamiento_activo: bool
     congelamiento_id: Optional[UUID] = None
+    plan_precio_vendido: Optional[Decimal] = None
+    plan_duracion_dias_vendida: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -120,6 +122,8 @@ class MembresiaListItemResponse(BaseModel):
     dias_restantes_o_vencido: int
     congelamiento_activo: bool
     congelamiento_id: Optional[UUID] = None
+    plan_precio_vendido: Optional[Decimal] = None
+    plan_duracion_dias_vendida: Optional[int] = None
 
 
 class MembresiasPaginadasResponse(BaseModel):

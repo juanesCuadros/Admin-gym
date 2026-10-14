@@ -330,7 +330,7 @@ class MembresiasService:
             )
 
         # 2. Validar plan
-        q_plan = text("SELECT id, nombre, duracion_dias, activo FROM platform.planes WHERE id = :id AND gimnasio_id = :gym_id")
+        q_plan = text("SELECT id, nombre, precio, duracion_dias, activo FROM platform.planes WHERE id = :id AND gimnasio_id = :gym_id")
         res_plan = await session.execute(q_plan, {"id": req.plan_id, "gym_id": gym_id})
         plan = res_plan.mappings().first()
         if not plan:
@@ -370,10 +370,13 @@ class MembresiasService:
 
         q_insert = text("""
             INSERT INTO platform.membresias (
-                gimnasio_id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada
+                gimnasio_id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada,
+                plan_precio_vendido, plan_duracion_dias_vendida
             ) VALUES (
-                :gym_id, :deportista_id, :plan_id, :fini, :fvenc, false
-            ) RETURNING id, gimnasio_id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada, created_at, updated_at
+                :gym_id, :deportista_id, :plan_id, :fini, :fvenc, false,
+                :plan_precio_vendido, :plan_duracion_dias_vendida
+            ) RETURNING id, gimnasio_id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada,
+                        plan_precio_vendido, plan_duracion_dias_vendida, created_at, updated_at
         """)
         res_ins = await session.execute(q_insert, {
             "gym_id": gym_id,
@@ -381,6 +384,8 @@ class MembresiasService:
             "plan_id": req.plan_id,
             "fini": f_inicio,
             "fvenc": f_vencimiento,
+            "plan_precio_vendido": plan["precio"],
+            "plan_duracion_dias_vendida": plan["duracion_dias"],
         })
         m = res_ins.mappings().one()
 
@@ -456,7 +461,7 @@ class MembresiasService:
             )
 
         # 2. Validar nuevo plan
-        q_new = text("SELECT id, nombre, duracion_dias, activo FROM platform.planes WHERE id = :id AND gimnasio_id = :gym_id")
+        q_new = text("SELECT id, nombre, precio, duracion_dias, activo FROM platform.planes WHERE id = :id AND gimnasio_id = :gym_id")
         res_new = await session.execute(q_new, {"id": req.nuevo_plan_id, "gym_id": gym_id})
         new_plan = res_new.mappings().first()
         if not new_plan:
@@ -485,10 +490,13 @@ class MembresiasService:
         nueva_venc = hoy + timedelta(days=new_plan["duracion_dias"])
         q_ins = text("""
             INSERT INTO platform.membresias (
-                gimnasio_id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada
+                gimnasio_id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada,
+                plan_precio_vendido, plan_duracion_dias_vendida
             ) VALUES (
-                :gym_id, :dep_id, :plan_id, :fini, :fvenc, false
-            ) RETURNING id, gimnasio_id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada, created_at, updated_at
+                :gym_id, :dep_id, :plan_id, :fini, :fvenc, false,
+                :plan_precio_vendido, :plan_duracion_dias_vendida
+            ) RETURNING id, gimnasio_id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada,
+                        plan_precio_vendido, plan_duracion_dias_vendida, created_at, updated_at
         """)
         res_ins = await session.execute(q_ins, {
             "gym_id": gym_id,
@@ -496,6 +504,8 @@ class MembresiasService:
             "plan_id": new_plan["id"],
             "fini": hoy,
             "fvenc": nueva_venc,
+            "plan_precio_vendido": new_plan["precio"],
+            "plan_duracion_dias_vendida": new_plan["duracion_dias"],
         })
         nueva_m = res_ins.mappings().one()
 
@@ -823,7 +833,8 @@ class MembresiasService:
         q_items = text(f"""
             SELECT m.id, m.deportista_id, d.nombre as deportista_nombre, d.documento as deportista_documento,
                    d.correo as deportista_correo, d.telefono as deportista_telefono, d.activo as deportista_activo,
-                   m.plan_id, p.nombre as plan_nombre, m.fecha_inicio, m.fecha_vencimiento, m.cancelada
+                   m.plan_id, p.nombre as plan_nombre, m.fecha_inicio, m.fecha_vencimiento, m.cancelada,
+                   m.plan_precio_vendido, m.plan_duracion_dias_vendida
             FROM platform.membresias m
             JOIN platform.deportistas d ON d.id = m.deportista_id
             JOIN platform.planes p ON p.id = m.plan_id
@@ -862,6 +873,7 @@ class MembresiasService:
         q_m = text("""
             SELECT m.id, m.gimnasio_id, m.deportista_id, m.plan_id, p.nombre as plan_nombre,
                    m.fecha_inicio, m.fecha_vencimiento, m.cancelada, m.created_at, m.updated_at,
+                   m.plan_precio_vendido, m.plan_duracion_dias_vendida,
                    d.activo as deportista_activo
             FROM platform.membresias m
             JOIN platform.planes p ON p.id = m.plan_id
@@ -941,6 +953,8 @@ class MembresiasService:
             dias_restantes_o_vencido=calc.dias_restantes_o_vencido,
             congelamiento_activo=calc.congelamiento_activo,
             congelamiento_id=calc.congelamiento_id,
+            plan_precio_vendido=m["plan_precio_vendido"],
+            plan_duracion_dias_vendida=m["plan_duracion_dias_vendida"],
             created_at=m["created_at"],
             updated_at=m["updated_at"]
         )
@@ -970,7 +984,8 @@ class MembresiasService:
 
         q = text("""
             SELECT m.id, m.gimnasio_id, m.deportista_id, m.plan_id, p.nombre as plan_nombre,
-                   m.fecha_inicio, m.fecha_vencimiento, m.cancelada, m.created_at, m.updated_at
+                   m.fecha_inicio, m.fecha_vencimiento, m.cancelada, m.created_at, m.updated_at,
+                   m.plan_precio_vendido, m.plan_duracion_dias_vendida
             FROM platform.membresias m
             JOIN platform.planes p ON p.id = m.plan_id
             WHERE m.gimnasio_id = :gym_id AND m.deportista_id = :dep_id
