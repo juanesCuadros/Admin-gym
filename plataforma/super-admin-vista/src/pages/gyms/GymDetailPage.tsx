@@ -595,7 +595,7 @@ export const GymDetailPage: React.FC = () => {
         <Alert
           type="warning"
           title="El estado no se revirtió"
-          message={advertenciaAnulacion.replace(/d{4}-d{2}-d{2}/g, (f) => formatFecha(f))}
+          message={advertenciaAnulacion.replace(/\d{4}-\d{2}-\d{2}/g, (f) => formatFecha(f))}
           onClose={() => setAdvertenciaAnulacion(null)}
         />
       )}
