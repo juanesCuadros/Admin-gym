@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Menu, X } from 'lucide-react'
 import { enlaceWhatsApp } from '@/config'
@@ -14,14 +14,36 @@ function Logo() {
 
 export default function Layout() {
   const [menuAbierto, setMenuAbierto] = useState(false)
+  const botonMenuRef = useRef<HTMLButtonElement>(null)
   const { pathname } = useLocation()
   const whatsapp = enlaceWhatsApp('Hola, quiero saber más de GymOS para mi gimnasio.')
 
-  // Al cambiar de página: cerrar el menú móvil y volver arriba.
+  const primeraCarga = useRef(true)
+
+  // Al cambiar de página: cerrar el menú móvil, volver arriba y llevar el foco al contenido
+  // para que un lector de pantalla anuncie la página nueva (no en la primera carga).
   useEffect(() => {
     setMenuAbierto(false)
     window.scrollTo(0, 0)
+    if (primeraCarga.current) {
+      primeraCarga.current = false
+      return
+    }
+    document.getElementById('contenido')?.focus({ preventScroll: true })
   }, [pathname])
+
+  // Escape cierra el menú móvil y devuelve el foco al botón.
+  useEffect(() => {
+    if (!menuAbierto) return
+    const alPresionar = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMenuAbierto(false)
+        botonMenuRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', alPresionar)
+    return () => document.removeEventListener('keydown', alPresionar)
+  }, [menuAbierto])
 
   return (
     <>
@@ -31,6 +53,7 @@ export default function Layout() {
           <Logo />
           <button
             type="button"
+            ref={botonMenuRef}
             className="boton-menu"
             aria-expanded={menuAbierto}
             aria-controls="navegacion"

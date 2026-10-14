@@ -21,6 +21,7 @@
   --sombra: 0 1px 2px rgb(0 0 0 / 6%), 0 4px 16px rgb(0 0 0 / 5%);
   --ancho: 1080px;
 
+  color-scheme: light;
   font-family: var(--fuente);
   font-size: 16px;
   line-height: 1.55;
@@ -77,6 +78,16 @@ h3 {
 
 p {
   margin: 0 0 1em;
+}
+
+/* Nombres largos de gimnasio o direcciones no deben desbordar a 360 px */
+h1,
+h2,
+h3,
+p,
+li,
+dd {
+  overflow-wrap: break-word;
 }
 
 a {
@@ -692,6 +703,10 @@ a:hover {
 
 .campo input:not([type='checkbox']):focus-visible {
   border-color: var(--color-foco);
+}
+
+.campo input:disabled {
+  background: #efede7;
 }
 
 .campo-con-error input:not([type='checkbox']) {
