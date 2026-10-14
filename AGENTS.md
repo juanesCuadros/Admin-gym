@@ -38,6 +38,10 @@ alcanza, **detente y pregunta**. No inventes reglas de negocio.
 - **Esquema:** cada cambio va en una migración nueva e idempotente en `infra/db/migrations/`, **solo con los números
   de tu rango** (carril 1: 010–019, carril 2: 020–029, carril 3: 030–039). **No edites `01_schema.sql`**: lo integra
   quien une las ramas. Vuelve a correr el script para aplicar tu migración.
+- **Tabla nueva en `platform` con `gimnasio_id`:** en la misma migración activa `ENABLE` y `FORCE ROW LEVEL SECURITY` y
+  crea la política `tenant_isolation` igual a la de `01_schema.sql`. Sin eso, un gimnasio ve los datos de otro.
+- **Valores por defecto:** nunca `valor or N` con números de configuración (`0 or 3` da 3). Usa `is not None`. Si falta
+  una configuración de permisos o descuentos, se cierra (fail-closed), nunca se abre.
 - **Fechas de negocio** en America/Bogota. Prohibido `date.today()` y `datetime.now()` sin zona.
 - **Dinero** en COP enteros. Toda operación de dinero acepta `Idempotency-Key`.
 - **Auditoría:** toda escritura sobre dinero, membresías, permisos, inventario, accesos o configuración llama al

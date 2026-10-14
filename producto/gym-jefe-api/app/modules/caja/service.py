@@ -448,8 +448,9 @@ class CajaService:
         q_t = text("SELECT permitir_descuentos, tope_descuento_pct FROM platform.tenant WHERE id = :gym_id")
         res_t = await session.execute(q_t, {"gym_id": gym_id})
         row_t = res_t.mappings().first()
-        permitir_descuentos = row_t["permitir_descuentos"] if (row_t and row_t["permitir_descuentos"] is not None) else True
-        tope_descuento_pct = Decimal(str(row_t["tope_descuento_pct"])) if (row_t and row_t["tope_descuento_pct"] is not None) else Decimal("100.0")
+        # Sin configuración legible, los descuentos quedan cerrados (fail-closed), nunca abiertos al 100 %.
+        permitir_descuentos = bool(row_t and row_t["permitir_descuentos"])
+        tope_descuento_pct = Decimal(str(row_t["tope_descuento_pct"])) if (row_t and row_t["tope_descuento_pct"] is not None) else Decimal("0")
 
         if not permitir_descuentos:
             raise HTTPException(
@@ -946,7 +947,9 @@ class CajaService:
         # Consultar días de gracia del tenant
         q_tenant_gracia = text("SELECT dias_gracia_mora FROM platform.tenant WHERE id = :gym_id")
         res_tg = await session.execute(q_tenant_gracia, {"gym_id": gym_id})
-        dias_gracia = res_tg.scalar() or 3
+        dias_gracia_cfg = res_tg.scalar()
+        # 0 es un valor válido (sin gracia): no usar `or`, que lo convertiría en 3.
+        dias_gracia = dias_gracia_cfg if dias_gracia_cfg is not None else 3
 
         if data.membresia_id:
             # --- Caso A: Pago de Membresía Individual ---
@@ -1213,7 +1216,9 @@ class CajaService:
         # 2. Configuración de gracia del tenant
         q_tg = text("SELECT dias_gracia_mora FROM platform.tenant WHERE id = :gym_id")
         res_tg = await session.execute(q_tg, {"gym_id": gym_id})
-        dias_gracia = res_tg.scalar() or 3
+        dias_gracia_cfg = res_tg.scalar()
+        # 0 es un valor válido (sin gracia): no usar `or`, que lo convertiría en 3.
+        dias_gracia = dias_gracia_cfg if dias_gracia_cfg is not None else 3
 
         # 3. Pagos activos no anulados (excluye el pago recién anulado, incluye pagos de paquete)
         if paq_id is not None:

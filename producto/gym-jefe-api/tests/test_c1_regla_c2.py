@@ -217,3 +217,60 @@ async def test_regla_c2_integracion_pago_membresia():
         # Vencimiento debe ser hoy + 30 días
         venc_esperado_2 = hoy + timedelta(days=30)
         assert data2["nueva_fecha_vencimiento"] == venc_esperado_2.strftime("%Y-%m-%d")
+
+
+@pytest.mark.asyncio
+async def test_regla_c2_gimnasio_sin_gracia_no_cuenta_checkin_tras_vencer():
+    """Con dias_gracia_mora = 0 no hay ventana de gracia: un ingreso el día siguiente al vencimiento
+    no conserva el periodo y la renovación cuenta desde hoy. (Regresión: `0 or 3` daba 3 días.)"""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        prefix = uuid.uuid4().hex[:6]
+        gym_id, recep_id, dep_id, plan_id, memb_id = (uuid.uuid4() for _ in range(5))
+        hoy = today_local()
+        venc = hoy - timedelta(days=6)
+        dia_siguiente = venc + timedelta(days=1)
+
+        async with async_session_maker() as session:
+            await session.execute(text("SELECT set_config('app.gimnasio_id', :gym_id, true)"), {"gym_id": str(gym_id)})
+            await session.execute(text("""
+                INSERT INTO platform.tenant (id, nombre, subdominio, dias_gracia_mora, activo)
+                VALUES (:id, :nom, :sub, 0, true)
+            """), {"id": gym_id, "nom": f"Gym C2 sin gracia {prefix}", "sub": f"c2g0-{prefix}"})
+            await session.execute(text("""
+                INSERT INTO platform.staff (id, gimnasio_id, rol, correo, hash_password, nombre, activo)
+                VALUES (:id, :gym, 'recepcionista', :mail, :pwd, 'Recep C2 G0', true)
+            """), {"id": recep_id, "gym": gym_id, "mail": f"recep_c2g0_{prefix}@test.com",
+                   "pwd": hash_password("ClaveSegura123!")})
+            await session.execute(text("""
+                INSERT INTO platform.planes (id, gimnasio_id, nombre, precio, duracion_dias, tipo, cupo_personas, activo)
+                VALUES (:id, :gym, :nom, 100000, 30, 'individual', 1, true)
+            """), {"id": plan_id, "gym": gym_id, "nom": f"Plan G0 {prefix}"})
+            await session.execute(text("""
+                INSERT INTO platform.deportistas (id, gimnasio_id, documento, nombre, correo, consentimiento_1581, consentimiento_fecha, activo)
+                VALUES (:d, :gym, :doc, 'Atleta Sin Gracia', 'g0@test.com', true, now(), true)
+            """), {"d": dep_id, "gym": gym_id, "doc": f"CCG0-{prefix}"})
+            await session.execute(text("""
+                INSERT INTO platform.membresias (id, gimnasio_id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada)
+                VALUES (:m, :gym, :d, :p, :fi, :fv, false)
+            """), {"m": memb_id, "gym": gym_id, "d": dep_id, "p": plan_id,
+                   "fi": venc - timedelta(days=30), "fv": venc})
+            ts = datetime(dia_siguiente.year, dia_siguiente.month, dia_siguiente.day, 17, 0, 0, tzinfo=timezone.utc)
+            await session.execute(text("""
+                INSERT INTO platform.checkins (gimnasio_id, deportista_id, tipo, metodo, resultado, registrado_por, ts_utc)
+                VALUES (:gym, :dep, 'ingreso', 'manual', 'alerta_mora', :staff, :ts)
+            """), {"gym": gym_id, "dep": dep_id, "staff": recep_id, "ts": ts})
+            await AuthService._seed_permisos_en_transaccion(session, gym_id)
+            await session.commit()
+
+        headers = {"Authorization": f"Bearer {create_access_token(str(recep_id), str(gym_id), 'recepcionista')}"}
+        assert (await client.post("/api/v1/caja/turnos/abrir", json={"base_inicial": 0}, headers=headers)).status_code == 201
+
+        r = await client.post(
+            "/api/v1/caja/pagos-membresia",
+            json={"membresia_id": str(memb_id), "monto": 100000, "metodo": "efectivo",
+                  "tipo_medio": "efectivo", "dias_agregados": 30, "valor_recibido": 100000},
+            headers={**headers, "X-Idempotency-Key": f"c2g0-{prefix}"},
+        )
+        assert r.status_code == 201
+        assert r.json()["nueva_fecha_vencimiento"] == (hoy + timedelta(days=30)).strftime("%Y-%m-%d")
