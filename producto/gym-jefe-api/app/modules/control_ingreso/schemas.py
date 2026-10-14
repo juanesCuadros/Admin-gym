@@ -46,6 +46,33 @@ class CheckinResponseDto(BaseModel):
     ts_local: datetime
 
 
+class SalidaRequest(BaseModel):
+    deportista_id: UUID = Field(..., description="UUID del deportista que registra su salida")
+
+
+class SalidaResponseDto(BaseModel):
+    checkin_id: int
+    deportista_id: UUID
+    deportista_nombre: str
+    ingreso_ts: datetime
+    salida_ts: datetime
+    permanencia_minutos: int
+
+
+class DeportistaAdentroItemDto(BaseModel):
+    checkin_id: int
+    deportista_id: UUID
+    nombre: str
+    documento: str
+    ingreso_ts: datetime
+    minutos_adentro: int
+
+
+class DeportistasAdentroResponse(BaseModel):
+    total: int
+    items: List[DeportistaAdentroItemDto]
+
+
 class CheckinItemHistorialDto(BaseModel):
     id: int
     tipo: str
@@ -57,6 +84,8 @@ class CheckinItemHistorialDto(BaseModel):
     deportista_documento: Optional[str] = None
     registrado_por_nombre: Optional[str] = None
     ts_local: datetime
+    salida_ts: Optional[datetime] = None
+    permanencia_minutos: Optional[int] = None
 
 
 class ResumenIngresosHoyDto(BaseModel):
@@ -66,6 +95,7 @@ class ResumenIngresosHoyDto(BaseModel):
     alertas_mora: int
     accesos_negados: int
     cortesias: int
+    adentro_ahora: int = 0
 
 
 class ListadoIngresosHoyResponse(BaseModel):
