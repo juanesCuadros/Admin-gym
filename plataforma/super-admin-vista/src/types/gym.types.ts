@@ -22,6 +22,8 @@ export interface JefeAccountCreate {
 export interface SubscriptionCreate {
   valor_mensual: number;
   tipo_inicio: TipoInicio;
+  /** Obligatorio (SA-RF-33): plan activo; prueba ⇔ plan de tipo `prueba`. */
+  plan_id: string;
 }
 
 export interface GymCreateStepByStep {
