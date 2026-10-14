@@ -62,7 +62,36 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
           bg: 'var(--color-warning-light)',
           color: 'var(--color-warning)',
           icon: <AlertTriangle size={13} />,
-          text: label || 'Por Vencer',
+          text: label || 'Por vencer',
+        };
+      // Estados calculados (§2.2)
+      case 'al_dia':
+        return {
+          bg: 'var(--color-success-light)',
+          color: 'var(--color-success)',
+          icon: <CheckCircle2 size={13} />,
+          text: label || 'Al día',
+        };
+      case 'en_gracia':
+        return {
+          bg: 'rgba(255, 149, 0, 0.15)',
+          color: '#D97E00',
+          icon: <AlertTriangle size={13} />,
+          text: label || 'En gracia',
+        };
+      case 'bloqueado':
+        return {
+          bg: 'var(--color-error-light)',
+          color: 'var(--color-error)',
+          icon: <XCircle size={13} />,
+          text: label || 'Bloqueado',
+        };
+      case 'prueba_por_vencer':
+        return {
+          bg: 'var(--color-warning-light)',
+          color: 'var(--color-warning)',
+          icon: <Clock size={13} />,
+          text: label || 'Prueba por vencer',
         };
       case 'suspendido':
       case 'suspended':

@@ -1,96 +1,104 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '@/components/feedback/Modal';
 import { Button } from '@/components/actions/Button';
-import { FormField } from '@/components/forms/FormField';
-import { TextInput } from '@/components/forms/TextInput';
-import { Select } from '@/components/forms/Select';
-import { usePayments } from '@/hooks/usePayments';
+import { Alert } from '@/components/feedback/Alert';
+import { PaymentFields, PagoForm, pagoFormInicial, validarPagoForm } from './PaymentFields';
+import { paymentService } from '@/services/paymentService';
 import { useToast } from '@/hooks/useToast';
 import { parseApiError } from '@/services/api/errorHandler';
-import { DollarSign, Calendar, CreditCard, FileText } from 'lucide-react';
+import { formatCOP, formatFecha, nuevaClaveIdempotencia } from '@/utils/format';
+import { DollarSign } from 'lucide-react';
 
 export interface RegisterPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   gymId: string;
   gymNombre: string;
-  defaultMonto?: number;
+  /** Valor mensual vigente: precarga el monto y alimenta el aviso de SA-RF-16 CA5. */
+  valorMensual?: number | null;
   onSuccess?: () => void;
 }
 
+/**
+ * Registrar pago (`POST /admin/gyms/{id}/payments`, SA-RF-16).
+ * La clave de idempotencia se genera al abrir y se conserva en los reintentos (CA2).
+ */
 export const RegisterPaymentModal: React.FC<RegisterPaymentModalProps> = ({
   isOpen,
   onClose,
   gymId,
   gymNombre,
-  defaultMonto = 150000,
+  valorMensual,
   onSuccess,
 }) => {
-  const { registerPayment } = usePayments(gymId);
-  const { success, error: toastError } = useToast();
+  const { success } = useToast();
 
-  const [monto, setMonto] = useState<number>(defaultMonto);
-  const [meses, setMeses] = useState<number>(1);
-  const [fechaPago, setFechaPago] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
-  const [metodo, setMetodo] = useState<string>('Transferencia Bancaria');
-  const [nota, setNota] = useState<string>('');
+  const [form, setForm] = useState<PagoForm>(pagoFormInicial(valorMensual));
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      setMonto(defaultMonto);
-      setMeses(1);
-      setFechaPago(new Date().toISOString().split('T')[0]);
-      setMetodo('Transferencia Bancolombia');
-      setNota('');
-      setIdempotencyKey(`pay-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+      setForm(pagoFormInicial(valorMensual));
+      setIdempotencyKey(nuevaClaveIdempotencia('pago'));
       setFormErrors({});
+      setErrorMsg(null);
     }
-  }, [isOpen, defaultMonto]);
+  }, [isOpen, valorMensual]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormErrors({});
+  // SA-RF-16 CA5: aviso que NO bloquea si el monto no coincide con valor vigente × meses.
+  const esperado =
+    valorMensual !== null && valorMensual !== undefined && Number(form.meses) > 0
+      ? Math.round(valorMensual) * Number(form.meses)
+      : null;
+  const avisoMonto =
+    esperado !== null && form.monto.trim() !== '' && Number(form.monto) !== esperado
+      ? `El monto no coincide con el valor mensual × meses (${formatCOP(esperado)}). Puedes registrarlo igual.`
+      : null;
 
-    if (!monto || monto <= 0) {
-      setFormErrors((prev) => ({ ...prev, monto: 'El monto debe ser superior a 0.' }));
-      return;
-    }
-    if (!meses || meses < 1) {
-      setFormErrors((prev) => ({ ...prev, meses: 'Debes registrar al menos 1 mes.' }));
-      return;
-    }
-    if (!metodo.trim()) {
-      setFormErrors((prev) => ({ ...prev, metodo: 'El método de pago es requerido.' }));
-      return;
-    }
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (isSubmitting) return;
+    setErrorMsg(null);
+
+    const errs = validarPagoForm(form);
+    setFormErrors(errs);
+    if (Object.keys(errs).length) return;
 
     setIsSubmitting(true);
     try {
-      const payment = await registerPayment({
-        monto,
-        meses,
-        fecha_pago: fechaPago,
-        metodo,
-        nota: nota.trim() || undefined,
+      const payment = await paymentService.registerPayment(gymId, {
+        monto: Number(form.monto),
+        meses: Number(form.meses),
+        fecha_pago: form.fecha_pago,
+        metodo: form.metodo.trim(),
+        nota: form.nota.trim() || undefined,
         idempotency_key: idempotencyKey,
       });
 
       success(
-        `Pago por $${payment.monto.toLocaleString('es-CO')} registrado exitosamente. Nueva fecha de corte derivada: ${payment.nueva_fecha_corte || 'Actualizada'}.`
+        `Pago de ${formatCOP(payment.monto)} registrado.` +
+          (payment.nueva_fecha_corte ? ` Nueva fecha de corte: ${formatFecha(payment.nueva_fecha_corte)}.` : '')
       );
-      if (onSuccess) onSuccess();
+      onSuccess?.();
       onClose();
     } catch (err) {
       const parsed = parseApiError(err);
-      if (parsed.fieldErrors) {
-        setFormErrors(parsed.fieldErrors);
+      if (parsed.codigo === 'IDEMPOTENCY_KEY_DUPLICADA') {
+        // El reintento llegó después de un envío que sí se registró: no hay pago duplicado.
+        success('El pago ya había quedado registrado.');
+        onSuccess?.();
+        onClose();
+        return;
       }
-      toastError(parsed.message);
+      if (parsed.fieldErrors) setFormErrors(parsed.fieldErrors);
+      if (parsed.codigo === 'FECHA_PAGO_FUTURA') {
+        setFormErrors((prev) => ({ ...prev, fecha_pago: parsed.message }));
+      }
+      // La clave se conserva: un nuevo intento no duplica el pago.
+      setErrorMsg(parsed.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -99,89 +107,26 @@ export const RegisterPaymentModal: React.FC<RegisterPaymentModalProps> = ({
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
-      title="Registrar Recaudo de Suscripción"
-      description={`Registrar pago para ${gymNombre} y derivar nueva fecha de corte (RNF-04).`}
-      maxWidth="500px"
+      onClose={isSubmitting ? () => undefined : onClose}
+      title="Registrar pago"
+      description={`Pago de la suscripción de "${gymNombre}". La fecha de corte se recalcula con el historial de pagos.`}
+      maxWidth="540px"
       footer={
         <>
           <Button variant="cancel" onClick={onClose} disabled={isSubmitting}>
             Cancelar
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleSubmit}
-            isLoading={isSubmitting}
-            leftIcon={<DollarSign size={16} />}
-          >
-            Confirmar y Registrar Pago
+          <Button variant="primary" onClick={() => handleSubmit()} isLoading={isSubmitting} leftIcon={<DollarSign size={16} />}>
+            Registrar pago
           </Button>
         </>
       }
     >
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <FormField label="Monto Recaudado (COP)" required error={formErrors.monto}>
-          <TextInput
-            type="number"
-            value={monto}
-            onChange={(e) => setMonto(Number(e.target.value))}
-            min={1}
-            step="1000"
-            leftElement={<span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)' }}>$</span>}
-            hasError={!!formErrors.monto}
-          />
-        </FormField>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-          <FormField label="Meses Cubiertos" required error={formErrors.meses}>
-            <Select
-              value={meses}
-              onChange={(e) => setMeses(Number(e.target.value))}
-              options={[
-                { value: 1, label: '1 Mes' },
-                { value: 2, label: '2 Meses' },
-                { value: 3, label: '3 Meses (Trimestral)' },
-                { value: 6, label: '6 Meses (Semestral)' },
-                { value: 12, label: '12 Meses (Anual)' },
-              ]}
-              hasError={!!formErrors.meses}
-            />
-          </FormField>
-
-          <FormField label="Fecha Efectiva del Pago" required error={formErrors.fecha_pago}>
-            <TextInput
-              type="date"
-              value={fechaPago}
-              onChange={(e) => setFechaPago(e.target.value)}
-              leftElement={<Calendar size={15} />}
-              hasError={!!formErrors.fecha_pago}
-            />
-          </FormField>
-        </div>
-
-        <FormField label="Método de Pago" required error={formErrors.metodo} helperText="Texto libre descriptivo">
-          <TextInput
-            value={metodo}
-            onChange={(e) => setMetodo(e.target.value)}
-            placeholder="ej. Transferencia Bancolombia, Nequi, Efectivo"
-            leftElement={<CreditCard size={16} />}
-            hasError={!!formErrors.metodo}
-          />
-        </FormField>
-
-        <FormField label="Notas u Observaciones" optional error={formErrors.nota}>
-          <TextInput
-            value={nota}
-            onChange={(e) => setNota(e.target.value)}
-            placeholder="ej. Comprobante No. 894312 remitido por WhatsApp"
-            leftElement={<FileText size={16} />}
-          />
-        </FormField>
-
-        {/* Idempotency token indicator (transparent security) */}
-        <div style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
-          Clave de Idempotencia: <span style={{ fontFamily: 'var(--font-mono)' }}>{idempotencyKey}</span>
-        </div>
+      <form onSubmit={handleSubmit}>
+        {errorMsg && <Alert type="error" title="No se registró el pago" message={errorMsg} />}
+        <PaymentFields form={form} onChange={setForm} errors={formErrors} disabled={isSubmitting} />
+        {avisoMonto && <Alert type="warning" message={avisoMonto} style={{ marginBottom: 0 }} />}
+        <button type="submit" hidden />
       </form>
     </Modal>
   );

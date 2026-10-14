@@ -18,7 +18,11 @@ import { ChangeStatusModal } from '@/components/business/ChangeStatusModal';
 import { CancelGymModal } from '@/components/business/CancelGymModal';
 import { UpdatePriceModal } from '@/components/business/UpdatePriceModal';
 import { CredentialsModal } from '@/components/business/CredentialsModal';
+import { ChangePlanModal } from '@/components/business/ChangePlanModal';
+import { Alert } from '@/components/feedback/Alert';
 import { useGymDetail } from '@/hooks/useGymDetail';
+import { formatCOP, formatFecha, formatFechaHora, textoDiasRestantes } from '@/utils/format';
+import { etiquetaEstadoCalculado } from '@/utils/estados';
 import { useToast } from '@/hooks/useToast';
 import { parseApiError } from '@/services/api/errorHandler';
 import { Payment } from '@/types/payment.types';
@@ -60,6 +64,7 @@ export const GymDetailPage: React.FC = () => {
   const [isChangeStatusOpen, setIsChangeStatusOpen] = useState<boolean>(false);
   const [isCancelGymOpen, setIsCancelGymOpen] = useState<boolean>(false);
   const [isUpdatePriceOpen, setIsUpdatePriceOpen] = useState<boolean>(false);
+  const [isChangePlanOpen, setIsChangePlanOpen] = useState<boolean>(false);
   const [issuedCreds, setIssuedCreds] = useState<CredentialsIssuanceResponse | null>(null);
 
   // General tab editable form state
@@ -120,13 +125,11 @@ export const GymDetailPage: React.FC = () => {
     );
   }
 
-  const formatCOP = (val: number) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      maximumFractionDigits: 0,
-    }).format(val);
-  };
+  const esCancelado = gym.estado === 'cancelado';
+  const esSuspendido = gym.estado === 'suspendido';
+  // Un cancelado no acepta pagos; un suspendido solo los recibe al reactivar (SA-RF-16 CA4).
+  const aceptaPagos = !esCancelado && !esSuspendido;
+  const diasRestantes = gym.dias_restantes;
 
   const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,14 +203,14 @@ export const GymDetailPage: React.FC = () => {
   const paymentColumns: ColumnDef<Payment>[] = [
     {
       id: 'fecha',
-      header: 'Fecha de Pago',
+      header: 'Fecha del pago',
       render: (p) => (
         <div>
           <div style={{ fontWeight: 'var(--font-weight-medium)', fontFamily: 'var(--font-mono)' }}>
-            {p.fecha_pago}
+            {formatFecha(p.fecha_pago)}
           </div>
           <div style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--color-text-tertiary)' }}>
-            {new Date(p.created_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+            Registrado: {formatFechaHora(p.created_at)}
           </div>
         </div>
       ),
@@ -252,22 +255,14 @@ export const GymDetailPage: React.FC = () => {
       header: 'Estado',
       render: (p) => (
         <div>
-          <StatusBadge status={p.anulado ? 'anulado' : 'vigente'} />
-          {p.anulado && p.motivo_anulacion && (
-            <div style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--color-error)', marginTop: '2px' }}>
-              Motivo: {p.motivo_anulacion}
+          <StatusBadge status={p.anulado ? 'anulado' : 'vigente'} label={p.anulado ? 'Anulado (no suma)' : 'Vigente'} />
+          {p.anulado && (
+            <div style={{ fontSize: 'var(--font-size-2xs)', color: 'var(--color-error)', marginTop: '2px', maxWidth: '260px' }}>
+              Motivo: {p.motivo_anulacion || '—'}
+              {p.anulado_en && <> · {formatFechaHora(p.anulado_en)}</>}
             </div>
           )}
         </div>
-      ),
-    },
-    {
-      id: 'idempotency',
-      header: 'Idempotency Key',
-      render: (p) => (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-size-2xs)', color: 'var(--color-text-tertiary)' }}>
-          {p.idempotency_key.substring(0, 14)}…
-        </span>
       ),
     },
     {
@@ -291,28 +286,38 @@ export const GymDetailPage: React.FC = () => {
   // Price History Columns
   const subscriptionHistoryColumns: ColumnDef<SubscriptionResponse>[] = [
     {
+      id: 'plan',
+      header: 'Plan',
+      render: (s) => <span>{s.plan_nombre || 'Sin plan'}</span>,
+    },
+    {
       id: 'valor',
-      header: 'Tarifa Mensual',
+      header: 'Valor mensual',
       render: (s) => (
         <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--font-weight-semibold)' }}>
-          {formatCOP(s.valor_mensual)} COP
+          {formatCOP(s.valor_mensual)}
         </span>
       ),
     },
     {
       id: 'vigente_desde',
-      header: 'Vigente Desde',
-      accessorKey: 'vigente_desde',
+      header: 'Vigente desde',
+      render: (s) => <span>{formatFecha(s.vigente_desde)}</span>,
     },
     {
       id: 'vigente_hasta',
-      header: 'Vigente Hasta',
-      render: (s) => <span>{s.vigente_hasta || 'Actual (Vigente)'}</span>,
+      header: 'Vigente hasta',
+      render: (s) => <span>{s.vigente_hasta ? formatFecha(s.vigente_hasta) : 'Vigente'}</span>,
     },
     {
       id: 'tipo',
-      header: 'Tipo Inicio',
-      render: (s) => <StatusBadge status={s.tipo_inicio} />,
+      header: 'Tipo de inicio',
+      render: (s) => (
+        <StatusBadge
+          status={s.tipo_inicio}
+          label={s.tipo_inicio === 'prueba' ? 'Prueba' : s.tipo_inicio === 'cliente_activo' ? 'Cliente activo' : s.tipo_inicio}
+        />
+      ),
     },
   ];
 
@@ -323,7 +328,7 @@ export const GymDetailPage: React.FC = () => {
       header: 'Fecha y Hora',
       render: (a) => (
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-size-xs)' }}>
-          {new Date(a.created_at).toLocaleString('es-CO')}
+          {formatFechaHora(a.created_at)}
         </span>
       ),
     },
@@ -443,31 +448,12 @@ export const GymDetailPage: React.FC = () => {
               <h1 style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)', margin: 0 }}>
                 {gym.nombre}
               </h1>
-              <StatusBadge status={gym.estado} />
-              {gym.dias_restantes !== null && gym.dias_restantes !== undefined && (
-                <span
-                  style={{
-                    fontSize: 'var(--font-size-xs)',
-                    padding: '3px 8px',
-                    borderRadius: 'var(--radius-full)',
-                    backgroundColor:
-                      gym.dias_restantes < 0
-                        ? 'var(--color-error-light)'
-                        : gym.dias_restantes <= 5
-                        ? 'var(--color-warning-light)'
-                        : 'var(--color-bg-subtle)',
-                    color:
-                      gym.dias_restantes < 0
-                        ? 'var(--color-error)'
-                        : gym.dias_restantes <= 5
-                        ? 'var(--color-warning)'
-                        : 'var(--color-text-secondary)',
-                    fontWeight: 'var(--font-weight-medium)',
-                  }}
-                >
-                  {gym.dias_restantes < 0
-                    ? `Corte vencido hace ${Math.abs(gym.dias_restantes)} días`
-                    : `Corte en ${gym.dias_restantes} días (${gym.fecha_corte})`}
+              <span title="Estado guardado">
+                <StatusBadge status={gym.estado} />
+              </span>
+              {gym.estado_calculado && (
+                <span title="Estado calculado de la suscripción">
+                  <StatusBadge status={gym.estado_calculado} label={etiquetaEstadoCalculado(gym.estado_calculado)} />
                 </span>
               )}
             </div>
@@ -486,7 +472,7 @@ export const GymDetailPage: React.FC = () => {
                   fontWeight: 'var(--font-weight-medium)',
                 }}
               >
-                <span>{gym.subdominio}.gymos.io</span>
+                <span>{gym.url_acceso.replace(/^https?:\/\//, '')}</span>
                 <ExternalLink size={13} />
               </a>
               <span style={{ color: 'var(--color-text-quaternary)' }}>•</span>
@@ -505,34 +491,120 @@ export const GymDetailPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Action Buttons Toolbar */}
+        {/* Acciones */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <Button
-            variant="primary"
-            onClick={() => setIsRegisterPaymentOpen(true)}
-            leftIcon={<DollarSign size={16} />}
-          >
-            Registrar Pago
-          </Button>
+          {aceptaPagos && (
+            <Button
+              variant="primary"
+              onClick={() => setIsRegisterPaymentOpen(true)}
+              leftIcon={<DollarSign size={16} />}
+            >
+              Registrar pago
+            </Button>
+          )}
 
-          <Button
-            variant="secondary"
-            onClick={() => setIsChangeStatusOpen(true)}
-          >
-            Cambiar Estado
-          </Button>
+          {!esCancelado && (
+            <Button variant="secondary" onClick={() => setIsChangeStatusOpen(true)}>
+              {esSuspendido ? 'Reactivar o cambiar estado' : 'Cambiar estado'}
+            </Button>
+          )}
 
-          {gym.estado !== 'cancelado' && (
+          {!esCancelado && (
             <Button
               variant="destructive"
               onClick={() => setIsCancelGymOpen(true)}
               leftIcon={<Ban size={15} />}
             >
-              Baja Formal
+              Cancelar gimnasio
             </Button>
           )}
         </div>
       </div>
+
+      {/* Resumen de suscripción (SA-RF-07 CA1) */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+          gap: '12px',
+          marginBottom: '24px',
+        }}
+      >
+        {[
+          { titulo: 'Estado guardado', valor: <StatusBadge status={gym.estado} /> },
+          {
+            titulo: 'Estado calculado',
+            valor: gym.estado_calculado ? (
+              <StatusBadge status={gym.estado_calculado} label={etiquetaEstadoCalculado(gym.estado_calculado)} />
+            ) : (
+              <span style={{ color: 'var(--color-text-tertiary)' }}>{esCancelado ? 'No aplica' : '—'}</span>
+            ),
+          },
+          {
+            titulo: 'Fecha de corte',
+            valor: (
+              <div>
+                <div style={{ fontWeight: 'var(--font-weight-semibold)' }}>{gym.fecha_corte ? formatFecha(gym.fecha_corte) : 'Sin fecha'}</div>
+                <div
+                  style={{
+                    fontSize: 'var(--font-size-xs)',
+                    color:
+                      diasRestantes !== null && diasRestantes !== undefined && diasRestantes < 0
+                        ? 'var(--color-error)'
+                        : diasRestantes !== null && diasRestantes !== undefined && diasRestantes <= 5
+                        ? 'var(--color-warning)'
+                        : 'var(--color-text-secondary)',
+                  }}
+                >
+                  {textoDiasRestantes(diasRestantes)}
+                </div>
+              </div>
+            ),
+          },
+          {
+            titulo: 'Plan vigente',
+            valor: (
+              <div>
+                <div style={{ fontWeight: 'var(--font-weight-semibold)' }}>{gym.plan_nombre || 'Sin plan'}</div>
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                  {gym.suscripcion_actual ? `${formatCOP(gym.suscripcion_actual.valor_mensual)}/mes` : '—'}
+                </div>
+              </div>
+            ),
+          },
+          { titulo: 'Inicio', valor: <span style={{ fontWeight: 'var(--font-weight-semibold)' }}>{formatFecha(gym.fecha_inicio)}</span> },
+        ].map((c) => (
+          <div
+            key={c.titulo}
+            style={{
+              backgroundColor: 'var(--color-bg-card)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 16px',
+            }}
+          >
+            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginBottom: '6px' }}>{c.titulo}</div>
+            {c.valor}
+          </div>
+        ))}
+      </div>
+
+      {gym.motivo_bloqueo && (
+        <Alert type="error" title="Acceso bloqueado en el Sistema Web" message={gym.motivo_bloqueo} />
+      )}
+      {esSuspendido && (
+        <Alert
+          type="warning"
+          message="Un gimnasio suspendido solo recibe pagos al reactivarlo: usa «Reactivar o cambiar estado» y registra el pago en el mismo formulario."
+        />
+      )}
+      {esCancelado && (
+        <Alert
+          type="info"
+          title="Gimnasio cancelado"
+          message={`Cancelado el ${formatFecha(gym.fecha_cancelacion)}. Motivo: ${gym.motivo_cancelacion || '—'}. No acepta pagos ni cambios de plan.`}
+        />
+      )}
 
       {/* Tabs */}
       <Tabs
@@ -717,6 +789,7 @@ export const GymDetailPage: React.FC = () => {
             title="Cuenta del Dueño / Administrador Principal (Jefe)"
             subtitle="Responsable legal del tenant en la plataforma con privilegios de gestión completa."
             actions={
+              esCancelado ? undefined : (
               <div style={{ display: 'flex', gap: '10px' }}>
                 <Button
                   variant="secondary"
@@ -735,6 +808,7 @@ export const GymDetailPage: React.FC = () => {
                   Regenerar Clave Temporal (RF-12)
                 </Button>
               </div>
+              )
             }
           >
             {gym.cuenta_jefe ? (
@@ -788,6 +862,15 @@ export const GymDetailPage: React.FC = () => {
                     )}
                   </div>
                 </div>
+
+                <div>
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginBottom: '4px' }}>
+                    Último ingreso
+                  </div>
+                  <div style={{ fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-medium)' }}>
+                    {gym.cuenta_jefe.ultimo_ingreso ? formatFechaHora(gym.cuenta_jefe.ultimo_ingreso) : 'Nunca ha ingresado'}
+                  </div>
+                </div>
               </div>
             ) : (
               <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
@@ -818,40 +901,49 @@ export const GymDetailPage: React.FC = () => {
           >
             <div>
               <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Tarifa de Suscripción Vigente (RF-14)
+                Plan vigente: {gym.plan_nombre || 'sin plan asignado'}
               </div>
               <div style={{ fontSize: 'var(--font-size-3xl)', fontWeight: 'var(--font-weight-bold)', color: 'var(--color-text-primary)' }} className="font-mono">
-                {gym.suscripcion_actual ? formatCOP(gym.suscripcion_actual.valor_mensual) : '—'} <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'normal', color: 'var(--color-text-secondary)' }}>COP / mes</span>
+                {gym.suscripcion_actual ? formatCOP(gym.suscripcion_actual.valor_mensual) : '—'} <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'normal', color: 'var(--color-text-secondary)' }}>/ mes</span>
               </div>
               <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                Vigente desde: {gym.suscripcion_actual?.vigente_desde || 'Fecha de alta'} • Fecha de corte actual: <strong>{gym.fecha_corte || 'Pendiente'}</strong>
+                Vigente desde: {gym.suscripcion_actual ? formatFecha(gym.suscripcion_actual.vigente_desde) : '—'} • Fecha de corte: <strong>{gym.fecha_corte ? formatFecha(gym.fecha_corte) : 'Sin fecha'}</strong> ({textoDiasRestantes(diasRestantes)})
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setIsUpdatePriceOpen(true)}
-                leftIcon={<TrendingUp size={15} />}
-              >
-                Ajustar Tarifa (RF-14)
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => setIsRegisterPaymentOpen(true)}
-                leftIcon={<DollarSign size={15} />}
-              >
-                Registrar Recaudo
-              </Button>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              {!esCancelado && (
+                <Button variant="secondary" size="sm" onClick={() => setIsChangePlanOpen(true)}>
+                  Cambiar plan
+                </Button>
+              )}
+              {!esCancelado && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setIsUpdatePriceOpen(true)}
+                  leftIcon={<TrendingUp size={15} />}
+                >
+                  Ajustar valor mensual
+                </Button>
+              )}
+              {aceptaPagos && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setIsRegisterPaymentOpen(true)}
+                  leftIcon={<DollarSign size={15} />}
+                >
+                  Registrar pago
+                </Button>
+              )}
             </div>
           </div>
 
           {/* Payments History Table (RF-07 / RF-16 / RF-17 / RF-18) */}
           <ContentSection
-            title="Historial de Pagos y Recaudos (RF-07)"
-            subtitle="La fecha de corte se recalcula estrictamente a partir de los pagos vigentes no anulados (RNF-04)."
+            title="Pagos"
+            subtitle="Los pagos anulados quedan marcados con su motivo y no suman a la fecha de corte."
             noPadding
           >
             <DataTable
@@ -859,16 +951,22 @@ export const GymDetailPage: React.FC = () => {
               data={gym.historial_pagos}
               keyExtractor={(p) => p.id}
               emptyTitle="No hay pagos registrados"
-              emptyDescription="Registra el primer recaudo de suscripción para habilitar o extender la vigencia del gimnasio."
+              emptyDescription={
+                aceptaPagos
+                  ? 'Registra el primer pago para fijar o extender la fecha de corte.'
+                  : 'Este gimnasio no tiene pagos registrados.'
+              }
               emptyAction={
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => setIsRegisterPaymentOpen(true)}
-                  leftIcon={<DollarSign size={15} />}
-                >
-                  Registrar Pago Inicial
-                </Button>
+                aceptaPagos ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setIsRegisterPaymentOpen(true)}
+                    leftIcon={<DollarSign size={15} />}
+                  >
+                    Registrar pago
+                  </Button>
+                ) : undefined
               }
             />
           </ContentSection>
@@ -876,8 +974,8 @@ export const GymDetailPage: React.FC = () => {
           {/* Price History Table (RF-14) */}
           {gym.suscripciones_historial.length > 0 && (
             <ContentSection
-              title="Histórico de Tarifas Acordadas (RF-14)"
-              subtitle="Registro no destructivo de evolución de precios de suscripción."
+              title="Historial de suscripción"
+              subtitle="Cada cambio de plan o de valor crea un registro nuevo; los anteriores no se modifican."
               noPadding
             >
               <DataTable
@@ -913,7 +1011,14 @@ export const GymDetailPage: React.FC = () => {
         onClose={() => setIsRegisterPaymentOpen(false)}
         gymId={gym.id}
         gymNombre={gym.nombre}
-        defaultMonto={gym.suscripcion_actual?.valor_mensual || 150000}
+        valorMensual={gym.suscripcion_actual?.valor_mensual ?? null}
+        onSuccess={refetch}
+      />
+
+      <ChangePlanModal
+        isOpen={isChangePlanOpen}
+        onClose={() => setIsChangePlanOpen(false)}
+        gym={gym}
         onSuccess={refetch}
       />
 
@@ -943,7 +1048,7 @@ export const GymDetailPage: React.FC = () => {
         onClose={() => setIsUpdatePriceOpen(false)}
         gymId={gym.id}
         gymNombre={gym.nombre}
-        currentPrice={gym.suscripcion_actual?.valor_mensual || 150000}
+        currentPrice={gym.suscripcion_actual?.valor_mensual ?? 0}
         onSuccess={refetch}
       />
 
