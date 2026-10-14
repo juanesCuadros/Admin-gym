@@ -42,6 +42,7 @@ import { ConfigLandingPage } from './pages/configuracion/ConfigLandingPage';
 import { ConfigMetodosPagoPage } from './pages/configuracion/ConfigMetodosPagoPage';
 import { ConfigParametrosPage } from './pages/configuracion/ConfigParametrosPage';
 import { MiSuscripcionPage } from './pages/configuracion/MiSuscripcionPage';
+import { AuditoriaPage } from './pages/auditoria/AuditoriaPage';
 
 import { enConstruccion, PantallaTvAccesoPage } from './pages/enConstruccion/EnConstruccionPage';
 
@@ -49,7 +50,6 @@ import './styles/components.css';
 
 // Rutas del menú (§B2) que aún no tienen pantalla: estado vacío honesto, sin datos falsos.
 const IngresosHoyPage = enConstruccion('Ingresos de hoy');
-const AuditoriaPage = enConstruccion('Auditoría');
 
 /** Escucha eventos del interceptor que exigen cambiar de ruta. */
 const EventosGlobales: React.FC = () => {
