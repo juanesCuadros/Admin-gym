@@ -75,5 +75,14 @@ services:
     depends_on: { api: { condition: service_healthy } }
     ports: ["3000:80"]
 
+  # ---------- sitio público (gymdeskcolombia.com) ----------
+  # Su nginx.conf interno proxea /api/ a http://super-admin-api:8000 (endpoints /public/...).
+  sitio-publico:
+    build:
+      context: ../plataforma/sitio-publico
+      args: { VITE_API_URL: /api/v1, VITE_DOMINIO_BASE: localhost }
+    depends_on: { super-admin-api: { condition: service_healthy } }
+    ports: ["3002:80"]
+
 volumes:
   gymos_dev_pgdata:
