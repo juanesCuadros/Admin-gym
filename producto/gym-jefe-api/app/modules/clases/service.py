@@ -441,11 +441,32 @@ class ClasesService:
 
         # 5. Evaluar estado de membresía canónico
         # Obtener configuración del tenant
-        q_tenant = text("SELECT dias_gracia_mora, dias_umbral_por_vencer FROM platform.tenant WHERE id = :gym_id")
+        q_tenant = text("SELECT dias_gracia_mora, dias_umbral_por_vencer, ventana_reserva_dias FROM platform.tenant WHERE id = :gym_id")
         res_t = await session.execute(q_tenant, {"gym_id": gym_id})
         cfg_t = res_t.mappings().first()
         gracia = cfg_t["dias_gracia_mora"] if cfg_t else 3
         umbral = cfg_t["dias_umbral_por_vencer"] if cfg_t else 5
+        ventana_dias = cfg_t["ventana_reserva_dias"] if (cfg_t and cfg_t["ventana_reserva_dias"] is not None) else 7
+
+        clase_dt_local = clase["fecha_hora"].astimezone(LOCAL_TZ)
+        clase_fecha_local = clase_dt_local.date()
+        hoy = now_local().date()
+        fecha_max_reserva = hoy + timedelta(days=ventana_dias)
+
+        # GW-RF-33 CA3: Respetar ventana de reserva configurada en el tenant
+        if clase_fecha_local > fecha_max_reserva:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "codigo": "FUERA_DE_VENTANA_RESERVA",
+                    "mensaje": f"La clase supera la ventana máxima de reserva permitida ({ventana_dias} días de anticipación)",
+                    "detalles": {
+                        "ventana_dias": ventana_dias,
+                        "fecha_maxima": str(fecha_max_reserva),
+                        "fecha_clase": str(clase_fecha_local)
+                    }
+                }
+            )
 
         # Obtener membresía vigente si existe
         q_memb = text("""
@@ -478,6 +499,19 @@ class ClasesService:
 
         # 6. Regla de negocio RF-33: Sólo membresía activa (activo o por_vencer) reserva sin costo
         if estado_memb in ("activo", "por_vencer"):
+            # GW-RF-33 CA2: No se puede reservar una clase con fecha posterior al vencimiento de la membresía
+            if memb and clase_fecha_local > memb["fecha_vencimiento"]:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "codigo": "CLASE_POSTERIOR_A_VENCIMIENTO",
+                        "mensaje": f"No se puede reservar una clase con fecha ({clase_fecha_local}) posterior al vencimiento de la membresía ({memb['fecha_vencimiento']})",
+                        "detalles": {
+                            "fecha_vencimiento": str(memb["fecha_vencimiento"]),
+                            "fecha_clase": str(clase_fecha_local)
+                        }
+                    }
+                )
             pase_pagado = False
             venta_item_id = None
         else:
@@ -638,6 +672,31 @@ class ClasesService:
             )
         if r_map["estado"] == "cancelada":
             return ReservaResponse(**r_map)
+
+        # GW-RF-33 CA3: Validar límite para cancelar reserva configurado en tenant (horas antes de la clase)
+        q_tenant = text("SELECT limite_cancelar_reserva_horas FROM platform.tenant WHERE id = :gym_id")
+        res_t = await session.execute(q_tenant, {"gym_id": gym_id})
+        cfg_t = res_t.mappings().first()
+        limite_horas = cfg_t["limite_cancelar_reserva_horas"] if (cfg_t and cfg_t["limite_cancelar_reserva_horas"] is not None) else 2
+
+        # Comparar fecha_hora de la clase (en UTC) con now_utc()
+        clase_fh = r_map["clase_fecha_hora"]
+        if clase_fh.tzinfo is None:
+            clase_fh = clase_fh.replace(tzinfo=timezone.utc)
+
+        horas_restantes = (clase_fh - now_utc()).total_seconds() / 3600.0
+        if horas_restantes < limite_horas:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "codigo": "LIMITE_CANCELACION_SUPERADO",
+                    "mensaje": f"No se puede cancelar la reserva con menos de {limite_horas} horas de anticipación a la clase",
+                    "detalles": {
+                        "limite_horas": limite_horas,
+                        "horas_restantes": round(horas_restantes, 2)
+                    }
+                }
+            )
 
         q_upd = text("""
             UPDATE platform.reservas_clase
