@@ -19,6 +19,7 @@ import qrcode
 import qrcode.image.svg
 from fastapi import HTTPException, status
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditService
@@ -139,7 +140,9 @@ class MyGymService:
             SELECT id, nombre, subdominio, zona_horaria, direccion, ciudad,
                    telefono, correo, redes, horarios, metodos_pago,
                    dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer,
-                   duracion_sesion_minutos, branding, version, activo, updated_at
+                   duracion_sesion_minutos, minimo_dias_congelamiento, permitir_descuentos,
+                   tope_descuento_pct, ventana_reserva_dias, limite_cancelar_reserva_horas,
+                   branding, version, activo, updated_at
             FROM platform.tenant
             WHERE id = :gym_id
         """)
@@ -168,6 +171,11 @@ class MyGymService:
             tope_dias_congelamiento=row["tope_dias_congelamiento"],
             dias_umbral_por_vencer=row["dias_umbral_por_vencer"],
             duracion_sesion_minutos=row["duracion_sesion_minutos"],
+            minimo_dias_congelamiento=row.get("minimo_dias_congelamiento", 1),
+            permitir_descuentos=row.get("permitir_descuentos", False),
+            tope_descuento_pct=row.get("tope_descuento_pct", 0),
+            ventana_reserva_dias=row.get("ventana_reserva_dias", 7),
+            limite_cancelar_reserva_horas=row.get("limite_cancelar_reserva_horas", 2),
             branding=cls._parse_json_field(row["branding"], {}),
             version=row["version"],
             activo=row["activo"],
@@ -300,25 +308,50 @@ class MyGymService:
         """
         update_stmt = text("""
             UPDATE platform.tenant
-            SET dias_gracia_mora = :dias_gracia,
-                tope_dias_congelamiento = :tope_congelamiento,
-                dias_umbral_por_vencer = :dias_umbral,
+            SET dias_gracia_mora = COALESCE(:dias_gracia, dias_gracia_mora),
+                tope_dias_congelamiento = COALESCE(:tope_congelamiento, tope_dias_congelamiento),
+                dias_umbral_por_vencer = COALESCE(:dias_umbral, dias_umbral_por_vencer),
                 duracion_sesion_minutos = COALESCE(CAST(:duracion_sesion AS integer), duracion_sesion_minutos),
+                minimo_dias_congelamiento = COALESCE(:minimo_congelamiento, minimo_dias_congelamiento),
+                permitir_descuentos = COALESCE(:permitir_descuentos, permitir_descuentos),
+                tope_descuento_pct = COALESCE(:tope_descuento, tope_descuento_pct),
+                ventana_reserva_dias = COALESCE(:ventana_reserva, ventana_reserva_dias),
+                limite_cancelar_reserva_horas = COALESCE(:limite_cancelar, limite_cancelar_reserva_horas),
                 version = version + 1,
                 updated_at = now()
             WHERE id = :gym_id AND version = :version_esperada
-            RETURNING dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer, duracion_sesion_minutos, version
+            RETURNING dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer, duracion_sesion_minutos,
+                      minimo_dias_congelamiento, permitir_descuentos, tope_descuento_pct,
+                      ventana_reserva_dias, limite_cancelar_reserva_horas, version
         """)
 
-        res = await session.execute(update_stmt, {
-            "gym_id": gimnasio_id,
-            "version_esperada": data.version,
-            "dias_gracia": data.dias_gracia_mora,
-            "tope_congelamiento": data.tope_dias_congelamiento,
-            "dias_umbral": data.dias_umbral_por_vencer,
-            "duracion_sesion": data.duracion_sesion_minutos,
-        })
-        row = res.mappings().first()
+        try:
+            async with session.begin_nested():
+                res = await session.execute(update_stmt, {
+                    "gym_id": gimnasio_id,
+                    "version_esperada": data.version,
+                    "dias_gracia": data.dias_gracia_mora,
+                    "tope_congelamiento": data.tope_dias_congelamiento,
+                    "dias_umbral": data.dias_umbral_por_vencer,
+                    "duracion_sesion": data.duracion_sesion_minutos,
+                    "minimo_congelamiento": data.minimo_dias_congelamiento,
+                    "permitir_descuentos": data.permitir_descuentos,
+                    "tope_descuento": data.tope_descuento_pct,
+                    "ventana_reserva": data.ventana_reserva_dias,
+                    "limite_cancelar": data.limite_cancelar_reserva_horas,
+                })
+                row = res.mappings().first()
+        except IntegrityError as exc:
+            err_msg = str(exc.orig) if hasattr(exc, "orig") else str(exc)
+            if "tenant_parametros_rango" in err_msg or "chk_" in err_msg or "check constraint" in err_msg.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"codigo": "PARAMETRO_FUERA_DE_RANGO", "mensaje": "Uno o más parámetros se encuentran fuera del rango permitido."}
+                )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"codigo": "ERROR_INTEGRIDAD", "mensaje": "Violación de restricción de base de datos."}
+            )
 
         if not row:
             check = await session.execute(
@@ -352,9 +385,14 @@ class MyGymService:
             entidad="tenant",
             entidad_id=str(gimnasio_id),
             detalle={
-                "dias_gracia_mora": data.dias_gracia_mora,
-                "tope_dias_congelamiento": data.tope_dias_congelamiento,
-                "dias_umbral_por_vencer": data.dias_umbral_por_vencer,
+                "dias_gracia_mora": row["dias_gracia_mora"],
+                "tope_dias_congelamiento": row["tope_dias_congelamiento"],
+                "dias_umbral_por_vencer": row["dias_umbral_por_vencer"],
+                "minimo_dias_congelamiento": row["minimo_dias_congelamiento"],
+                "permitir_descuentos": row["permitir_descuentos"],
+                "tope_descuento_pct": row["tope_descuento_pct"],
+                "ventana_reserva_dias": row["ventana_reserva_dias"],
+                "limite_cancelar_reserva_horas": row["limite_cancelar_reserva_horas"],
                 "version_anterior": data.version,
                 "version_nueva": row["version"]
             }
@@ -365,6 +403,11 @@ class MyGymService:
             tope_dias_congelamiento=row["tope_dias_congelamiento"],
             dias_umbral_por_vencer=row["dias_umbral_por_vencer"],
             duracion_sesion_minutos=row["duracion_sesion_minutos"],
+            minimo_dias_congelamiento=row["minimo_dias_congelamiento"],
+            permitir_descuentos=row["permitir_descuentos"],
+            tope_descuento_pct=row["tope_descuento_pct"],
+            ventana_reserva_dias=row["ventana_reserva_dias"],
+            limite_cancelar_reserva_horas=row["limite_cancelar_reserva_horas"],
             version=row["version"]
         )
 
