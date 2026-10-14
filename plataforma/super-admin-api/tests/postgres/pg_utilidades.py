@@ -4,14 +4,25 @@ from datetime import date
 from typing import Optional
 
 
+def plan_id(client, headers, codigo: str) -> str:
+    """Id del plan sembrado por la migración 003; lo activa si está inactivo (dentro de la transacción)."""
+    planes = client.get("/api/v1/admin/plans", headers=headers).json()
+    plan = next(p for p in planes if p["codigo"] == codigo)
+    if not plan["activo"]:
+        r = client.patch(f"/api/v1/admin/plans/{plan['id']}/status", json={"activo": True}, headers=headers)
+        assert r.status_code == 200, r.text
+    return plan["id"]
+
+
 def crear_gimnasio(client, headers, tipo: str = "prueba", nombre: Optional[str] = None, **extra) -> str:
     sufijo = uuid.uuid4().hex[:8]
+    plan = plan_id(client, headers, "prueba" if tipo == "prueba" else "mensual")
     payload = {
         "nombre": nombre or f"Gimnasio Prueba {sufijo}",
         "subdominio": f"gym-{sufijo}",
         "ciudad": "Bogotá",
         "jefe": {"nombre": "Jefe de Pruebas", "correo": f"jefe-{sufijo}@pruebas.gymos.co"},
-        "suscripcion": {"valor_mensual": 150000, "tipo_inicio": tipo},
+        "suscripcion": {"valor_mensual": 150000, "tipo_inicio": tipo, "plan_id": plan},
     }
     payload.update(extra)
     r = client.post("/api/v1/admin/gyms", json=payload, headers=headers)

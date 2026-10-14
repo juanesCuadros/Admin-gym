@@ -37,6 +37,12 @@ class PaymentUseCases:
         return primera.tipo_inicio if primera else "prueba"
 
     def _dias_prueba(self, gym: Gimnasio) -> int:
+        """Días de prueba del plan con el que inició el gimnasio (por defecto, la configuración)."""
+        primera = self.db.query(Suscripcion).filter(
+            Suscripcion.gimnasio_id == gym.id
+        ).order_by(Suscripcion.vigente_desde.asc(), Suscripcion.created_at.asc()).first()
+        if primera is not None and primera.plan is not None and primera.plan.dias_prueba:
+            return primera.plan.dias_prueba
         return settings.DEFAULT_TRIAL_DAYS
 
     def calcular_corte(self, gym: Gimnasio) -> Optional[date]:
@@ -256,7 +262,8 @@ class PaymentUseCases:
             valor_mensual=nuevo_valor,
             tipo_inicio=current.tipo_inicio if current else "cliente_activo",
             vigente_desde=vigente_desde,
-            vigente_hasta=None
+            vigente_hasta=None,
+            plan_id=current.plan_id if current else None
         )
         self.db.add(new_sub)
         self.db.commit()

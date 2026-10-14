@@ -18,7 +18,7 @@ def test_multitenant_cross_access_isolation(client, db_session, superadmin_auth_
             "nombre": "Gym Tenant Alpha",
             "subdominio": "gym-alpha",
             "jefe": {"nombre": "Jefe Alpha", "correo": "jefe@alpha.com"},
-            "suscripcion": {"valor_mensual": 100000.0, "tipo_inicio": "prueba"}
+            "suscripcion": {"valor_mensual": 100000.0, "tipo_inicio": "prueba", "plan_id": "plan-prueba-sqlite"}
         },
         headers=superadmin_auth_headers
     )
@@ -33,7 +33,7 @@ def test_multitenant_cross_access_isolation(client, db_session, superadmin_auth_
             "nombre": "Gym Tenant Beta",
             "subdominio": "gym-beta",
             "jefe": {"nombre": "Jefe Beta", "correo": "jefe@beta.com"},
-            "suscripcion": {"valor_mensual": 120000.0, "tipo_inicio": "cliente_activo"}
+            "suscripcion": {"valor_mensual": 120000.0, "tipo_inicio": "cliente_activo", "plan_id": "plan-mensual-sqlite"}
         },
         headers=superadmin_auth_headers
     )

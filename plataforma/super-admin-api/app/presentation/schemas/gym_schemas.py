@@ -12,6 +12,7 @@ class JefeAccountCreate(BaseModel):
 class SubscriptionCreate(BaseModel):
     valor_mensual: Decimal = Field(..., ge=0, description="Monto mensual acordado")
     tipo_inicio: str = Field(..., pattern="^(prueba|cliente_activo)$", description="'prueba' (5 días) o 'cliente_activo'")
+    plan_id: str = Field(..., description="Plan de suscripción (SA-RF-33). Prueba ⇔ plan de tipo 'prueba'")
 
 class GymCreateStepByStep(BaseModel):
     # Paso 1: Identidad

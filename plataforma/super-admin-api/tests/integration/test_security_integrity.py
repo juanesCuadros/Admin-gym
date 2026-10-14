@@ -12,7 +12,7 @@ def test_gym_cancellation_and_suspension_freezes_platform_access(client, db_sess
         json={
             "nombre": "Freeze Test Gym",
             "jefe": {"nombre": "Owner", "correo": "owner@freezetest.com"},
-            "suscripcion": {"valor_mensual": 150000.0, "tipo_inicio": "prueba"}
+            "suscripcion": {"valor_mensual": 150000.0, "tipo_inicio": "prueba", "plan_id": "plan-prueba-sqlite"}
         },
         headers=superadmin_auth_headers
     )
@@ -72,7 +72,7 @@ def test_gym_detail_includes_payment_history_and_recent_activity(client, superad
         json={
             "nombre": "Detail Complete Gym",
             "jefe": {"nombre": "Mario Jefe", "correo": "mario@detailgym.com"},
-            "suscripcion": {"valor_mensual": 80000.0, "tipo_inicio": "cliente_activo"}
+            "suscripcion": {"valor_mensual": 80000.0, "tipo_inicio": "cliente_activo", "plan_id": "plan-mensual-sqlite"}
         },
         headers=superadmin_auth_headers
     )

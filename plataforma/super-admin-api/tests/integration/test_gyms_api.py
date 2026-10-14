@@ -22,7 +22,8 @@ def test_create_gym_assisted_provisioning(client, superadmin_auth_headers):
         },
         "suscripcion": {
             "valor_mensual": 150000.0,
-            "tipo_inicio": "prueba"
+            "tipo_inicio": "prueba",
+            "plan_id": "plan-prueba-sqlite"
         }
     }
 
@@ -49,7 +50,7 @@ def test_gym_lifecycle_and_state_transitions(client, superadmin_auth_headers):
     create_payload = {
         "nombre": "Titanium Fitness",
         "jefe": {"nombre": "Laura Jefe", "correo": "laura@titanium.com"},
-        "suscripcion": {"valor_mensual": 200000.0, "tipo_inicio": "prueba"}
+        "suscripcion": {"valor_mensual": 200000.0, "tipo_inicio": "prueba", "plan_id": "plan-prueba-sqlite"}
     }
     create_resp = client.post("/api/v1/admin/gyms", json=create_payload, headers=superadmin_auth_headers)
     assert create_resp.status_code == 201

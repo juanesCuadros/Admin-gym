@@ -5,7 +5,7 @@ def test_audit_log_and_chain_verification_api(client, superadmin_auth_headers):
         json={
             "nombre": "Audit Test Gym",
             "jefe": {"nombre": "Audit Jefe", "correo": "audit@gym.com"},
-            "suscripcion": {"valor_mensual": 100000.0, "tipo_inicio": "prueba"}
+            "suscripcion": {"valor_mensual": 100000.0, "tipo_inicio": "prueba", "plan_id": "plan-prueba-sqlite"}
         },
         headers=superadmin_auth_headers
     )

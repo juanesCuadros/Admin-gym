@@ -25,6 +25,7 @@ from app.presentation.schemas.gym_schemas import (
 )
 from app.presentation.schemas.payment_schemas import PaymentCreate
 from app.application.use_cases.payment_use_cases import PaymentUseCases
+from app.application.use_cases.plan_use_cases import PlanUseCases
 
 # Transiciones de estado guardado permitidas (§2.1). Cualquier otra responde 422.
 TRANSICIONES = {
@@ -83,10 +84,20 @@ class GymUseCases:
         if existing_jefe:
             raise EntityConflictException(f"El correo del Jefe '{data.jefe.correo}' ya está registrado.")
 
-        # 2. State & dates resolution
+        # 2. Plan (SA-RF-33): obligatorio, activo y coherente con el tipo de inicio.
+        plan = PlanUseCases(self.db).obtener_disponible(data.suscripcion.plan_id)
+        if (data.suscripcion.tipo_inicio == "prueba") != (plan.tipo == "prueba"):
+            raise BusinessRuleException(
+                "El tipo de inicio no coincide con el plan: una prueba usa el plan de prueba y un "
+                "cliente activo un plan de pago.",
+                codigo="PLAN_INCOHERENTE",
+            )
+
+        # 3. State & dates resolution
         initial_state = "prueba" if data.suscripcion.tipo_inicio == "prueba" else "activo"
         today = hoy_bogota()
-        fecha_corte = today + timedelta(days=settings.DEFAULT_TRIAL_DAYS) if initial_state == "prueba" else None
+        dias_prueba = plan.dias_prueba or settings.DEFAULT_TRIAL_DAYS
+        fecha_corte = today + timedelta(days=dias_prueba) if initial_state == "prueba" else None
 
         shared_gimnasio_id = str(uuid.uuid4())
 
@@ -129,7 +140,8 @@ class GymUseCases:
             valor_mensual=data.suscripcion.valor_mensual,
             tipo_inicio=data.suscripcion.tipo_inicio,
             vigente_desde=today,
-            vigente_hasta=None
+            vigente_hasta=None,
+            plan_id=plan.id
         )
         self.db.add(subscription)
 
