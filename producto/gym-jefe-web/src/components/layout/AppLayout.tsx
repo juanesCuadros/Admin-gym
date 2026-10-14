@@ -6,6 +6,10 @@ import { FranjaSuscripcion } from './FranjaSuscripcion';
 import { CajaTurnoProvider, useCajaTurno } from '../../contexts/CajaTurnoContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { ApiError, EVENTOS } from '../../api/client';
+import { rutaHabilitada } from '../../navegacion';
+
+/** Si el turno de caja está apagado en este despliegue (`VITE_MODULOS_ACTIVOS`), la regla §C1 no aplica en la UI. */
+const CAJA_HABILITADA = rutaHabilitada('/caja');
 
 /**
  * Regla §C1: un Recepcionista sin turno abierto solo puede estar en /caja
@@ -17,7 +21,8 @@ const GuardTurnoRecepcionista: React.FC<{ children: React.ReactNode }> = ({ chil
   const location = useLocation();
 
   // Si el recepcionista no puede leer caja, la regla la aplica solo el backend (GW-RF-09).
-  const debeAbrirTurno = isRecepcionista && hasPermission('caja', 'leer') && !cargando && !error && !turnoAbierto;
+  const debeAbrirTurno =
+    CAJA_HABILITADA && isRecepcionista && hasPermission('caja', 'leer') && !cargando && !error && !turnoAbierto;
   if (debeAbrirTurno && location.pathname !== '/caja') {
     return <Navigate to="/caja" replace state={{ abrirTurno: true }} />;
   }
@@ -42,6 +47,7 @@ const Contenido: React.FC = () => {
   }, [navigate, refrescarUsuario]);
 
   const navegacionBloqueada =
+    CAJA_HABILITADA &&
     isRecepcionista && hasPermission('caja', 'leer') && !cargando && !error && !turnoAbierto;
 
   return (

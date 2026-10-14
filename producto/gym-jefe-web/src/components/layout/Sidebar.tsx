@@ -3,7 +3,14 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, Dumbbell } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenantTheme } from '../../contexts/TenantThemeContext';
-import { NAVEGACION, ModuloNav, moduloDeRuta } from '../../navegacion';
+import {
+  NAVEGACION,
+  ModuloNav,
+  SubmoduloNav,
+  moduloDeRuta,
+  moduloActivoEnDespliegue,
+  submodulosActivos,
+} from '../../navegacion';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -26,7 +33,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, bloqueada = f
   // Al cambiar de módulo, el plegado anterior deja de aplicar porque ya no coincide la ruta.
   const [plegado, setPlegado] = useState<string | null>(null);
 
+  // Submódulos visibles: activos en el despliegue (`VITE_MODULOS_ACTIVOS`) y, si son del Jefe, solo para él.
+  const subsVisibles = (m: ModuloNav): SubmoduloNav[] =>
+    submodulosActivos(m).filter((s) => !s.soloJefe || isJefe);
+
   const puedeVer = (m: ModuloNav): boolean => {
+    if (!moduloActivoEnDespliegue(m)) return false;
+    if (m.submodulos && subsVisibles(m).length === 0) return false;
     if (m.soloJefe) return isJefe;
     if (m.submodulo === null) return true;
     return hasPermission(m.submodulo, 'leer');
@@ -42,7 +55,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, bloqueada = f
       setPlegado((prev) => (prev === m.ruta ? null : m.ruta));
       return;
     }
-    navigate(m.ruta);
+    // Si el primer submódulo está apagado en este despliegue, se entra por el primero visible.
+    navigate(m.submodulos ? subsVisibles(m)[0]?.ruta ?? m.ruta : m.ruta);
     cerrarEnMovil();
   };
 
@@ -135,7 +149,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, bloqueada = f
                         </button>
                         {desplegado && m.submodulos && (
                           <div className="nav-submodulos">
-                            {m.submodulos.map((s) => (
+                            {subsVisibles(m).map((s) => (
                               <NavLink
                                 key={s.ruta}
                                 to={s.ruta}

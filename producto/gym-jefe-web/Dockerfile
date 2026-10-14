@@ -15,6 +15,10 @@ ENV VITE_API_URL=$VITE_API_URL
 ARG VITE_MVC_CONTACTO=
 ENV VITE_MVC_CONTACTO=$VITE_MVC_CONTACTO
 
+# Submódulos activos (separados por comas). Vacío = todo el sistema. Ver .env.example.
+ARG VITE_MODULOS_ACTIVOS=
+ENV VITE_MODULOS_ACTIVOS=$VITE_MODULOS_ACTIVOS
+
 RUN npm run build
 
 # Stage 2: Serve with Production Nginx Web Server

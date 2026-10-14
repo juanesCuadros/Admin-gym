@@ -5,6 +5,7 @@ import { TenantThemeProvider } from './contexts/TenantThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { AppLayout } from './components/layout/AppLayout';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
+import { RutaModuloActivo } from './components/layout/RutaModuloActivo';
 import { EVENTOS } from './api/client';
 
 // Públicas
@@ -85,62 +86,65 @@ export const App: React.FC = () => {
                 <Route element={<AppLayout />}>
                   <Route path="/" element={<DashboardPage />} />
 
-                  <Route element={<ProtectedRoute requiredSubmodule="control_ingreso" />}>
-                    <Route path="/control-ingreso" element={<ControlIngresoPage />} />
-                    <Route path="/control-ingreso/ingresos-hoy" element={<IngresosHoyPage />} />
-                    <Route path="/control-ingreso/pantalla-tv" element={<PantallaTvAccesoPage />} />
-                  </Route>
+                  {/* Submódulos apagados con VITE_MODULOS_ACTIVOS: su ruta lleva a Inicio */}
+                  <Route element={<RutaModuloActivo />}>
+                    <Route element={<ProtectedRoute requiredSubmodule="control_ingreso" />}>
+                      <Route path="/control-ingreso" element={<ControlIngresoPage />} />
+                      <Route path="/control-ingreso/ingresos-hoy" element={<IngresosHoyPage />} />
+                      <Route path="/control-ingreso/pantalla-tv" element={<PantallaTvAccesoPage />} />
+                    </Route>
 
-                  <Route element={<ProtectedRoute requiredSubmodule="caja" />}>
-                    <Route path="/caja" element={<CajaPage />} />
-                    <Route path="/caja/punto-de-venta" element={<PuntoDeVentaPage />} />
-                    <Route path="/caja/historial" element={<HistorialTurnosPage />} />
-                  </Route>
+                    <Route element={<ProtectedRoute requiredSubmodule="caja" />}>
+                      <Route path="/caja" element={<CajaPage />} />
+                      <Route path="/caja/punto-de-venta" element={<PuntoDeVentaPage />} />
+                      <Route path="/caja/historial" element={<HistorialTurnosPage />} />
+                    </Route>
 
-                  <Route element={<ProtectedRoute requiredSubmodule="deportistas" />}>
-                    <Route path="/deportistas" element={<DeportistasPage />} />
-                  </Route>
+                    <Route element={<ProtectedRoute requiredSubmodule="deportistas" />}>
+                      <Route path="/deportistas" element={<DeportistasPage />} />
+                    </Route>
 
-                  <Route element={<ProtectedRoute requiredSubmodule="membresias" />}>
-                    <Route path="/membresias" element={<MembresiasPage tabInicial="membresias" />} />
-                    <Route path="/membresias/planes" element={<MembresiasPage tabInicial="planes" />} />
-                  </Route>
+                    <Route element={<ProtectedRoute requiredSubmodule="membresias" />}>
+                      <Route path="/membresias" element={<MembresiasPage tabInicial="membresias" />} />
+                      <Route path="/membresias/planes" element={<MembresiasPage tabInicial="planes" />} />
+                    </Route>
 
-                  <Route element={<ProtectedRoute requiredSubmodule="clases" />}>
-                    <Route path="/clases" element={<ClasesPage />} />
-                  </Route>
+                    <Route element={<ProtectedRoute requiredSubmodule="clases" />}>
+                      <Route path="/clases" element={<ClasesPage />} />
+                    </Route>
 
-                  <Route element={<ProtectedRoute requiredSubmodule="entrenamiento" />}>
-                    <Route path="/entrenamiento" element={<EntrenamientoPage tabInicial="ejercicios" />} />
-                    <Route path="/entrenamiento/plantillas" element={<EntrenamientoPage tabInicial="plantillas" />} />
-                    <Route path="/entrenamiento/rutinas" element={<RutinasAsignadasPage />} />
-                  </Route>
+                    <Route element={<ProtectedRoute requiredSubmodule="entrenamiento" />}>
+                      <Route path="/entrenamiento" element={<EntrenamientoPage tabInicial="ejercicios" />} />
+                      <Route path="/entrenamiento/plantillas" element={<EntrenamientoPage tabInicial="plantillas" />} />
+                      <Route path="/entrenamiento/rutinas" element={<RutinasAsignadasPage />} />
+                    </Route>
 
-                  <Route element={<ProtectedRoute requiredSubmodule="inventario" />}>
-                    <Route path="/inventario" element={<ProductosPage />} />
-                    <Route path="/inventario/movimientos" element={<MovimientosStockPage />} />
-                  </Route>
+                    <Route element={<ProtectedRoute requiredSubmodule="inventario" />}>
+                      <Route path="/inventario" element={<ProductosPage />} />
+                      <Route path="/inventario/movimientos" element={<MovimientosStockPage />} />
+                    </Route>
 
-                  <Route element={<ProtectedRoute requiredSubmodule="reportes" />}>
-                    <Route path="/reportes" element={<ReporteIngresosPage />} />
-                    <Route path="/reportes/membresias" element={<ReporteMembresiasPage />} />
-                    <Route path="/reportes/asistencia" element={<ReporteAsistenciaPage />} />
-                  </Route>
+                    <Route element={<ProtectedRoute requiredSubmodule="reportes" />}>
+                      <Route path="/reportes" element={<ReporteIngresosPage />} />
+                      <Route path="/reportes/membresias" element={<ReporteMembresiasPage />} />
+                      <Route path="/reportes/asistencia" element={<ReporteAsistenciaPage />} />
+                    </Route>
 
-                  <Route element={<ProtectedRoute requiredSubmodule="personal" />}>
-                    <Route path="/personal" element={<StaffPage />} />
-                    <Route path="/personal/permisos" element={<PersonalPage />} />
-                  </Route>
+                    <Route element={<ProtectedRoute requiredSubmodule="personal" />}>
+                      <Route path="/personal" element={<StaffPage />} />
+                      <Route path="/personal/permisos" element={<PersonalPage />} />
+                    </Route>
 
-                  <Route element={<ProtectedRoute requiredSubmodule="configuracion" />}>
-                    <Route path="/configuracion" element={<ConfigGeneralPage />} />
-                    <Route path="/configuracion/landing" element={<ConfigLandingPage />} />
-                    <Route path="/configuracion/metodos-pago" element={<ConfigMetodosPagoPage />} />
-                    <Route path="/configuracion/parametros" element={<ConfigParametrosPage />} />
-                  </Route>
+                    <Route element={<ProtectedRoute requiredSubmodule="configuracion" />}>
+                      <Route path="/configuracion" element={<ConfigGeneralPage />} />
+                      <Route path="/configuracion/landing" element={<ConfigLandingPage />} />
+                      <Route path="/configuracion/metodos-pago" element={<ConfigMetodosPagoPage />} />
+                      <Route path="/configuracion/parametros" element={<ConfigParametrosPage />} />
+                    </Route>
 
-                  <Route element={<ProtectedRoute soloJefe />}>
-                    <Route path="/auditoria" element={<AuditoriaPage />} />
+                    <Route element={<ProtectedRoute soloJefe />}>
+                      <Route path="/auditoria" element={<AuditoriaPage />} />
+                    </Route>
                   </Route>
                 </Route>
               </Route>
