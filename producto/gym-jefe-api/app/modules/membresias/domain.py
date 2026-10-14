@@ -1,7 +1,7 @@
 """
 Servicio de Dominio Centralizado para Membresías y Estados de Deportistas (RF-27).
-ÚNICA FUENTE DE VERDAD para el cálculo derivado del estado de acceso y membresía:
-'activo' | 'por_vencer' | 'mora' | 'vencido' | 'congelado' | 'cancelada' | 'inactivo' | 'sin_membresia'.
+ÚNICA FUENTE DE VERDAD para el cálculo derivado del estado de acceso y membresía (Enum Consolidado):
+'desactivado' | 'cancelado' | 'sin_membresia' | 'congelado' | 'vencido' | 'en_gracia' | 'por_vencer' | 'activo'.
 """
 from dataclasses import dataclass
 from datetime import date
@@ -17,7 +17,7 @@ from app.core.timezone import today_local
 @dataclass(frozen=True)
 class EstadoMembresiaCalculado:
     """Resultado estructurado e inmutable del cálculo de estado de membresía/acceso."""
-    estado: str                     # 'activo' | 'por_vencer' | 'mora' | 'vencido' | 'congelado' | 'cancelada' | 'inactivo' | 'sin_membresia'
+    estado: str                     # 'desactivado' | 'cancelado' | 'sin_membresia' | 'congelado' | 'vencido' | 'en_gracia' | 'por_vencer' | 'activo'
     dias_restantes_o_vencido: int
     permite_ingreso: bool
     resultado_acceso: str           # 'abrio' | 'alerta_mora' | 'negado'
@@ -53,7 +53,7 @@ class MembresiaDomainService:
         # 1. Deportista desactivado administrativamente
         if not activo_deportista:
             return EstadoMembresiaCalculado(
-                estado="inactivo",
+                estado="desactivado",
                 dias_restantes_o_vencido=0,
                 permite_ingreso=False,
                 resultado_acceso="negado",
@@ -67,7 +67,7 @@ class MembresiaDomainService:
         if not tiene_membresia or fecha_vencimiento is None:
             if ultima_cancelada:
                 return EstadoMembresiaCalculado(
-                    estado="cancelada",
+                    estado="cancelado",
                     dias_restantes_o_vencido=0,
                     permite_ingreso=False,
                     resultado_acceso="negado",
@@ -130,11 +130,11 @@ class MembresiaDomainService:
             dias_mora = (hoy - fecha_vencimiento).days
             if dias_mora <= dias_gracia_mora:
                 return EstadoMembresiaCalculado(
-                    estado="mora",
+                    estado="en_gracia",
                     dias_restantes_o_vencido=dias_mora,
                     permite_ingreso=True,
                     resultado_acceso="alerta_mora",
-                    mensaje=f"Membresía en periodo de gracia ({dias_mora} días de mora)",
+                    mensaje=f"Membresía en periodo de gracia ({dias_mora} días de gracia)",
                     membresia_id=membresia_id,
                     plan_nombre=plan_nombre,
                     fecha_vencimiento=fecha_vencimiento
@@ -200,13 +200,14 @@ class MembresiaDomainService:
                 dias_umbral_por_vencer=dias_umbral_por_vencer
             )
 
-        # 2. Revisar si esta membresía específica tiene congelamiento abierto
+        # 2. Revisar si esta membresía específica tiene congelamiento vigente hoy
         q_cong = text("""
             SELECT id FROM platform.congelamientos
-            WHERE gimnasio_id = :gym_id AND membresia_id = :memb_id AND fecha_fin IS NULL
+            WHERE gimnasio_id = :gym_id AND membresia_id = :memb_id
+              AND fecha_inicio <= :hoy AND (fecha_fin IS NULL OR fecha_fin >= :hoy)
             LIMIT 1
         """)
-        res_cong = await session.execute(q_cong, {"gym_id": gym_id, "memb_id": memb["id"]})
+        res_cong = await session.execute(q_cong, {"gym_id": gym_id, "memb_id": memb["id"], "hoy": hoy})
         cong_row = res_cong.mappings().first()
 
         return cls.evaluar_estado_puro(
@@ -233,9 +234,7 @@ class MembresiaDomainService:
         dias_umbral_por_vencer: int = 5,
     ) -> List[Dict[str, Any]]:
         """
-        Resuelve congelamientos vigentes para una lista paginada en UNA SOLA consulta batch:
-        WHERE membresia_id = ANY(:ids) AND fecha_fin IS NULL
-        Eliminando por completo el problema N+1 y evitando SQL alternativo divergente.
+        Resuelve congelamientos vigentes para una lista paginada en UNA SOLA consulta batch.
         """
         if not items:
             return []
@@ -248,9 +247,10 @@ class MembresiaDomainService:
             q_batch = text("""
                 SELECT id, membresia_id
                 FROM platform.congelamientos
-                WHERE gimnasio_id = :gym_id AND membresia_id = ANY(:ids) AND fecha_fin IS NULL
+                WHERE gimnasio_id = :gym_id AND membresia_id = ANY(:ids)
+                  AND fecha_inicio <= :hoy AND (fecha_fin IS NULL OR fecha_fin >= :hoy)
             """)
-            res_batch = await session.execute(q_batch, {"gym_id": gym_id, "ids": memb_ids})
+            res_batch = await session.execute(q_batch, {"gym_id": gym_id, "ids": memb_ids, "hoy": hoy})
             for r in res_batch.fetchall():
                 congelamientos_activos[r[1]] = r[0]
 

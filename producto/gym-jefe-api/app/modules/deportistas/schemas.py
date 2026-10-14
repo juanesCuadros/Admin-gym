@@ -120,6 +120,7 @@ class DeportistaResponse(BaseModel):
     consentimiento_fecha: Optional[datetime] = None
     acudiente_nombre: Optional[str] = None
     activo: bool
+    estado: Optional[str] = None
     version: int
     created_at: datetime
     updated_at: datetime
@@ -132,7 +133,7 @@ class DeportistaResumenResponse(BaseModel):
     correo: Optional[str] = None
     telefono: Optional[str] = None
     activo: bool
-    estado_membresia: str  # al_dia, por_vencer, en_mora, vencido, congelado, sin_membresia
+    estado: str  # desactivado, cancelado, sin_membresia, congelado, vencido, en_gracia, por_vencer, activo
     plan_nombre: Optional[str] = None
     fecha_vencimiento: Optional[date] = None
     version: int
@@ -153,7 +154,7 @@ class DeportistaBuscarResponse(BaseModel):
     correo: Optional[str] = None
     telefono: Optional[str] = None
     activo: bool
-    estado_membresia: str
+    estado: str
 
 
 # =====================================================================
@@ -169,7 +170,7 @@ class MembresiaFichaResponse(BaseModel):
     cancelada: bool
     dias_restantes: int
     congelado: bool
-    estado: str  # al_dia, por_vencer, en_mora, vencido, congelado
+    estado: str  # activo, por_vencer, en_gracia, vencido, congelado, cancelado
 
 
 class PagoFichaResponse(BaseModel):

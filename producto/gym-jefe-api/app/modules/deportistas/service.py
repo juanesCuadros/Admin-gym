@@ -20,6 +20,7 @@ from app.core.audit import AuditService
 from app.core.config import settings
 from app.core.email.plantillas import url_sistema_web
 from app.core.security import encrypt_biometric_template, hash_token
+from app.modules.membresias.domain import MembresiaDomainService
 from app.modules.deportistas.schemas import (
     AccesoFichaResponse,
     CambiarEstadoDeportistaRequest,
@@ -208,20 +209,10 @@ class DeportistasService:
                 d.created_at,
                 m.plan_nombre,
                 m.fecha_vencimiento,
-                CASE
-                    WHEN m.id IS NULL THEN 'sin_membresia'
-                    WHEN m.esta_congelada THEN 'congelado'
-                    WHEN m.fecha_vencimiento >= :today THEN
-                        CASE
-                            WHEN (m.fecha_vencimiento - :today) <= t.dias_umbral_por_vencer THEN 'por_vencer'
-                            ELSE 'al_dia'
-                        END
-                    ELSE
-                        CASE
-                            WHEN (:today - m.fecha_vencimiento) <= t.dias_gracia_mora THEN 'en_mora'
-                            ELSE 'vencido'
-                        END
-                END AS estado_membresia
+                m.esta_congelada,
+                m.cancelada,
+                t.dias_gracia_mora,
+                t.dias_umbral_por_vencer
             FROM platform.deportistas d
             JOIN platform.tenant t ON t.id = d.gimnasio_id
             LEFT JOIN LATERAL (
@@ -230,6 +221,7 @@ class DeportistasService:
                     mb.plan_id,
                     p.nombre AS plan_nombre,
                     mb.fecha_vencimiento,
+                    mb.cancelada,
                     EXISTS (
                         SELECT 1 FROM platform.congelamientos c
                         WHERE c.membresia_id = mb.id
@@ -240,7 +232,6 @@ class DeportistasService:
                 JOIN platform.planes p ON p.id = mb.plan_id
                 WHERE mb.deportista_id = d.id
                   AND mb.gimnasio_id = :gym_id
-                  AND mb.cancelada = false
                 ORDER BY mb.fecha_vencimiento DESC, mb.created_at DESC
                 LIMIT 1
             ) m ON true
@@ -250,7 +241,21 @@ class DeportistasService:
         """)
 
         res_items = await session.execute(items_query, params)
-        items = [DeportistaResumenResponse(**row) for row in res_items.mappings().all()]
+        items = []
+        for row in res_items.mappings().all():
+            calc = MembresiaDomainService.evaluar_estado_puro(
+                hoy=today_bogota,
+                activo_deportista=row["activo"],
+                tiene_membresia=row["plan_nombre"] is not None and not bool(row.get("cancelada")),
+                ultima_cancelada=bool(row.get("cancelada", False)),
+                fecha_vencimiento=row["fecha_vencimiento"],
+                congelamiento_activo=bool(row.get("esta_congelada", False)),
+                dias_gracia_mora=row.get("dias_gracia_mora", 3),
+                dias_umbral_por_vencer=row.get("dias_umbral_por_vencer", 5),
+            )
+            item_data = dict(row)
+            item_data["estado"] = calc.estado
+            items.append(DeportistaResumenResponse(**item_data))
 
         return DeportistasPaginadosResponse(
             items=items,
@@ -271,7 +276,7 @@ class DeportistasService:
         limit: int = 10,
     ) -> List[DeportistaBuscarResponse]:
         """
-        Búsqueda rápida por cédula o nombre para cajas y recepción.
+        Búsqueda rápida por cédula o nombre para cajas y recepción con estado consolidado.
         """
         today_bogota = cls._obtener_fecha_hoy_bogota()
         q_clean = q.strip()
@@ -286,26 +291,20 @@ class DeportistasService:
                 d.correo,
                 d.telefono,
                 d.activo,
-                CASE
-                    WHEN m.id IS NULL THEN 'sin_membresia'
-                    WHEN m.esta_congelada THEN 'congelado'
-                    WHEN m.fecha_vencimiento >= :today THEN
-                        CASE
-                            WHEN (m.fecha_vencimiento - :today) <= t.dias_umbral_por_vencer THEN 'por_vencer'
-                            ELSE 'al_dia'
-                        END
-                    ELSE
-                        CASE
-                            WHEN (:today - m.fecha_vencimiento) <= t.dias_gracia_mora THEN 'en_mora'
-                            ELSE 'vencido'
-                        END
-                END AS estado_membresia
+                m.plan_nombre,
+                m.fecha_vencimiento,
+                m.esta_congelada,
+                m.cancelada,
+                t.dias_gracia_mora,
+                t.dias_umbral_por_vencer
             FROM platform.deportistas d
             JOIN platform.tenant t ON t.id = d.gimnasio_id
             LEFT JOIN LATERAL (
                 SELECT
                     mb.id,
+                    p.nombre AS plan_nombre,
                     mb.fecha_vencimiento,
+                    mb.cancelada,
                     EXISTS (
                         SELECT 1 FROM platform.congelamientos c
                         WHERE c.membresia_id = mb.id
@@ -313,9 +312,9 @@ class DeportistasService:
                           AND (c.fecha_fin IS NULL OR c.fecha_fin >= :today)
                     ) AS esta_congelada
                 FROM platform.membresias mb
+                JOIN platform.planes p ON p.id = mb.plan_id
                 WHERE mb.deportista_id = d.id
                   AND mb.gimnasio_id = :gym_id
-                  AND mb.cancelada = false
                 ORDER BY mb.fecha_vencimiento DESC, mb.created_at DESC
                 LIMIT 1
             ) m ON true
@@ -335,7 +334,22 @@ class DeportistasService:
                 "limit": min(limit, 20),
             },
         )
-        return [DeportistaBuscarResponse(**row) for row in res.mappings().all()]
+        items = []
+        for row in res.mappings().all():
+            calc = MembresiaDomainService.evaluar_estado_puro(
+                hoy=today_bogota,
+                activo_deportista=row["activo"],
+                tiene_membresia=row["plan_nombre"] is not None and not bool(row.get("cancelada")),
+                ultima_cancelada=bool(row.get("cancelada", False)),
+                fecha_vencimiento=row["fecha_vencimiento"],
+                congelamiento_activo=bool(row.get("esta_congelada", False)),
+                dias_gracia_mora=row.get("dias_gracia_mora", 3),
+                dias_umbral_por_vencer=row.get("dias_umbral_por_vencer", 5),
+            )
+            item_data = dict(row)
+            item_data["estado"] = calc.estado
+            items.append(DeportistaBuscarResponse(**item_data))
+        return items
 
     # =====================================================================
     # 4. Ficha 360° del Deportista (RF-20)
@@ -369,8 +383,6 @@ class DeportistasService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"codigo": "DEPORTISTA_NO_ENCONTRADO", "mensaje": "Deportista no encontrado."},
             )
-        deportista_dto = DeportistaResponse(**row_dep)
-
         # 2. Membresía vigente
         memb_query = text("""
             SELECT
@@ -400,17 +412,24 @@ class DeportistasService:
         """)
         res_memb = await session.execute(memb_query, {"id": deportista_id, "gym_id": gym_id, "today": today_bogota})
         row_memb = res_memb.mappings().one_or_none()
+
+        calc = MembresiaDomainService.evaluar_estado_puro(
+            hoy=today_bogota,
+            activo_deportista=row_dep["activo"],
+            tiene_membresia=row_memb is not None and not bool(row_memb["cancelada"]),
+            ultima_cancelada=bool(row_memb["cancelada"]) if row_memb else False,
+            fecha_vencimiento=row_memb["fecha_vencimiento"] if row_memb else None,
+            congelamiento_activo=bool(row_memb["congelado"]) if row_memb else False,
+            dias_gracia_mora=row_memb["dias_gracia_mora"] if row_memb else 3,
+            dias_umbral_por_vencer=row_memb["dias_umbral_por_vencer"] if row_memb else 5,
+        )
+
+        dep_dict = dict(row_dep)
+        dep_dict["estado"] = calc.estado
+        deportista_dto = DeportistaResponse(**dep_dict)
+
         membresia_dto: Optional[MembresiaFichaResponse] = None
         if row_memb:
-            if row_memb["congelado"]:
-                estado_m = "congelado"
-            elif row_memb["fecha_vencimiento"] >= today_bogota:
-                dias_rest = row_memb["dias_restantes"]
-                estado_m = "por_vencer" if dias_rest <= row_memb["dias_umbral_por_vencer"] else "al_dia"
-            else:
-                dias_vencido = (today_bogota - row_memb["fecha_vencimiento"]).days
-                estado_m = "en_mora" if dias_vencido <= row_memb["dias_gracia_mora"] else "vencido"
-
             membresia_dto = MembresiaFichaResponse(
                 id=row_memb["id"],
                 plan_id=row_memb["plan_id"],
@@ -420,7 +439,7 @@ class DeportistasService:
                 cancelada=row_memb["cancelada"],
                 dias_restantes=row_memb["dias_restantes"],
                 congelado=row_memb["congelado"],
-                estado=estado_m,
+                estado=calc.estado,
             )
 
         # 3. Historial de últimos 10 pagos

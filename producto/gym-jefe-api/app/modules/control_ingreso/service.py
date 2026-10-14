@@ -141,6 +141,7 @@ class ControlIngresoService:
             id=dep["id"],
             documento=dep["documento"],
             nombre=dep["nombre"],
+            estado=estado,
             estado_calculado=estado,
             dias_restantes_o_vencido=dias_diff
         )
@@ -375,6 +376,7 @@ class ControlIngresoService:
             id=dep["id"],
             documento=dep["documento"],
             nombre=dep["nombre"],
+            estado=estado,
             estado_calculado=estado,
             dias_restantes_o_vencido=dias_diff
         )

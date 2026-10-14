@@ -18,13 +18,20 @@ class IngresoCortesiaRequest(BaseModel):
     motivo: str = Field(..., min_length=4, max_length=255, description="Motivo obligatorio del ingreso de cortesía")
 
 
-# --- Responses ---
 class DeportistaCheckinDto(BaseModel):
     id: UUID
     documento: str
     nombre: str
-    estado_calculado: str  # activo, por_vencer, mora, vencido, congelado, cancelada, inactivo, sin_membresia
+    estado: str  # desactivado, cancelado, sin_membresia, congelado, vencido, en_gracia, por_vencer, activo
+    estado_calculado: Optional[str] = None
     dias_restantes_o_vencido: int
+
+    def __init__(self, **data):
+        if "estado" not in data and "estado_calculado" in data:
+            data["estado"] = data["estado_calculado"]
+        elif "estado_calculado" not in data and "estado" in data:
+            data["estado_calculado"] = data["estado"]
+        super().__init__(**data)
 
 
 class CheckinResponseDto(BaseModel):

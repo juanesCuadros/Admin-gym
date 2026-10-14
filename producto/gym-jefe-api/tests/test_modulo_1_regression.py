@@ -3,6 +3,7 @@ import os
 import sys
 from datetime import date, timedelta
 from uuid import uuid4
+import pytest
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
@@ -140,13 +141,13 @@ async def run_modulo_1_regression_suite():
 
     # Ejecución de validaciones de negocio en sesiones independientes
     casos = [
-        ("1. Inactivo", dep_inactivo_id, "inactivo", "negado", False),
+        ("1. Inactivo", dep_inactivo_id, "desactivado", "negado", False),
         ("2. Sin Membresía", dep_sin_membresia_id, "sin_membresia", "negado", False),
-        ("3. Cancelada", dep_cancelada_id, "cancelada", "negado", False),
+        ("3. Cancelada", dep_cancelada_id, "cancelado", "negado", False),
         ("4. Congelado", dep_congelado_id, "congelado", "negado", False),
         ("5. Por Vencer", dep_por_vencer_id, "por_vencer", "abrio", True),
         ("6. Activo", dep_activo_id, "activo", "abrio", True),
-        ("7. Mora", dep_mora_id, "mora", "alerta_mora", True),
+        ("7. Mora", dep_mora_id, "en_gracia", "alerta_mora", True),
         ("8. Vencido", dep_vencido_id, "vencido", "negado", False),
     ]
 
@@ -162,8 +163,8 @@ async def run_modulo_1_regression_suite():
                 metodo="manual"
             )
             await session.commit()
-            assert res.deportista.estado_calculado == exp_estado, (
-                f"[{nombre_caso}] Estado esperado '{exp_estado}', obtenido '{res.deportista.estado_calculado}'"
+            assert res.deportista.estado == exp_estado, (
+                f"[{nombre_caso}] Estado esperado '{exp_estado}', obtenido '{res.deportista.estado}'"
             )
             assert res.resultado == exp_resultado, (
                 f"[{nombre_caso}] Resultado esperado '{exp_resultado}', obtenido '{res.resultado}'"
@@ -192,6 +193,11 @@ async def run_modulo_1_regression_suite():
     print("\n==================================================================")
     print(" RESULTADO REGRESIÓN: 9/9 PRUEBAS DEL MÓDULO 1 SUPERADAS AL 100%")
     print("==================================================================")
+
+
+@pytest.mark.asyncio
+async def test_modulo_1_regression_suite():
+    await run_modulo_1_regression_suite()
 
 
 if __name__ == "__main__":
