@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ConfirmationDialog } from '@/components/actions/ConfirmationDialog';
 import { FormField } from '@/components/forms/FormField';
 import { TextInput } from '@/components/forms/TextInput';
+import { Alert } from '@/components/feedback/Alert';
 import { GymDetail } from '@/types/gym.types';
-import { useGymDetail } from '@/hooks/useGymDetail';
+import { gymService } from '@/services/gymService';
 import { useToast } from '@/hooks/useToast';
 import { parseApiError } from '@/services/api/errorHandler';
 
@@ -11,42 +12,43 @@ export interface CancelGymModalProps {
   isOpen: boolean;
   onClose: () => void;
   gym: GymDetail | null;
-  onSuccess?: () => void;
+  /** Recibe la ficha actualizada con `export_url` y `export_expira_en` (se muestran una sola vez). */
+  onSuccess?: (actualizado: GymDetail) => void;
 }
 
-export const CancelGymModal: React.FC<CancelGymModalProps> = ({
-  isOpen,
-  onClose,
-  gym,
-  onSuccess,
-}) => {
-  const { cancelGym } = useGymDetail(gym?.id);
-  const { success, error: toastError } = useToast();
+/** Cancelar gimnasio (`POST /admin/gyms/{id}/cancel`, SA-RF-10, SA-RF-30). */
+export const CancelGymModal: React.FC<CancelGymModalProps> = ({ isOpen, onClose, gym, onSuccess }) => {
+  const { success } = useToast();
 
   const [motivo, setMotivo] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (isOpen) {
+      setMotivo('');
+      setErrorMsg(null);
+    }
+  }, [isOpen]);
+
   if (!gym) return null;
 
   const handleConfirm = async () => {
-    if (!motivo.trim() || motivo.trim().length < 5) {
-      setErrorMsg('El motivo de cancelación es obligatorio (mínimo 5 caracteres).');
+    if (isSubmitting) return;
+    if (motivo.trim().length < 5) {
+      setErrorMsg('El motivo de la cancelación es obligatorio (mínimo 5 caracteres).');
       return;
     }
 
     setIsSubmitting(true);
     setErrorMsg(null);
     try {
-      await cancelGym({ motivo: motivo.trim() });
-      success(`El gimnasio "${gym.nombre}" ha sido cancelado formalmente. Su acceso queda suspendido y sus datos preservados.`);
-      if (onSuccess) onSuccess();
+      const actualizado = await gymService.cancelGym(gym.id, { motivo: motivo.trim() });
+      success(`"${gym.nombre}" quedó cancelado.`);
+      onSuccess?.(actualizado);
       onClose();
-      setMotivo('');
     } catch (err) {
-      const parsed = parseApiError(err);
-      setErrorMsg(parsed.message);
-      toastError(parsed.message);
+      setErrorMsg(parseApiError(err).message);
     } finally {
       setIsSubmitting(false);
     }
@@ -55,32 +57,25 @@ export const CancelGymModal: React.FC<CancelGymModalProps> = ({
   return (
     <ConfirmationDialog
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={isSubmitting ? () => undefined : onClose}
       onConfirm={handleConfirm}
-      title="Baja Formal de Gimnasio (RF-10)"
-      message={`¿Confirmas la cancelación de "${gym.nombre}"? Esta acción congela de inmediato el acceso de su personal al tenant y preserva íntegramente sus registros históricos sin eliminar datos.`}
-      confirmLabel="Confirmar Cancelación"
+      title="Cancelar gimnasio"
+      message={`¿Cancelar "${gym.nombre}"? El Sistema Web queda bloqueado de inmediato, no acepta pagos ni cambios de plan y se genera un ZIP con sus datos descargable durante 30 días. Pasados 30 días se podrá eliminar definitivamente.`}
+      confirmLabel="Cancelar gimnasio"
+      cancelLabel="Volver"
       isDestructive
       isLoading={isSubmitting}
     >
-      <div style={{ marginTop: '16px' }}>
-        <FormField
-          label="Motivo Oficial de la Cancelación"
-          required
-          error={errorMsg || undefined}
-          helperText="Indica la justificación comercial, cierre de sede o retiro voluntario."
-        >
-          <TextInput
-            value={motivo}
-            onChange={(e) => {
-              setMotivo(e.target.value);
-              if (errorMsg) setErrorMsg(null);
-            }}
-            placeholder="ej. Cierre definitivo de la sede por cambio de actividad comercial"
-            hasError={!!errorMsg}
-          />
-        </FormField>
-      </div>
+      {errorMsg && <Alert type="error" message={errorMsg} />}
+      <FormField label="Motivo de la cancelación" required helperText="Queda guardado en la ficha y en la auditoría.">
+        <TextInput
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          disabled={isSubmitting}
+          placeholder="ej. Cierre definitivo de la sede"
+          hasError={!!errorMsg}
+        />
+      </FormField>
     </ConfirmationDialog>
   );
 };

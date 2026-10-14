@@ -21,8 +21,19 @@ import { CredentialsModal } from '@/components/business/CredentialsModal';
 import { ChangePlanModal } from '@/components/business/ChangePlanModal';
 import { Alert } from '@/components/feedback/Alert';
 import { useGymDetail } from '@/hooks/useGymDetail';
-import { formatCOP, formatFecha, formatFechaHora, textoDiasRestantes } from '@/utils/format';
-import { etiquetaEstadoCalculado } from '@/utils/estados';
+import {
+  diasEntre,
+  fechaBogota,
+  formatCOP,
+  formatFecha,
+  formatFechaHora,
+  hoyBogota,
+  sumarDias,
+  textoDiasRestantes,
+} from '@/utils/format';
+import { DIAS_RETENCION_CANCELADO, etiquetaEstadoCalculado } from '@/utils/estados';
+import { ExportLinkModal } from '@/components/business/ExportLinkModal';
+import { DeleteGymModal } from '@/components/business/DeleteGymModal';
 import { useToast } from '@/hooks/useToast';
 import { parseApiError } from '@/services/api/errorHandler';
 import { Payment } from '@/types/payment.types';
@@ -68,6 +79,9 @@ export const GymDetailPage: React.FC = () => {
   const [issuedCreds, setIssuedCreds] = useState<CredentialsIssuanceResponse | null>(null);
   // SA-RF-09 CA5: al anular el pago de reactivación el estado no se revierte; se avisa.
   const [advertenciaAnulacion, setAdvertenciaAnulacion] = useState<string | null>(null);
+  // SA-RF-30: el enlace de exportación llega una sola vez, en la respuesta de cancelar.
+  const [exportacion, setExportacion] = useState<{ url: string | null; expira: string | null } | null>(null);
+  const [isDeleteOpen, setIsDeleteOpen] = useState<boolean>(false);
 
   // General tab editable form state
   const [isEditingGeneral, setIsEditingGeneral] = useState(false);
@@ -103,7 +117,7 @@ export const GymDetailPage: React.FC = () => {
     }
   }, [gym]);
 
-  if (isLoading) {
+  if (isLoading && !gym) {
     return (
       <PageContainer>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -115,7 +129,7 @@ export const GymDetailPage: React.FC = () => {
     );
   }
 
-  if (error || !gym) {
+  if (!gym) {
     return (
       <PageContainer>
         <ErrorState
@@ -132,6 +146,11 @@ export const GymDetailPage: React.FC = () => {
   // Un cancelado no acepta pagos; un suspendido solo los recibe al reactivar (SA-RF-16 CA4).
   const aceptaPagos = !esCancelado && !esSuspendido;
   const diasRestantes = gym.dias_restantes;
+  // SA-RF-31 CA1: la eliminación se habilita cumplidos 30 días desde la cancelación (día de Bogotá).
+  const diaCancelacion = esCancelado && gym.fecha_cancelacion ? fechaBogota(gym.fecha_cancelacion) : null;
+  const diasDesdeCancelacion = diaCancelacion ? diasEntre(diaCancelacion, hoyBogota()) : null;
+  const fechaEliminable = diaCancelacion ? sumarDias(diaCancelacion, DIAS_RETENCION_CANCELADO) : null;
+  const eliminable = diasDesdeCancelacion !== null && diasDesdeCancelacion >= DIAS_RETENCION_CANCELADO;
 
   const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -397,6 +416,10 @@ export const GymDetailPage: React.FC = () => {
         style={{ marginBottom: '16px' }}
       />
 
+      {error && (
+        <Alert type="error" title="No se pudo actualizar la ficha" message={error} onClose={refetch} />
+      )}
+
       {/* Main Header Banner */}
       <div
         style={{
@@ -609,11 +632,43 @@ export const GymDetailPage: React.FC = () => {
         />
       )}
       {esCancelado && (
-        <Alert
-          type="info"
-          title="Gimnasio cancelado"
-          message={`Cancelado el ${formatFecha(gym.fecha_cancelacion)}. Motivo: ${gym.motivo_cancelacion || '—'}. No acepta pagos ni cambios de plan.`}
-        />
+        <div
+          style={{
+            backgroundColor: 'var(--color-bg-card)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '16px 20px',
+            marginBottom: '24px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+          }}
+        >
+          <div style={{ fontSize: 'var(--font-size-sm)', lineHeight: 1.5 }}>
+            <div style={{ fontWeight: 'var(--font-weight-semibold)' }}>
+              Cancelado el {formatFecha(gym.fecha_cancelacion)}
+              {diasDesdeCancelacion !== null && ` (hace ${diasDesdeCancelacion} ${diasDesdeCancelacion === 1 ? 'día' : 'días'})`}
+            </div>
+            <div style={{ color: 'var(--color-text-secondary)' }}>Motivo: {gym.motivo_cancelacion || '—'}</div>
+            <div style={{ color: 'var(--color-text-secondary)' }}>
+              {eliminable
+                ? 'Cumplió los 30 días: ya se puede eliminar definitivamente.'
+                : fechaEliminable
+                ? `Se podrá eliminar definitivamente desde el ${formatFecha(fechaEliminable)}.`
+                : 'Sin fecha de cancelación registrada.'}
+            </div>
+          </div>
+          <Button
+            variant="destructive"
+            onClick={() => setIsDeleteOpen(true)}
+            disabled={!eliminable}
+            title={eliminable ? undefined : 'Disponible a los 30 días de la cancelación'}
+          >
+            Eliminar definitivamente
+          </Button>
+        </div>
       )}
 
       {/* Tabs */}
@@ -1046,8 +1101,11 @@ export const GymDetailPage: React.FC = () => {
         isOpen={isChangeStatusOpen}
         onClose={() => setIsChangeStatusOpen(false)}
         gym={gym}
-        onSuccess={() => {
+        onSuccess={(actualizado) => {
           setAdvertenciaAnulacion(null);
+          if (actualizado.estado === 'cancelado') {
+            setExportacion({ url: actualizado.export_url ?? null, expira: actualizado.export_expira_en ?? null });
+          }
           refetch();
         }}
       />
@@ -1056,7 +1114,25 @@ export const GymDetailPage: React.FC = () => {
         isOpen={isCancelGymOpen}
         onClose={() => setIsCancelGymOpen(false)}
         gym={gym}
-        onSuccess={refetch}
+        onSuccess={(actualizado) => {
+          setExportacion({ url: actualizado.export_url ?? null, expira: actualizado.export_expira_en ?? null });
+          refetch();
+        }}
+      />
+
+      <ExportLinkModal
+        isOpen={!!exportacion}
+        onClose={() => setExportacion(null)}
+        gymNombre={gym.nombre}
+        exportUrl={exportacion?.url}
+        exportExpiraEn={exportacion?.expira}
+      />
+
+      <DeleteGymModal
+        isOpen={isDeleteOpen}
+        onClose={() => setIsDeleteOpen(false)}
+        gym={gym}
+        onSuccess={() => navigate('/gyms', { replace: true })}
       />
 
       <UpdatePriceModal
