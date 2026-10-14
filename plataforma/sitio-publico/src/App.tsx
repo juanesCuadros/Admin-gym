@@ -5,6 +5,8 @@ import NoEncontrada from '@/pages/NoEncontrada'
 import Planes from '@/pages/Planes'
 import Registro from '@/pages/Registro'
 import ConfirmarRegistro from '@/pages/ConfirmarRegistro'
+import Terminos from '@/pages/Terminos'
+import Privacidad from '@/pages/Privacidad'
 
 export default function App() {
   return (
@@ -16,6 +18,8 @@ export default function App() {
         {/* El token llega en la ruta; ?token= se acepta por compatibilidad con el enlace actual del backend. */}
         <Route path="registro/confirmar/:token" element={<ConfirmarRegistro />} />
         <Route path="registro/confirmar" element={<ConfirmarRegistro />} />
+        <Route path="terminos" element={<Terminos />} />
+        <Route path="privacidad" element={<Privacidad />} />
         <Route path="*" element={<NoEncontrada />} />
       </Route>
     </Routes>

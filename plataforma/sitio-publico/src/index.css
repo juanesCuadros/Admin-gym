@@ -788,3 +788,34 @@ a:hover {
   background: var(--color-primario-suave);
   border-radius: 8px;
 }
+
+/* ---------- Páginas legales ---------- */
+.legal h1 {
+  font-size: clamp(1.5rem, 4vw, 2.1rem);
+}
+
+.legal h2 {
+  font-size: 1.2rem;
+  margin-top: 1.6em;
+}
+
+.legal ul {
+  padding-left: 1.25em;
+  margin: 0 0 1em;
+}
+
+.legal li {
+  margin-bottom: 0.4em;
+}
+
+.borrador {
+  margin-bottom: 24px;
+}
+
+.pendiente {
+  background: var(--color-aviso-fondo);
+  color: #6b4e00;
+  font-weight: 600;
+  padding: 0 4px;
+  border-radius: 4px;
+}
