@@ -115,6 +115,15 @@ class PaymentUseCases:
         if not gym:
             raise EntityNotFoundException("Gimnasio", gym_id)
 
+        if gym.estado == "cancelado":
+            raise BusinessRuleException(
+                "Un gimnasio cancelado no acepta pagos.", codigo="GIMNASIO_CANCELADO"
+            )
+        if gym.estado == "suspendido":
+            raise BusinessRuleException(
+                "Un gimnasio suspendido solo recibe pagos mediante la reactivación.",
+                codigo="USAR_REACTIVACION",
+            )
         self.validar_pago(data.fecha_pago, data.idempotency_key)
         try:
             estado_anterior = gym.estado
@@ -206,6 +215,16 @@ class PaymentUseCases:
 
         self.db.refresh(payment)
         return payment, nueva_corte
+
+    @staticmethod
+    def advertencia_anulacion(payment: Pago, gym: Gimnasio, nueva_corte: Optional[date]) -> Optional[str]:
+        """SA-RF-09 CA5: anular el pago que activó o reactivó no revierte el estado; se advierte."""
+        if payment.fija_ancla and gym.estado == "activo":
+            return (
+                "El gimnasio sigue activo: anular este pago no revierte el estado. "
+                f"Su fecha de corte quedó en {nueva_corte} y puede quedar bloqueado."
+            )
+        return None
 
     def update_subscription_price(
         self,

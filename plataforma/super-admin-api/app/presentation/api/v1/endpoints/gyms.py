@@ -281,7 +281,7 @@ def change_gym_status(
     (prueba -> activo, activo <-> suspendido, * -> cancelado).
     """
     use_cases = GymUseCases(db)
-    use_cases.change_state(gym_id, data.nuevo_estado, data.motivo, actor=current_user)
+    use_cases.change_state(gym_id, data.nuevo_estado, data.motivo, actor=current_user, pago=data.pago)
     return get_gym_detail(gym_id=gym_id, db=db, current_user=current_user)
 
 @router.post("/{gym_id}/cancel", response_model=GymDetailResponse, summary="Cancelar un gimnasio formalmente")

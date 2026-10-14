@@ -29,6 +29,8 @@ class PaymentResponse(BaseModel):
     idempotency_key: str
     created_at: datetime
     nueva_fecha_corte: Optional[date] = None
+    fija_ancla: bool = False
+    advertencia: Optional[str] = None  # SA-RF-09 CA5: anular el pago de reactivación no revierte el estado
 
 class SubscriptionUpdatePrice(BaseModel):
     nuevo_valor_mensual: Decimal = Field(..., ge=0, description="Nuevo valor mensual de la suscripción (RF-14)")

@@ -55,19 +55,37 @@ def test_gym_lifecycle_and_state_transitions(client, superadmin_auth_headers):
     assert create_resp.status_code == 201
     gym_id = create_resp.json()["gimnasio"]["id"]
 
-    # 2. Transition prueba -> activo
-    st_resp = client.patch(
+    # 2. prueba -> activo exige el pago en la misma operación (SA-RF-09 CA3)
+    sin_pago = client.patch(
         f"/api/v1/admin/gyms/{gym_id}/status",
         json={"nuevo_estado": "activo"},
+        headers=superadmin_auth_headers
+    )
+    assert sin_pago.status_code == 422
+    assert sin_pago.json()["codigo"] == "PAGO_REQUERIDO"
+
+    st_resp = client.patch(
+        f"/api/v1/admin/gyms/{gym_id}/status",
+        json={"nuevo_estado": "activo", "pago": {
+            "monto": 200000, "meses": 1, "metodo": "Efectivo", "idempotency_key": "idem-lifecycle-001"
+        }},
         headers=superadmin_auth_headers
     )
     assert st_resp.status_code == 200
     assert st_resp.json()["estado"] == "activo"
 
-    # 3. Transition activo -> suspendido
-    st_resp2 = client.patch(
+    # 3. activo -> suspendido exige motivo (SA-RF-09 CA4)
+    sin_motivo = client.patch(
         f"/api/v1/admin/gyms/{gym_id}/status",
         json={"nuevo_estado": "suspendido"},
+        headers=superadmin_auth_headers
+    )
+    assert sin_motivo.status_code == 422
+    assert sin_motivo.json()["codigo"] == "MOTIVO_REQUERIDO"
+
+    st_resp2 = client.patch(
+        f"/api/v1/admin/gyms/{gym_id}/status",
+        json={"nuevo_estado": "suspendido", "motivo": "Mora de dos meses"},
         headers=superadmin_auth_headers
     )
     assert st_resp2.status_code == 200

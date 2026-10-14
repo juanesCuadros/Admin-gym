@@ -23,6 +23,17 @@ from app.core.fechas import hoy_bogota
 from app.presentation.schemas.gym_schemas import (
     GymCreateStepByStep, GymUpdate, CredentialsIssuanceResponse
 )
+from app.presentation.schemas.payment_schemas import PaymentCreate
+from app.application.use_cases.payment_use_cases import PaymentUseCases
+
+# Transiciones de estado guardado permitidas (§2.1). Cualquier otra responde 422.
+TRANSICIONES = {
+    "prueba": ("activo", "suspendido", "cancelado"),
+    "activo": ("suspendido", "cancelado"),
+    "suspendido": ("activo", "cancelado"),
+    "cancelado": (),
+}
+
 
 class GymUseCases:
     def __init__(self, db: Session):
@@ -246,71 +257,106 @@ class GymUseCases:
         gym_id: str,
         nuevo_estado: str,
         motivo: Optional[str],
-        actor: UsuarioInterno
+        actor: UsuarioInterno,
+        pago: Optional[PaymentCreate] = None,
+        commit: bool = True,
     ) -> Gimnasio:
         """
-        State Machine enforcement (RF-09 / RF-10):
-        prueba -> activo
-        activo -> suspendido
-        suspendido -> activo
-        prueba, activo, suspendido -> cancelado
-        Propagates tenant and staff access freezing to platform schema.
+        Máquina de estados (§2.1, SA-RF-09, SA-RF-10):
+          prueba → activo        pago en la misma operación (ancla = fecha del pago)
+          suspendido → activo    pago en la misma operación (ancla = fecha del pago)
+          prueba/activo → suspendido   con motivo
+          cualquiera → cancelado       con motivo
+        Si el pago falla, el estado no cambia (CA3): todo va en una transacción.
+        El bloqueo del Sistema Web se apoya en el estado (platform.estado_suscripcion) y en
+        tenant.activo; el staff NO se toca, para no pisar las desactivaciones que hizo el Jefe.
         """
         gym = self.gym_repo.get_by_id(gym_id)
         if not gym:
             raise EntityNotFoundException("Gimnasio", gym_id)
 
         current = gym.estado
-        if current == nuevo_estado:
-            return gym
-
-        # Enforce valid transitions
-        allowed_transitions = {
-            "prueba": ["activo", "cancelado"],
-            "activo": ["suspendido", "cancelado"],
-            "suspendido": ["activo", "cancelado"],
-            "cancelado": []  # Formal cancellation is permanent freeze (RF-10)
-        }
-
-        if nuevo_estado not in allowed_transitions.get(current, []):
+        if nuevo_estado not in TRANSICIONES.get(current, ()):
             raise InvalidStateTransitionException(current, nuevo_estado)
 
-        if nuevo_estado == "cancelado":
+        if nuevo_estado in ("suspendido", "cancelado"):
             if not motivo or len(motivo.strip()) < 5:
-                raise BusinessRuleException("El motivo de cancelación es obligatorio y debe tener al menos 5 caracteres.")
-            gym.motivo_cancelacion = motivo.strip()
-            gym.fecha_cancelacion = datetime.now(timezone.utc)
+                raise BusinessRuleException(
+                    "El motivo es obligatorio para suspender o cancelar y debe tener al menos 5 caracteres.",
+                    codigo="MOTIVO_REQUERIDO",
+                )
 
-        gym.estado = nuevo_estado
+        pagos = PaymentUseCases(self.db)
+        if nuevo_estado == "activo":
+            if pago is None:
+                raise BusinessRuleException(
+                    "Para activar o reactivar el gimnasio hay que registrar el pago en la misma operación.",
+                    codigo="PAGO_REQUERIDO",
+                )
+            pagos.validar_pago(pago.fecha_pago, pago.idempotency_key)
 
-        # Propagate access freezing or reactivation to platform schema (Tenant and Staff)
-        platform_tenant = self.db.query(Tenant).filter(Tenant.id == gym.gimnasio_id).first()
-        if platform_tenant:
-            if nuevo_estado in ["suspendido", "cancelado"]:
-                platform_tenant.activo = False
-            elif nuevo_estado == "activo":
-                platform_tenant.activo = True
+        try:
+            pago_registrado = None
+            nueva_corte = gym.fecha_corte
+            if nuevo_estado == "activo":
+                # El pago se registra con el estado anterior (prueba o suspendido): fija el ancla.
+                pago_registrado, nueva_corte = pagos.agregar_pago(
+                    gym, pago.monto, pago.meses, pago.fecha_pago, pago.metodo, pago.nota,
+                    pago.idempotency_key, actor
+                )
 
-        staff_list = self.db.query(Staff).filter(Staff.gimnasio_id == gym.gimnasio_id).all()
-        for s in staff_list:
-            if nuevo_estado in ["suspendido", "cancelado"]:
-                s.activo = False
-            elif nuevo_estado == "activo":
-                s.activo = True
+            if nuevo_estado == "cancelado":
+                gym.motivo_cancelacion = motivo.strip()
+                gym.fecha_cancelacion = datetime.now(timezone.utc)
 
-        self.db.commit()
-        self.db.refresh(gym)
+            gym.estado = nuevo_estado
 
-        self.audit_repo.record_action(
-            actor_id=actor.id,
-            actor_nombre=actor.nombre,
-            accion="CAMBIO_ESTADO_GIMNASIO",
-            entidad="gimnasios",
-            entidad_id=gym.id,
-            gimnasio_id=gym.id,
-            detalle={"estado_anterior": current, "nuevo_estado": nuevo_estado, "motivo": motivo}
-        )
+            platform_tenant = self.db.query(Tenant).filter(Tenant.id == gym.gimnasio_id).first()
+            if platform_tenant:
+                platform_tenant.activo = nuevo_estado == "activo"
 
+            if pago_registrado is not None:
+                self.audit_repo.record_action(
+                    actor_id=actor.id,
+                    actor_nombre=actor.nombre,
+                    accion="REGISTRO_PAGO",
+                    entidad="pagos",
+                    entidad_id=pago_registrado.id,
+                    gimnasio_id=gym.id,
+                    detalle={
+                        "monto": int(pago_registrado.monto),
+                        "meses": pago_registrado.meses,
+                        "metodo": pago_registrado.metodo,
+                        "fecha_pago": str(pago_registrado.fecha_pago),
+                        "fija_ancla": pago_registrado.fija_ancla,
+                        "nueva_fecha_corte": str(nueva_corte),
+                        "origen": "reactivacion" if current == "suspendido" else "activacion",
+                    },
+                    commit=False,
+                )
+            self.audit_repo.record_action(
+                actor_id=actor.id,
+                actor_nombre=actor.nombre,
+                accion="CAMBIO_ESTADO_GIMNASIO",
+                entidad="gimnasios",
+                entidad_id=gym.id,
+                gimnasio_id=gym.id,
+                detalle={
+                    "estado_anterior": current,
+                    "nuevo_estado": nuevo_estado,
+                    "motivo": motivo,
+                    "pago_id": pago_registrado.id if pago_registrado else None,
+                },
+                commit=False,
+            )
+            if commit:
+                self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
+        if commit:
+            self.db.refresh(gym)
         return gym
 
     def cancel_gym(self, gym_id: str, motivo: str, actor: UsuarioInterno) -> Gimnasio:

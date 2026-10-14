@@ -2,6 +2,7 @@ from datetime import date, datetime
 from typing import Optional, List, Dict, Any
 from decimal import Decimal
 from pydantic import BaseModel, EmailStr, Field
+from app.presentation.schemas.payment_schemas import PaymentCreate
 
 class JefeAccountCreate(BaseModel):
     nombre: str = Field(..., min_length=2, max_length=150)
@@ -53,7 +54,10 @@ class GymUpdate(BaseModel):
 
 class GymStateChangeRequest(BaseModel):
     nuevo_estado: str = Field(..., pattern="^(prueba|activo|suspendido|cancelado)$")
-    motivo: Optional[str] = Field(None, description="Requerido si el nuevo estado es cancelado")
+    motivo: Optional[str] = Field(None, description="Obligatorio (mín. 5 caracteres) para suspender o cancelar (SA-RF-09 CA4)")
+    pago: Optional[PaymentCreate] = Field(
+        None, description="Obligatorio para pasar a 'activo' (activar una prueba o reactivar): SA-RF-09 CA3"
+    )
 
 class GymCancelRequest(BaseModel):
     motivo: str = Field(..., min_length=5, description="Motivo formal de la cancelación (RF-10)")

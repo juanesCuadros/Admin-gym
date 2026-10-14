@@ -3,8 +3,8 @@ from app.infrastructure.models.platform_models import Tenant, Staff
 
 def test_gym_cancellation_and_suspension_freezes_platform_access(client, db_session, superadmin_auth_headers):
     """
-    Validates RF-09 / RF-10: Suspending or cancelling a gym properly freezes access
-    by deactivating platform.tenant and platform.staff records.
+    Validates RF-09 / RF-10: Suspending or cancelling a gym freezes access by deactivating
+    platform.tenant; staff records are left as the Jefe set them.
     """
     # 1. Create a gym
     create_resp = client.post(
@@ -29,33 +29,22 @@ def test_gym_cancellation_and_suspension_freezes_platform_access(client, db_sess
     assert staff is not None
     assert staff.activo is True
 
-    # 2. Suspend the gym (RF-09)
+    # 2. Suspend the gym (RF-09): prueba -> suspendido con motivo (§2.1)
     suspend_resp = client.patch(
         f"/api/v1/admin/gyms/{gym_id}/status",
-        json={"nuevo_estado": "suspendido"},
-        headers=superadmin_auth_headers
-    )
-    # Note: from prueba, valid transitions are 'activo' and 'cancelado'.
-    # First activate:
-    client.patch(
-        f"/api/v1/admin/gyms/{gym_id}/status",
-        json={"nuevo_estado": "activo"},
-        headers=superadmin_auth_headers
-    )
-    suspend_resp = client.patch(
-        f"/api/v1/admin/gyms/{gym_id}/status",
-        json={"nuevo_estado": "suspendido"},
+        json={"nuevo_estado": "suspendido", "motivo": "Incumplimiento de pago acordado"},
         headers=superadmin_auth_headers
     )
     assert suspend_resp.status_code == 200
 
-    # Refresh DB session and verify platform tenant and staff are frozen (activo = False)
+    # El tenant queda inactivo. El staff NO se toca: el bloqueo se aplica por el estado del
+    # gimnasio y así una reactivación no pisa las desactivaciones del Jefe (SA-RF-09).
     db_session.expire_all()
     tenant_suspended = db_session.query(Tenant).filter(Tenant.id == tenant_id).first()
     assert tenant_suspended.activo is False
 
     staff_suspended = db_session.query(Staff).filter(Staff.gimnasio_id == tenant_id).first()
-    assert staff_suspended.activo is False
+    assert staff_suspended.activo is True
 
     # 3. Formal Cancellation (RF-10)
     cancel_resp = client.post(
@@ -70,7 +59,7 @@ def test_gym_cancellation_and_suspension_freezes_platform_access(client, db_sess
     assert tenant_cancelled.activo is False
 
     staff_cancelled = db_session.query(Staff).filter(Staff.gimnasio_id == tenant_id).first()
-    assert staff_cancelled.activo is False
+    assert staff_cancelled.activo is True
 
 def test_gym_detail_includes_payment_history_and_recent_activity(client, superadmin_auth_headers):
     """
