@@ -93,127 +93,27 @@ class GymUseCases:
                 codigo="PLAN_INCOHERENTE",
             )
 
-        # 3. State & dates resolution
-        initial_state = "prueba" if data.suscripcion.tipo_inicio == "prueba" else "activo"
-        today = hoy_bogota()
-        dias_prueba = plan.dias_prueba or settings.DEFAULT_TRIAL_DAYS
-        fecha_corte = today + timedelta(days=dias_prueba) if initial_state == "prueba" else None
-
-        shared_gimnasio_id = str(uuid.uuid4())
-
-        # 3. Create Superadmin Gym entity
-        gym = Gimnasio(
-            gimnasio_id=shared_gimnasio_id,
-            nombre=data.nombre.strip(),
-            subdominio=subdomain,
-            nit=data.nit,
-            direccion=data.direccion,
-            ciudad=data.ciudad,
-            telefono=data.telefono,
-            correo=data.correo,
-            estado=initial_state,
-            fecha_inicio=today,
-            fecha_corte=fecha_corte,
-            logo_url=data.logo_url,
-            banner_url=data.banner_url,
-            descripcion=data.descripcion,
-            instagram=data.instagram,
-            facebook=data.facebook,
-            whatsapp=data.whatsapp
-        )
-        self.db.add(gym)
-        self.db.flush()
-
-        # 4. Create Jefe account in Superadmin
-        cuenta_jefe = CuentaJefe(
-            gimnasio_id=gym.id,
-            nombre=data.jefe.nombre.strip(),
-            correo=data.jefe.correo.lower().strip(),
-            telefono=data.jefe.telefono,
-            password_cambiada=False
-        )
-        self.db.add(cuenta_jefe)
-
-        # 5. Create Subscription historical entry (RF-14)
-        subscription = Suscripcion(
-            gimnasio_id=gym.id,
-            valor_mensual=data.suscripcion.valor_mensual,
-            tipo_inicio=data.suscripcion.tipo_inicio,
-            vigente_desde=today,
-            vigente_hasta=None,
-            plan_id=plan.id
-        )
-        self.db.add(subscription)
-
-        # 6. Generate temporary credentials (Argon2id hash)
+        # 3. Provisioning (SA-RF-06) con contraseña temporal de 72 h (SA-RF-11).
         temp_password = generate_secure_temporary_password(length=12)
-        hashed_temp_password = get_password_hash(temp_password)
-
-        # 7. Provision Platform Tenant and Staff (mirror)
-        platform_tenant = Tenant(
-            id=shared_gimnasio_id,
-            nombre=data.nombre.strip(),
-            subdominio=subdomain,
-            zona_horaria="America/Bogota",
-            dias_gracia_mora=3,
-            tope_dias_congelamiento=30,
-            metodos_pago='["Efectivo", "Transferencia", "Nequi"]',
-            landing_slug=subdomain,
-            activo=True
-        )
-        self.db.add(platform_tenant)
-        self.db.flush()  # Ensure platform.tenant row exists before creating dependent staff
-
-        platform_staff = Staff(
-            gimnasio_id=shared_gimnasio_id,
-            nombre=data.jefe.nombre.strip(),
-            correo=data.jefe.correo.lower().strip(),
-            hash_password=hashed_temp_password,
-            rol="jefe",
-            activo=True
-        )
-        self.db.add(platform_staff)
-        self.db.flush()
-
-        # 8. Record Provisioning steps (idempotent tracking)
-        pasos = ["crear_tenant", "crear_cuenta_jefe", "configurar_metodos_pago", "activar_catalogo_base"]
-        for p in pasos:
-            paso_rec = ProvisioningPaso(
-                gimnasio_id=gym.id,
-                paso=p,
-                estado="completado"
+        try:
+            gym, cuenta_jefe, expira_en = self.provisionar(
+                nombre=data.nombre, subdominio=subdomain, plan=plan,
+                tipo_inicio=data.suscripcion.tipo_inicio, valor_mensual=data.suscripcion.valor_mensual,
+                jefe_nombre=data.jefe.nombre, jefe_correo=data.jefe.correo, jefe_telefono=data.jefe.telefono,
+                hash_password=get_password_hash(temp_password), password_temporal=True,
+                actor_id=actor.id, actor_nombre=actor.nombre,
+                datos={
+                    "nit": data.nit, "direccion": data.direccion, "ciudad": data.ciudad,
+                    "telefono": data.telefono, "correo": data.correo, "logo_url": data.logo_url,
+                    "banner_url": data.banner_url, "descripcion": data.descripcion,
+                    "instagram": data.instagram, "facebook": data.facebook, "whatsapp": data.whatsapp,
+                },
             )
-            self.db.add(paso_rec)
-
-        # 9. Register credentials issuance (72h expiry)
-        expira_en = datetime.now(timezone.utc) + timedelta(hours=settings.CREDENTIALS_EXPIRE_HOURS)
-        emision = EmisionCredenciales(
-            gimnasio_id=gym.id,
-            tipo="emitida",
-            expira_en=expira_en,
-            veces_reenviada=0,
-            enviada_por=actor.id
-        )
-        self.db.add(emision)
-
-        self.db.commit()
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
         self.db.refresh(gym)
-
-        # 10. Audit log (password is NEVER logged)
-        self.audit_repo.record_action(
-            actor_id=actor.id,
-            actor_nombre=actor.nombre,
-            accion="CREACION_GIMNASIO_PROVISIONING",
-            entidad="gimnasios",
-            entidad_id=gym.id,
-            gimnasio_id=gym.id,
-            detalle={
-                "nombre": gym.nombre,
-                "subdominio": gym.subdominio,
-                "estado": gym.estado,
-                "correo_jefe": cuenta_jefe.correo
-            }
-        )
 
         access_url = f"https://{subdomain}.{settings.BASE_DOMAIN}/login"
 
@@ -238,6 +138,89 @@ class GymUseCases:
         )
 
         return gym, credentials_resp
+
+    # Métodos de pago por defecto del gimnasio nuevo (SA-RF-06 CA1).
+    METODOS_PAGO_INICIALES = '["Efectivo", "Tarjeta", "Transferencia"]'
+    PASOS_PROVISIONING = ("crear_tenant", "crear_cuenta_jefe", "configurar_metodos_pago", "activar_catalogo_base")
+
+    def provisionar(
+        self,
+        *,
+        nombre: str,
+        subdominio: str,
+        plan,
+        tipo_inicio: str,
+        valor_mensual,
+        jefe_nombre: str,
+        jefe_correo: str,
+        jefe_telefono: Optional[str],
+        hash_password: str,
+        password_temporal: bool,
+        actor_id: Optional[str],
+        actor_nombre: str,
+        datos: Optional[dict] = None,
+        accion_auditoria: str = "CREACION_GIMNASIO_PROVISIONING",
+    ):
+        """Provisioning en UNA transacción (SA-RF-06 CA1), sin commit: gimnasio, cuenta del Jefe,
+        suscripción con plan, tenant con métodos de pago y parámetros iniciales, Jefe en staff,
+        pasos de provisioning y auditoría. Lo usan el alta asistida y el registro autónomo."""
+        datos = datos or {}
+        initial_state = "prueba" if tipo_inicio == "prueba" else "activo"
+        today = hoy_bogota()
+        dias_prueba = plan.dias_prueba or settings.DEFAULT_TRIAL_DAYS
+        fecha_corte = today + timedelta(days=dias_prueba) if initial_state == "prueba" else None
+        shared_gimnasio_id = str(uuid.uuid4())
+        correo = jefe_correo.lower().strip()
+
+        gym = Gimnasio(
+            gimnasio_id=shared_gimnasio_id, nombre=nombre.strip(), subdominio=subdominio,
+            estado=initial_state, fecha_inicio=today, fecha_corte=fecha_corte, **datos
+        )
+        self.db.add(gym)
+        self.db.flush()
+
+        cuenta_jefe = CuentaJefe(
+            gimnasio_id=gym.id, nombre=jefe_nombre.strip(), correo=correo, telefono=jefe_telefono,
+            password_cambiada=not password_temporal
+        )
+        self.db.add(cuenta_jefe)
+        self.db.add(Suscripcion(
+            gimnasio_id=gym.id, valor_mensual=valor_mensual, tipo_inicio=tipo_inicio,
+            vigente_desde=today, vigente_hasta=None, plan_id=plan.id
+        ))
+
+        self.db.add(Tenant(
+            id=shared_gimnasio_id, nombre=nombre.strip(), subdominio=subdominio, zona_horaria="America/Bogota",
+            dias_gracia_mora=3, tope_dias_congelamiento=30, metodos_pago=self.METODOS_PAGO_INICIALES,
+            landing_slug=subdominio, activo=True
+        ))
+        self.db.flush()  # el tenant debe existir antes del staff
+        self.db.add(Staff(
+            gimnasio_id=shared_gimnasio_id, nombre=jefe_nombre.strip(), correo=correo,
+            hash_password=hash_password, rol="jefe", activo=True
+        ))
+        self.db.flush()
+
+        for p in self.PASOS_PROVISIONING:
+            self.db.add(ProvisioningPaso(gimnasio_id=gym.id, paso=p, estado="completado"))
+
+        expira_en = None
+        if password_temporal:
+            expira_en = datetime.now(timezone.utc) + timedelta(hours=settings.CREDENTIALS_EXPIRE_HOURS)
+            self.db.add(EmisionCredenciales(
+                gimnasio_id=gym.id, tipo="emitida", expira_en=expira_en, veces_reenviada=0, enviada_por=actor_id
+            ))
+        self.db.flush()
+
+        # La contraseña NUNCA va a la auditoría.
+        self.audit_repo.record_action(
+            actor_id=actor_id, actor_nombre=actor_nombre, accion=accion_auditoria,
+            entidad="gimnasios", entidad_id=gym.id, gimnasio_id=gym.id,
+            detalle={"nombre": gym.nombre, "subdominio": gym.subdominio, "estado": gym.estado,
+                     "correo_jefe": correo, "plan": plan.codigo},
+            commit=False,
+        )
+        return gym, cuenta_jefe, expira_en
 
     def update_gym(self, gym_id: str, data: GymUpdate, actor: UsuarioInterno) -> Gimnasio:
         """Updates gym information; subdomain is strictly immutable (RF-08)."""

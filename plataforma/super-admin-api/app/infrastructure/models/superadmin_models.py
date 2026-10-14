@@ -290,3 +290,25 @@ class Auditoria(Base):
     hash_previo = Column(String(64), nullable=True)
     hash_actual = Column(String(64), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class RegistroAutonomo(Base):
+    """Registro autónomo desde la web pública (SA-RF-34). Tabla de la migración 031."""
+    __tablename__ = "registros_autonomos"
+    __table_args__ = {"schema": _schema()}
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    nombre_gimnasio = Column(Text, nullable=False)
+    ciudad = Column(Text, nullable=False)
+    jefe_nombre = Column(Text, nullable=False)
+    jefe_correo = Column(String(255), nullable=False, index=True)
+    telefono = Column(Text, nullable=False)
+    telefono_normalizado = Column(String(15), nullable=False, index=True)
+    subdominio_sugerido = Column(String(63), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    expira_en = Column(DateTime(timezone=True), nullable=False)
+    usado_en = Column(DateTime(timezone=True), nullable=True)
+    gimnasio_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}gimnasios.id", ondelete="SET NULL"), nullable=True)
+    acepta_terminos_en = Column(DateTime(timezone=True), nullable=False)
+    ip = Column(String(45), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
