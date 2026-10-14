@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy import text
@@ -12,10 +12,12 @@ from zoneinfo import ZoneInfo
 
 from app.core.audit import AuditService
 from app.core.timezone import now_local, today_local
+from app.modules.caja.reglas import calcular_vencimiento_renovacion_c2
 from app.modules.caja.schemas import (
     AbrirTurnoRequest,
     AnularPagoMembresiaRequest,
     AnularVentaRequest,
+    CerrarTurnoAjenoRequest,
     CerrarTurnoRequest,
     EgresoResponseDto,
     HistorialMovimientosTurnoResponse,
@@ -48,17 +50,34 @@ class CajaService:
         staff_nombre: str,
         data: AbrirTurnoRequest
     ) -> TurnoResumenDto:
-        # 1. Validar que no tenga turno abierto previo
+        # 1. Validar si ya hay un turno abierto en el gimnasio (GW-RF-08, Contrato 1.1)
         check_query = text("""
-            SELECT id FROM platform.turnos_caja
-            WHERE staff_id = :staff_id AND estado = 'abierto'
+            SELECT t.id, t.staff_id, s.nombre as staff_nombre, t.abierto_en
+            FROM platform.turnos_caja t
+            JOIN platform.staff s ON s.id = t.staff_id
+            WHERE t.gimnasio_id = :gym_id AND t.estado = 'abierto'
         """)
-        res_check = await session.execute(check_query, {"staff_id": staff_id})
-        if res_check.mappings().first():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={"codigo": "TURNO_YA_ABIERTO", "mensaje": "Ya posee un turno de caja abierto actualmente"}
-            )
+        res_check = await session.execute(check_query, {"gym_id": gym_id})
+        turno_existente = res_check.mappings().first()
+        if turno_existente:
+            if turno_existente["staff_id"] == staff_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"codigo": "TURNO_YA_ABIERTO", "mensaje": "Ya posee un turno de caja abierto actualmente"}
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "codigo": "TURNO_AJENO_ABIERTO",
+                        "mensaje": f"Existe un turno de caja abierto por {turno_existente['staff_nombre']}",
+                        "detalles": {
+                            "turno_id": str(turno_existente["id"]),
+                            "abierto_por_nombre": turno_existente["staff_nombre"],
+                            "abierto_en": turno_existente["abierto_en"].isoformat()
+                        }
+                    }
+                )
 
         # 2. Inserción con Savepoint para prevenir condiciones de carrera (TOCTOU) ante requests simultáneos
         try:
@@ -79,7 +98,21 @@ class CajaService:
                 turno_id = row["id"]
                 abierto_en = row["abierto_en"]
         except IntegrityError:
-            # Captura violación de constraint único ux_turno_abierto_por_staff ante concurrencia
+            res_carrera = await session.execute(check_query, {"gym_id": gym_id})
+            t_carrera = res_carrera.mappings().first()
+            if t_carrera and t_carrera["staff_id"] != staff_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "codigo": "TURNO_AJENO_ABIERTO",
+                        "mensaje": f"Existe un turno de caja abierto por {t_carrera['staff_nombre']}",
+                        "detalles": {
+                            "turno_id": str(t_carrera["id"]),
+                            "abierto_por_nombre": t_carrera["staff_nombre"],
+                            "abierto_en": t_carrera["abierto_en"].isoformat()
+                        }
+                    }
+                )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={"codigo": "TURNO_YA_ABIERTO", "mensaje": "Ya posee un turno de caja abierto actualmente"}
@@ -105,7 +138,9 @@ class CajaService:
             base_inicial=data.base_inicial,
             abierto_en=abierto_en,
             estado="abierto",
-            total_esperado_efectivo=data.base_inicial
+            total_esperado_efectivo=data.base_inicial,
+            es_propio=True,
+            abierto_por_nombre=staff_nombre
         )
 
     @classmethod
@@ -120,17 +155,20 @@ class CajaService:
                    t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia
             FROM platform.turnos_caja t
             JOIN platform.staff s ON s.id = t.staff_id
-            WHERE t.gimnasio_id = :gym_id AND t.staff_id = :staff_id AND t.estado = 'abierto'
+            WHERE t.gimnasio_id = :gym_id AND t.estado = 'abierto'
         """)
-        res = await session.execute(query, {"gym_id": gym_id, "staff_id": staff_id})
-        turno = res.mappings().first()
+        res = await session.execute(query, {"gym_id": gym_id})
+        turno_dict = res.mappings().first()
 
-        if not turno:
+        if not turno_dict:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "No tiene un turno de caja abierto actualmente"}
+                detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "No hay un turno de caja abierto actualmente en este gimnasio"}
             )
 
+        turno = dict(turno_dict)
+        turno["es_propio"] = (turno["staff_id"] == staff_id)
+        turno["abierto_por_nombre"] = turno["staff_nombre"]
         return await cls._calcular_acumulados_turno(session, turno)
 
     @classmethod
@@ -142,7 +180,7 @@ class CajaService:
         actor_nombre: str,
         data: CerrarTurnoRequest
     ) -> TurnoResumenDto:
-        # 1. Bloqueo pesimista del turno abierto
+        # 1. Bloqueo pesimista del turno abierto propio
         query = text("""
             SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre as staff_nombre, t.base_inicial,
                    t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia
@@ -169,14 +207,16 @@ class CajaService:
         update_query = text("""
             UPDATE platform.turnos_caja
             SET estado = 'cerrado', cerrado_en = :now_dt,
-                efectivo_contado = :contado, diferencia = :diff
+                efectivo_contado = :contado, diferencia = :diff,
+                cerrado_por = :staff_id
             WHERE id = :turno_id
         """)
         await session.execute(update_query, {
             "turno_id": turno["id"],
             "now_dt": now_dt,
             "contado": data.efectivo_contado,
-            "diff": diferencia
+            "diff": diferencia,
+            "staff_id": staff_id
         })
 
         # 4. Auditoría
@@ -200,6 +240,97 @@ class CajaService:
         resumen.cerrado_en = now_dt
         resumen.efectivo_contado = data.efectivo_contado
         resumen.diferencia = diferencia
+        resumen.cerrado_por_nombre = actor_nombre
+        resumen.es_propio = True
+        return resumen
+
+    @classmethod
+    async def cerrar_turno_ajeno(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        turno_id: UUID,
+        actor_id: UUID,
+        actor_nombre: str,
+        data: CerrarTurnoAjenoRequest
+    ) -> TurnoResumenDto:
+        """
+        Cierra un turno ajeno abierto fijando el conteo de efectivo y atribuyendo el descuadre
+        al staff que abrió el turno (GW-RF-08, Contrato 1.1).
+        """
+        # 1. Bloqueo pesimista del turno ajeno
+        query = text("""
+            SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre as staff_nombre, t.base_inicial,
+                   t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia
+            FROM platform.turnos_caja t
+            JOIN platform.staff s ON s.id = t.staff_id
+            WHERE t.id = :turno_id AND t.gimnasio_id = :gym_id
+            FOR UPDATE
+        """)
+        res = await session.execute(query, {"turno_id": turno_id, "gym_id": gym_id})
+        turno = res.mappings().first()
+
+        if not turno:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"codigo": "TURNO_NO_ENCONTRADO", "mensaje": "El turno de caja especificado no existe"}
+            )
+        if turno["estado"] != "abierto":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"codigo": "TURNO_YA_CERRADO", "mensaje": "El turno de caja ya se encuentra cerrado"}
+            )
+
+        # 2. Calcular acumulados y diferencia
+        resumen = await cls._calcular_acumulados_turno(session, turno)
+        diferencia = data.conteo_efectivo - resumen.total_esperado_efectivo
+
+        # 3. Cerrar turno ajeno registrando cerrado_por y nota
+        now_dt = now_local()
+        update_query = text("""
+            UPDATE platform.turnos_caja
+            SET estado = 'cerrado', cerrado_en = :now_dt,
+                efectivo_contado = :contado, diferencia = :diff,
+                cerrado_por = :actor_id, nota_cierre = :nota
+            WHERE id = :turno_id
+        """)
+        await session.execute(update_query, {
+            "turno_id": turno["id"],
+            "now_dt": now_dt,
+            "contado": data.conteo_efectivo,
+            "diff": diferencia,
+            "actor_id": actor_id,
+            "nota": data.nota
+        })
+
+        # 4. Auditoría append-only
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=gym_id,
+            actor_id=actor_id,
+            actor_nombre=actor_nombre,
+            accion="CERRAR_TURNO_AJENO",
+            entidad="turnos_caja",
+            entidad_id=str(turno["id"]),
+            detalle={
+                "staff_titular_id": str(turno["staff_id"]),
+                "staff_titular_nombre": turno["staff_nombre"],
+                "total_esperado_efectivo": float(resumen.total_esperado_efectivo),
+                "conteo_efectivo": float(data.conteo_efectivo),
+                "diferencia": float(diferencia),
+                "descuadre_atribuido_a": turno["staff_nombre"],
+                "nota": data.nota
+            }
+        )
+
+        resumen.estado = "cerrado"
+        resumen.cerrado_en = now_dt
+        resumen.efectivo_contado = data.conteo_efectivo
+        resumen.diferencia = diferencia
+        resumen.cerrado_por_nombre = actor_nombre
+        resumen.descuadre_atribuido_a_nombre = turno["staff_nombre"]
+        resumen.es_propio = (turno["staff_id"] == actor_id)
+        resumen.abierto_por_nombre = turno["staff_nombre"]
         return resumen
 
     @classmethod
@@ -285,6 +416,87 @@ class CajaService:
         resumen.diferencia = diferencia
         return resumen
 
+    @classmethod
+    async def _validar_y_calcular_descuento(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        staff_rol: str,
+        precio_lista: Decimal,
+        precio_cobrado: Optional[Decimal],
+        motivo_descuento: Optional[str]
+    ) -> Tuple[Decimal, Decimal, Optional[str]]:
+        """
+        Valida y calcula el descuento aplicable según GW-RF-53 y Contrato 1.2:
+        Retorna (precio_cobrado_final, descuento_pct, motivo_final).
+        - Si precio_cobrado is None: se cobra precio_lista, descuento_pct = 0, motivo = None.
+        - Si precio_cobrado >= precio_lista: se cobra precio_cobrado, descuento_pct = 0, motivo = None.
+        - Si precio_cobrado < precio_lista:
+          1. Validar tenant.permitir_descuentos -> 403 DESCUENTOS_DESHABILITADOS
+          2. Validar permiso de descuento (staff_rol == 'jefe' o permisos_rol.puede_editar en 'caja') -> 403 SIN_PERMISO_DESCUENTO
+          3. Validar motivo obligatorio y no vacío -> 422 MOTIVO_DESCUENTO_REQUERIDO
+          4. Calcular descuento_pct = round(((precio_lista - precio_cobrado) / precio_lista) * Decimal("100"), 2)
+          5. Validar que descuento_pct <= tenant.tope_descuento_pct -> 422 DESCUENTO_SUPERA_TOPE
+        """
+        if precio_cobrado is None:
+            return (precio_lista, Decimal("0.0"), None)
+
+        if precio_cobrado >= precio_lista:
+            return (precio_cobrado, Decimal("0.0"), None)
+
+        # Precio cobrado menor a precio de lista -> Aplica regla de descuento (GW-RF-53, Contrato 1.2)
+        q_t = text("SELECT permitir_descuentos, tope_descuento_pct FROM platform.tenant WHERE id = :gym_id")
+        res_t = await session.execute(q_t, {"gym_id": gym_id})
+        row_t = res_t.mappings().first()
+        permitir_descuentos = row_t["permitir_descuentos"] if (row_t and row_t["permitir_descuentos"] is not None) else True
+        tope_descuento_pct = Decimal(str(row_t["tope_descuento_pct"])) if (row_t and row_t["tope_descuento_pct"] is not None) else Decimal("100.0")
+
+        if not permitir_descuentos:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"codigo": "DESCUENTOS_DESHABILITADOS", "mensaje": "Los descuentos se encuentran deshabilitados para este gimnasio"}
+            )
+
+        if staff_rol != "jefe":
+            q_p = text("""
+                SELECT puede_editar
+                FROM platform.permisos_rol
+                WHERE gimnasio_id = :gym_id AND rol = :rol AND submodulo = 'caja'
+            """)
+            res_p = await session.execute(q_p, {"gym_id": gym_id, "rol": staff_rol})
+            puede_editar = bool(res_p.scalar_one_or_none())
+            if not puede_editar:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={"codigo": "SIN_PERMISO_DESCUENTO", "mensaje": "No tiene permisos para autorizar o aplicar descuentos en caja"}
+                )
+
+        if not motivo_descuento or not motivo_descuento.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"codigo": "MOTIVO_DESCUENTO_REQUERIDO", "mensaje": "Debe proporcionar una justificación o motivo para el descuento aplicado"}
+            )
+
+        if precio_lista > 0:
+            descuento_pct = round(((precio_lista - precio_cobrado) / precio_lista) * Decimal("100"), 2)
+        else:
+            descuento_pct = Decimal("0.0")
+
+        if descuento_pct > tope_descuento_pct:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "codigo": "DESCUENTO_SUPERA_TOPE",
+                    "mensaje": f"El descuento aplicado ({descuento_pct}%) supera el tope máximo permitido ({tope_descuento_pct}%)",
+                    "detalles": {
+                        "tope_pct": float(tope_descuento_pct),
+                        "descuento_pct": float(descuento_pct)
+                    }
+                }
+            )
+
+        return (precio_cobrado, descuento_pct, motivo_descuento.strip())
+
     # =========================================================================
     # 2. PUNTO DE VENTA ATÓMICO Y KARDEX (RF-11, RF-12)
     # =========================================================================
@@ -295,6 +507,8 @@ class CajaService:
         session: AsyncSession,
         gym_id: UUID,
         staff_id: UUID,
+        staff_rol: str,
+        staff_nombre: str,
         idempotency_key: str,
         data: RegistrarVentaRequest
     ) -> VentaResponseDto:
@@ -373,24 +587,33 @@ class CajaService:
                         }
                     )
 
-        # 4. Cálculo de Precios Autoritativos y Subtotales
+        # 4. Cálculo de Precios Autoritativos, Descuentos y Subtotales
         items_procesados = []
         total_calculado = Decimal("0.0")
 
         for it in data.items:
             if it.tipo == "producto":
-                # REGLA DE SEGURIDAD: Precio autoritativo tomado directo de platform.productos.precio
-                precio_unitario = Decimal(str(productos_map[it.producto_id]["precio"]))
+                # REGLA DE SEGURIDAD: Precio lista tomado directo de platform.productos.precio
+                precio_lista = Decimal(str(productos_map[it.producto_id]["precio"]))
             else:
-                # Pases de día y pases de clase toman el valor enviado
+                # Pases de día y pases de clase toman el valor base enviado
                 if it.precio_unitario is None:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail={"codigo": "PRECIO_UNITARIO_REQUERIDO", "mensaje": f"Debe proporcionar precio_unitario para '{it.descripcion}'"}
                     )
-                precio_unitario = it.precio_unitario
+                precio_lista = it.precio_unitario
 
-            subtotal = precio_unitario * it.cantidad
+            precio_cobrado_unit, desc_pct, mot_desc = await cls._validar_y_calcular_descuento(
+                session=session,
+                gym_id=gym_id,
+                staff_rol=staff_rol,
+                precio_lista=precio_lista,
+                precio_cobrado=it.precio_cobrado,
+                motivo_descuento=it.motivo_descuento
+            )
+
+            subtotal = precio_cobrado_unit * it.cantidad
             total_calculado += subtotal
 
             items_procesados.append({
@@ -398,8 +621,12 @@ class CajaService:
                 "producto_id": it.producto_id,
                 "descripcion": it.descripcion.strip(),
                 "cantidad": it.cantidad,
-                "precio_unitario": precio_unitario,
-                "subtotal": subtotal
+                "precio_unitario": precio_cobrado_unit,
+                "subtotal": subtotal,
+                "precio_lista": precio_lista,
+                "precio_cobrado": precio_cobrado_unit,
+                "descuento_pct": desc_pct,
+                "motivo_descuento": mot_desc
             })
 
         # 5. Validación de Pago en Efectivo y Cambio
@@ -450,9 +677,11 @@ class CajaService:
         for it in items_procesados:
             insert_item_query = text("""
                 INSERT INTO platform.venta_items (
-                    gimnasio_id, venta_id, tipo, producto_id, descripcion, cantidad, precio_unitario, subtotal
+                    gimnasio_id, venta_id, tipo, producto_id, descripcion, cantidad, precio_unitario, subtotal,
+                    precio_lista, precio_cobrado, descuento_pct, motivo_descuento
                 ) VALUES (
-                    :gym_id, :venta_id, :tipo, :producto_id, :descripcion, :cantidad, :precio_unitario, :subtotal
+                    :gym_id, :venta_id, :tipo, :producto_id, :descripcion, :cantidad, :precio_unitario, :subtotal,
+                    :precio_lista, :precio_cobrado, :descuento_pct, :motivo_descuento
                 ) RETURNING id
             """)
             res_it = await session.execute(insert_item_query, {
@@ -463,7 +692,11 @@ class CajaService:
                 "descripcion": it["descripcion"],
                 "cantidad": it["cantidad"],
                 "precio_unitario": it["precio_unitario"],
-                "subtotal": it["subtotal"]
+                "subtotal": it["subtotal"],
+                "precio_lista": it["precio_lista"],
+                "precio_cobrado": it["precio_cobrado"],
+                "descuento_pct": it["descuento_pct"],
+                "motivo_descuento": it["motivo_descuento"]
             })
             item_id = res_it.scalar_one()
 
@@ -497,7 +730,11 @@ class CajaService:
                 descripcion=it["descripcion"],
                 cantidad=it["cantidad"],
                 precio_unitario=it["precio_unitario"],
-                subtotal=it["subtotal"]
+                subtotal=it["subtotal"],
+                precio_lista=it["precio_lista"],
+                precio_cobrado=it["precio_cobrado"],
+                descuento_pct=it["descuento_pct"],
+                motivo_descuento=it["motivo_descuento"]
             ))
 
         return VentaResponseDto(
@@ -660,16 +897,14 @@ class CajaService:
             }
         )
 
-    # =========================================================================
-    # 3. PAGOS DE MEMBRESÍA LIGADOS AL TURNO (RF-15, RF-16, RF-25)
-    # =========================================================================
-
     @classmethod
     async def registrar_pago_membresia(
         cls,
         session: AsyncSession,
         gym_id: UUID,
         staff_id: UUID,
+        staff_rol: str,
+        staff_nombre: str,
         idempotency_key: str,
         data: RegistrarPagoMembresiaRequest
     ) -> PagoMembresiaResponseDto:
@@ -695,67 +930,223 @@ class CajaService:
             )
         turno_id = turno["id"]
 
-        # 3. Bloqueo de la membresía para extensión de vigencia
-        memb_query = text("""
-            SELECT id, deportista_id, fecha_inicio, fecha_vencimiento, cancelada
-            FROM platform.membresias
-            WHERE id = :membresia_id AND gimnasio_id = :gym_id
-            FOR UPDATE
-        """)
-        res_memb = await session.execute(memb_query, {"membresia_id": data.membresia_id, "gym_id": gym_id})
-        memb = res_memb.mappings().first()
-
-        if not memb:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"codigo": "MEMBRESIA_NO_ENCONTRADA", "mensaje": "La membresía especificada no existe"}
-            )
-        if memb["cancelada"]:
+        # 3. Validación de destino: membresía individual o paquete grupal (GW-RF-52, Contrato 1.3)
+        if not data.membresia_id and not data.paquete_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"codigo": "MEMBRESIA_CANCELADA", "mensaje": "No se pueden registrar pagos a una membresía cancelada"}
+                detail={"codigo": "DESTINO_PAGO_REQUERIDO", "mensaje": "Debe especificar membresia_id o paquete_id"}
+            )
+        if data.membresia_id and data.paquete_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"codigo": "DESTINO_PAGO_AMBIGUO", "mensaje": "Especifique membresia_id o paquete_id, no ambos"}
             )
 
-        # 4. Cálculo de nueva fecha de vencimiento (RF-25: suma días, no se pierde lo pagado)
         hoy = today_local()
-        venc_actual: date = memb["fecha_vencimiento"]
-        if venc_actual < hoy:
-            nueva_fecha_venc = hoy + timedelta(days=data.dias_agregados)
+        # Consultar días de gracia del tenant
+        q_tenant_gracia = text("SELECT dias_gracia_mora FROM platform.tenant WHERE id = :gym_id")
+        res_tg = await session.execute(q_tenant_gracia, {"gym_id": gym_id})
+        dias_gracia = res_tg.scalar() or 3
+
+        if data.membresia_id:
+            # --- Caso A: Pago de Membresía Individual ---
+            memb_query = text("""
+                SELECT m.id, m.deportista_id, m.fecha_inicio, m.fecha_vencimiento, m.cancelada,
+                       m.plan_precio_vendido, p.precio as plan_precio, p.duracion_dias as plan_duracion
+                FROM platform.membresias m
+                JOIN platform.planes p ON p.id = m.plan_id
+                WHERE m.id = :membresia_id AND m.gimnasio_id = :gym_id
+                FOR UPDATE
+            """)
+            res_memb = await session.execute(memb_query, {"membresia_id": data.membresia_id, "gym_id": gym_id})
+            memb = res_memb.mappings().first()
+
+            if not memb:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"codigo": "MEMBRESIA_NO_ENCONTRADA", "mensaje": "La membresía especificada no existe"}
+                )
+            if memb["cancelada"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"codigo": "MEMBRESIA_CANCELADA", "mensaje": "No se pueden registrar pagos a una membresía cancelada"}
+                )
+
+            precio_lista = Decimal(str(memb["plan_precio_vendido"] or memb["plan_precio"] or data.monto))
+            precio_evaluar = data.precio_cobrado if data.precio_cobrado is not None else data.monto
+            precio_cobrado_final, desc_pct, mot_desc = await cls._validar_y_calcular_descuento(
+                session=session,
+                gym_id=gym_id,
+                staff_rol=staff_rol,
+                precio_lista=precio_lista,
+                precio_cobrado=precio_evaluar,
+                motivo_descuento=data.motivo_descuento
+            )
+            monto_a_cobrar = precio_cobrado_final if data.precio_cobrado is not None else data.monto
+
+            venc_actual: date = memb["fecha_vencimiento"]
+            dias_sumar = data.dias_agregados if data.dias_agregados > 0 else (memb["plan_duracion"] or 30)
+
+            tuvo_checkin_en_gracia = False
+            if venc_actual < hoy:
+                f_desde_gracia = venc_actual + timedelta(days=1)
+                f_hasta_gracia = venc_actual + timedelta(days=dias_gracia)
+                q_chk = text("""
+                    SELECT EXISTS(
+                        SELECT 1 FROM platform.checkins
+                        WHERE gimnasio_id = :gym_id
+                          AND deportista_id = :dep_id
+                          AND tipo = 'ingreso'
+                          AND resultado IN ('abrio', 'alerta_mora')
+                          AND CAST(ts_utc AT TIME ZONE 'America/Bogota' AS date) BETWEEN :f_desde AND :f_hasta
+                    )
+                """)
+                res_chk = await session.execute(q_chk, {
+                    "gym_id": gym_id,
+                    "dep_id": memb["deportista_id"],
+                    "f_desde": f_desde_gracia,
+                    "f_hasta": f_hasta_gracia
+                })
+                tuvo_checkin_en_gracia = bool(res_chk.scalar())
+
+            _, nueva_fecha_venc = calcular_vencimiento_renovacion_c2(
+                venc_actual=venc_actual,
+                hoy=hoy,
+                dias_duracion=dias_sumar,
+                dias_gracia_mora=dias_gracia,
+                tuvo_checkin_en_gracia=tuvo_checkin_en_gracia
+            )
+
+            # Actualizar vencimiento en platform.membresias
+            await session.execute(text("""
+                UPDATE platform.membresias
+                SET fecha_vencimiento = :nueva_fecha, updated_at = now()
+                WHERE id = :membresia_id
+            """), {"nueva_fecha": nueva_fecha_venc, "membresia_id": data.membresia_id})
+
         else:
-            nueva_fecha_venc = venc_actual + timedelta(days=data.dias_agregados)
+            # --- Caso B: Pago de Paquete Grupal (un solo pago cubre N membresías, GW-RF-52) ---
+            q_paq = text("""
+                SELECT pq.id, pq.plan_id, p.nombre as plan_nombre, p.precio as plan_precio, p.duracion_dias
+                FROM platform.paquetes pq
+                JOIN platform.planes p ON p.id = pq.plan_id
+                WHERE pq.id = :paquete_id AND pq.gimnasio_id = :gym_id
+            """)
+            res_paq = await session.execute(q_paq, {"paquete_id": data.paquete_id, "gym_id": gym_id})
+            paq = res_paq.mappings().first()
+            if not paq:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"codigo": "PAQUETE_NO_ENCONTRADO", "mensaje": "El paquete de membresías especificado no existe"}
+                )
+
+            q_membs = text("""
+                SELECT m.id, m.deportista_id, m.fecha_inicio, m.fecha_vencimiento, m.cancelada
+                FROM platform.membresias m
+                WHERE m.paquete_id = :paquete_id AND m.gimnasio_id = :gym_id
+                ORDER BY m.id
+                FOR UPDATE
+            """)
+            res_membs = await session.execute(q_membs, {"paquete_id": data.paquete_id, "gym_id": gym_id})
+            membs = res_membs.mappings().all()
+            if not membs:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"codigo": "MEMBRESIAS_PAQUETE_NO_ENCONTRADAS", "mensaje": "No se encontraron membresías asociadas a este paquete"}
+                )
+
+            precio_lista = Decimal(str(paq["plan_precio"]))
+            precio_evaluar = data.precio_cobrado if data.precio_cobrado is not None else data.monto
+            precio_cobrado_final, desc_pct, mot_desc = await cls._validar_y_calcular_descuento(
+                session=session,
+                gym_id=gym_id,
+                staff_rol=staff_rol,
+                precio_lista=precio_lista,
+                precio_cobrado=precio_evaluar,
+                motivo_descuento=data.motivo_descuento
+            )
+            monto_a_cobrar = precio_cobrado_final if data.precio_cobrado is not None else data.monto
+            dias_sumar = data.dias_agregados if data.dias_agregados > 0 else paq["duracion_dias"]
+
+            nueva_fecha_venc = None
+            # Extender cada membresía del paquete con Regla C2
+            for m in membs:
+                v_act: date = m["fecha_vencimiento"]
+                chk_gracia = False
+                if v_act < hoy:
+                    f_d = v_act + timedelta(days=1)
+                    f_h = v_act + timedelta(days=dias_gracia)
+                    q_chk = text("""
+                        SELECT EXISTS(
+                            SELECT 1 FROM platform.checkins
+                            WHERE gimnasio_id = :gym_id
+                              AND deportista_id = :dep_id
+                              AND tipo = 'ingreso'
+                              AND resultado IN ('abrio', 'alerta_mora')
+                              AND CAST(ts_utc AT TIME ZONE 'America/Bogota' AS date) BETWEEN :f_desde AND :f_hasta
+                        )
+                    """)
+                    res_c = await session.execute(q_chk, {
+                        "gym_id": gym_id,
+                        "dep_id": m["deportista_id"],
+                        "f_desde": f_d,
+                        "f_hasta": f_h
+                    })
+                    chk_gracia = bool(res_c.scalar())
+
+                _, nv = calcular_vencimiento_renovacion_c2(
+                    venc_actual=v_act,
+                    hoy=hoy,
+                    dias_duracion=dias_sumar,
+                    dias_gracia_mora=dias_gracia,
+                    tuvo_checkin_en_gracia=chk_gracia
+                )
+                await session.execute(text("""
+                    UPDATE platform.membresias
+                    SET fecha_vencimiento = :nv, updated_at = now()
+                    WHERE id = :mid
+                """), {"nv": nv, "mid": m["id"]})
+                nueva_fecha_venc = nv
 
         # 5. Cálculo de cambio
         cambio_devuelto = None
         if data.tipo_medio == "efectivo" and data.valor_recibido is not None:
-            if data.valor_recibido < data.monto:
+            if data.valor_recibido < monto_a_cobrar:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={"codigo": "PAGO_INSUFICIENTE", "mensaje": f"El valor recibido ({data.valor_recibido}) es menor al valor a pagar ({data.monto})"}
+                    detail={"codigo": "PAGO_INSUFICIENTE", "mensaje": f"El valor recibido ({data.valor_recibido}) es menor al valor a pagar ({monto_a_cobrar})"}
                 )
-            cambio_devuelto = data.valor_recibido - data.monto
+            cambio_devuelto = data.valor_recibido - monto_a_cobrar
 
         # 6. Inserción con Savepoint ante carreras simultáneas de idempotencia
         try:
             async with session.begin_nested():
                 insert_pago = text("""
                     INSERT INTO platform.pagos_membresia (
-                        gimnasio_id, turno_id, membresia_id, monto, metodo, tipo_medio,
-                        dias_agregados, idempotency_key, registrado_por, created_at
+                        gimnasio_id, turno_id, membresia_id, paquete_id, monto, metodo, tipo_medio,
+                        dias_agregados, idempotency_key, registrado_por, created_at,
+                        precio_lista, precio_cobrado, descuento_pct, motivo_descuento
                     ) VALUES (
-                        :gym_id, :turno_id, :membresia_id, :monto, :metodo, :tipo_medio,
-                        :dias_agregados, :idempotency_key, :registrado_por, now()
+                        :gym_id, :turno_id, :membresia_id, :paquete_id, :monto, :metodo, :tipo_medio,
+                        :dias_agregados, :idempotency_key, :registrado_por, now(),
+                        :precio_lista, :precio_cobrado, :descuento_pct, :motivo_descuento
                     ) RETURNING id, created_at
                 """)
                 res_p = await session.execute(insert_pago, {
                     "gym_id": gym_id,
                     "turno_id": turno_id,
                     "membresia_id": data.membresia_id,
-                    "monto": data.monto,
+                    "paquete_id": data.paquete_id,
+                    "monto": monto_a_cobrar,
                     "metodo": data.metodo.strip(),
                     "tipo_medio": data.tipo_medio,
                     "dias_agregados": data.dias_agregados,
                     "idempotency_key": clean_key,
-                    "registrado_por": staff_id
+                    "registrado_por": staff_id,
+                    "precio_lista": precio_lista,
+                    "precio_cobrado": precio_cobrado_final,
+                    "descuento_pct": desc_pct,
+                    "motivo_descuento": mot_desc
                 })
                 row_p = res_p.mappings().one()
                 pago_id = row_p["id"]
@@ -766,22 +1157,20 @@ class CajaService:
                 return existente_carrera
             raise
 
-        # 7. Actualizar vencimiento en platform.membresias
-        await session.execute(text("""
-            UPDATE platform.membresias
-            SET fecha_vencimiento = :nueva_fecha, updated_at = now()
-            WHERE id = :membresia_id
-        """), {"nueva_fecha": nueva_fecha_venc, "membresia_id": data.membresia_id})
-
         return PagoMembresiaResponseDto(
             id=pago_id,
             turno_id=turno_id,
             membresia_id=data.membresia_id,
-            monto=data.monto,
+            paquete_id=data.paquete_id,
+            monto=monto_a_cobrar,
             metodo=data.metodo.strip(),
             tipo_medio=data.tipo_medio,
             dias_agregados=data.dias_agregados,
             nueva_fecha_vencimiento=nueva_fecha_venc,
+            precio_lista=precio_lista,
+            precio_cobrado=precio_cobrado_final,
+            descuento_pct=desc_pct,
+            motivo_descuento=mot_desc,
             valor_recibido=data.valor_recibido,
             cambio_devuelto=cambio_devuelto,
             anulado=False,
@@ -790,6 +1179,130 @@ class CajaService:
             created_at=created_at,
             idempotente_reintento=False
         )
+
+    @classmethod
+    async def _recalcular_vencimiento_membresia_desde_historial(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        membresia_id: UUID
+    ) -> date:
+        """
+        Recalcula la fecha de vencimiento autoritativa desde el historial completo:
+        1. Base: fecha_inicio + plan_duracion_dias_vendida (o duración del plan).
+        2. Replay secuencial de eventos (congelamientos y pagos vigentes no anulados).
+        3. Aplica Regla C2 para cada pago según los check-ins reales en ventana de gracia.
+        """
+        # 1. Obtener membresía y duración base
+        q_m = text("""
+            SELECT m.fecha_inicio, m.plan_duracion_dias_vendida, m.deportista_id, m.paquete_id, p.duracion_dias as plan_duracion
+            FROM platform.membresias m
+            JOIN platform.planes p ON p.id = m.plan_id
+            WHERE m.id = :m_id AND m.gimnasio_id = :gym_id
+        """)
+        res_m = await session.execute(q_m, {"m_id": membresia_id, "gym_id": gym_id})
+        m = res_m.mappings().first()
+        if not m:
+            return today_local()
+
+        duracion_ini = m["plan_duracion_dias_vendida"] or m["plan_duracion"] or 30
+        curr_venc: date = m["fecha_inicio"] + timedelta(days=duracion_ini)
+        dep_id = m["deportista_id"]
+        paq_id = m["paquete_id"]
+
+        # 2. Configuración de gracia del tenant
+        q_tg = text("SELECT dias_gracia_mora FROM platform.tenant WHERE id = :gym_id")
+        res_tg = await session.execute(q_tg, {"gym_id": gym_id})
+        dias_gracia = res_tg.scalar() or 3
+
+        # 3. Pagos activos no anulados (excluye el pago recién anulado, incluye pagos de paquete)
+        if paq_id is not None:
+            q_pagos = text("""
+                SELECT id, dias_agregados,
+                       CAST(created_at AT TIME ZONE 'America/Bogota' AS date) as fecha_pago,
+                       created_at
+                FROM platform.pagos_membresia
+                WHERE gimnasio_id = :gym_id 
+                  AND (membresia_id = :m_id OR paquete_id = :paq_id)
+                  AND anulado = false
+                ORDER BY created_at ASC
+            """)
+            res_p = await session.execute(q_pagos, {"gym_id": gym_id, "m_id": membresia_id, "paq_id": paq_id})
+        else:
+            q_pagos = text("""
+                SELECT id, dias_agregados,
+                       CAST(created_at AT TIME ZONE 'America/Bogota' AS date) as fecha_pago,
+                       created_at
+                FROM platform.pagos_membresia
+                WHERE gimnasio_id = :gym_id 
+                  AND membresia_id = :m_id
+                  AND anulado = false
+                ORDER BY created_at ASC
+            """)
+            res_p = await session.execute(q_pagos, {"gym_id": gym_id, "m_id": membresia_id})
+        pagos = res_p.mappings().all()
+
+        # 4. Congelamientos cerrados ordenados cronológicamente
+        q_cong = text("""
+            SELECT id, fecha_inicio, fecha_fin, dias, created_at
+            FROM platform.congelamientos
+            WHERE gimnasio_id = :gym_id AND membresia_id = :m_id AND fecha_fin IS NOT NULL
+            ORDER BY fecha_inicio ASC
+        """)
+        res_c = await session.execute(q_cong, {"gym_id": gym_id, "m_id": membresia_id})
+        congelamientos = res_c.mappings().all()
+
+        # 5. Mezclar eventos en orden cronológico
+        eventos = []
+        for p in pagos:
+            eventos.append(("pago", p["fecha_pago"], p["created_at"], p))
+        for c in congelamientos:
+            eventos.append(("congelamiento", c["fecha_inicio"], c["created_at"], c))
+
+        # Ordenar por fecha del evento y timestamp
+        eventos.sort(key=lambda x: (x[1], x[2]))
+
+        # 6. Replay secuencial de eventos
+        for tipo, fecha_ev, _, data in eventos:
+            if tipo == "congelamiento":
+                # Si inició mientras la membresía aún estaba vigente
+                if data["fecha_inicio"] <= curr_venc:
+                    dias_ext = data["dias"] or 0
+                    curr_venc = curr_venc + timedelta(days=dias_ext)
+            elif tipo == "pago":
+                p_fecha = data["fecha_pago"]
+                dias_dur = data["dias_agregados"]
+                tuvo_checkin = False
+                if curr_venc < p_fecha:
+                    f_desde_gracia = curr_venc + timedelta(days=1)
+                    f_hasta_gracia = curr_venc + timedelta(days=dias_gracia)
+                    q_chk = text("""
+                        SELECT EXISTS(
+                            SELECT 1 FROM platform.checkins
+                            WHERE gimnasio_id = :gym_id
+                              AND deportista_id = :dep_id
+                              AND tipo = 'ingreso'
+                              AND resultado IN ('abrio', 'alerta_mora')
+                              AND CAST(ts_utc AT TIME ZONE 'America/Bogota' AS date) BETWEEN :f_desde AND :f_hasta
+                        )
+                    """)
+                    res_chk = await session.execute(q_chk, {
+                        "gym_id": gym_id,
+                        "dep_id": dep_id,
+                        "f_desde": f_desde_gracia,
+                        "f_hasta": f_hasta_gracia
+                    })
+                    tuvo_checkin = bool(res_chk.scalar())
+
+                _, curr_venc = calcular_vencimiento_renovacion_c2(
+                    venc_actual=curr_venc,
+                    hoy=p_fecha,
+                    dias_duracion=dias_dur,
+                    dias_gracia_mora=dias_gracia,
+                    tuvo_checkin_en_gracia=tuvo_checkin
+                )
+
+        return curr_venc
 
     @classmethod
     async def anular_pago_membresia(
@@ -801,9 +1314,23 @@ class CajaService:
         staff_nombre: str,
         data: AnularPagoMembresiaRequest
     ) -> None:
-        # 1. Bloqueo pesimista del pago
+        # 1. Validar turno de caja abierto actual en el gimnasio (GW-RF-16 CA3)
+        q_turno = text("""
+            SELECT id FROM platform.turnos_caja
+            WHERE gimnasio_id = :gym_id AND estado = 'abierto'
+        """)
+        res_t = await session.execute(q_turno, {"gym_id": gym_id})
+        t_row = res_t.mappings().first()
+        if not t_row:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "Se requiere un turno de caja abierto actualmente para registrar el reverso contable de la anulación"}
+            )
+        turno_actual_id = t_row["id"]
+
+        # 2. Bloqueo pesimista del pago
         pago_query = text("""
-            SELECT id, turno_id, membresia_id, monto, dias_agregados, anulado
+            SELECT id, turno_id, membresia_id, paquete_id, monto, tipo_medio, dias_agregados, anulado
             FROM platform.pagos_membresia
             WHERE id = :pago_id AND gimnasio_id = :gym_id
             FOR UPDATE
@@ -822,32 +1349,7 @@ class CajaService:
                 detail={"codigo": "PAGO_YA_ANULADO", "mensaje": "El pago de membresía ya se encuentra anulado"}
             )
 
-        # 2. Bloqueo de la membresía para revertir vigencia
-        memb_query = text("""
-            SELECT id, fecha_vencimiento FROM platform.membresias
-            WHERE id = :membresia_id AND gimnasio_id = :gym_id
-            FOR UPDATE
-        """)
-        res_m = await session.execute(memb_query, {"membresia_id": pago["membresia_id"], "gym_id": gym_id})
-        memb = res_m.mappings().first()
-
-        if not memb:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"codigo": "MEMBRESIA_NO_ENCONTRADA", "mensaje": "La membresía asociada al pago no existe"}
-            )
-
-        # 3. Reversión de la extensión de días (RF-16: el acceso histórico ya ocurrido permanece inmutable)
-        fecha_venc_actual: date = memb["fecha_vencimiento"]
-        fecha_venc_revertida = fecha_venc_actual - timedelta(days=pago["dias_agregados"])
-
-        await session.execute(text("""
-            UPDATE platform.membresias
-            SET fecha_vencimiento = :revertida, updated_at = now()
-            WHERE id = :membresia_id
-        """), {"revertida": fecha_venc_revertida, "membresia_id": pago["membresia_id"]})
-
-        # 4. Marcar pago como anulado
+        # 3. Marcar pago como anulado
         now_dt = now_local()
         await session.execute(text("""
             UPDATE platform.pagos_membresia
@@ -861,7 +1363,44 @@ class CajaService:
             "now_dt": now_dt
         })
 
-        # 5. Auditoría append-only
+        # 4. Registrar reverso contable en platform.devoluciones ligado al turno actual (GW-RF-16 CA3)
+        await session.execute(text("""
+            INSERT INTO platform.devoluciones (
+                gimnasio_id, pago_membresia_id, turno_pago_original_id, turno_devolucion_id,
+                monto, tipo_medio_reembolso, motivo, registrada_por, created_at
+            ) VALUES (
+                :gym_id, :pago_id, :turno_orig_id, :turno_dev_id,
+                :monto, :tipo_medio_reembolso, :motivo, :staff_id, now()
+            )
+        """), {
+            "gym_id": gym_id,
+            "pago_id": pago_id,
+            "turno_orig_id": pago["turno_id"],
+            "turno_dev_id": turno_actual_id,
+            "monto": pago["monto"],
+            "tipo_medio_reembolso": pago["tipo_medio"],
+            "motivo": data.motivo.strip(),
+            "staff_id": staff_id
+        })
+
+        # 5. Recalcular fecha de vencimiento desde el historial (GW-RF-16 CA1)
+        membresias_a_recalcular: List[UUID] = []
+        if pago["membresia_id"]:
+            membresias_a_recalcular.append(pago["membresia_id"])
+        elif pago.get("paquete_id"):
+            q_paq_membs = text("SELECT id FROM platform.membresias WHERE paquete_id = :paq_id AND gimnasio_id = :gym_id")
+            res_pm = await session.execute(q_paq_membs, {"paq_id": pago["paquete_id"], "gym_id": gym_id})
+            membresias_a_recalcular.extend([r["id"] for r in res_pm.mappings().all()])
+
+        for m_id in membresias_a_recalcular:
+            nueva_venc = await cls._recalcular_vencimiento_membresia_desde_historial(session, gym_id, m_id)
+            await session.execute(text("""
+                UPDATE platform.membresias
+                SET fecha_vencimiento = :recalculada, updated_at = now()
+                WHERE id = :m_id
+            """), {"recalculada": nueva_venc, "m_id": m_id})
+
+        # 6. Auditoría append-only
         await AuditService.registrar(
             session=session,
             gimnasio_id=gym_id,
@@ -871,11 +1410,10 @@ class CajaService:
             entidad="pagos_membresia",
             entidad_id=str(pago_id),
             detalle={
-                "membresia_id": str(pago["membresia_id"]),
+                "membresia_id": str(pago["membresia_id"]) if pago["membresia_id"] else None,
+                "paquete_id": str(pago["paquete_id"]) if pago.get("paquete_id") else None,
                 "monto_anulado": float(pago["monto"]),
-                "dias_revertidos": pago["dias_agregados"],
-                "fecha_vencimiento_anterior": str(fecha_venc_actual),
-                "fecha_vencimiento_revertida": str(fecha_venc_revertida),
+                "turno_reverso_id": str(turno_actual_id),
                 "motivo": data.motivo.strip()
             }
         )
@@ -1111,7 +1649,11 @@ class CajaService:
             total_esperado_efectivo=total_esperado,
             efectivo_contado=Decimal(str(turno["efectivo_contado"])) if turno.get("efectivo_contado") is not None else None,
             diferencia=Decimal(str(turno["diferencia"])) if turno.get("diferencia") is not None else None,
-            cierre_forzado=bool(turno.get("cierre_forzado", False))
+            cierre_forzado=bool(turno.get("cierre_forzado", False)),
+            es_propio=turno.get("es_propio", True),
+            abierto_por_nombre=turno.get("abierto_por_nombre") or turno.get("staff_nombre"),
+            cerrado_por_nombre=turno.get("cerrado_por_nombre"),
+            descuadre_atribuido_a_nombre=turno.get("descuadre_atribuido_a_nombre")
         )
 
     @classmethod
@@ -1134,7 +1676,8 @@ class CajaService:
 
         # Consultar ítems de la venta previa
         it_query = text("""
-            SELECT id, tipo, producto_id, descripcion, cantidad, precio_unitario, subtotal
+            SELECT id, tipo, producto_id, descripcion, cantidad, precio_unitario, subtotal,
+                   precio_lista, precio_cobrado, descuento_pct, motivo_descuento
             FROM platform.venta_items
             WHERE venta_id = :venta_id AND gimnasio_id = :gym_id
         """)
@@ -1147,7 +1690,11 @@ class CajaService:
                 descripcion=r["descripcion"],
                 cantidad=r["cantidad"],
                 precio_unitario=Decimal(str(r["precio_unitario"])),
-                subtotal=Decimal(str(r["subtotal"]))
+                subtotal=Decimal(str(r["subtotal"])),
+                precio_lista=Decimal(str(r["precio_lista"])) if r["precio_lista"] is not None else None,
+                precio_cobrado=Decimal(str(r["precio_cobrado"])) if r["precio_cobrado"] is not None else None,
+                descuento_pct=Decimal(str(r["descuento_pct"])) if r["descuento_pct"] is not None else None,
+                motivo_descuento=r["motivo_descuento"]
             ) for r in res_it.mappings()
         ]
 
@@ -1180,11 +1727,12 @@ class CajaService:
         idempotency_key: str
     ) -> Optional[PagoMembresiaResponseDto]:
         p_query = text("""
-            SELECT p.id, p.turno_id, p.membresia_id, p.monto, p.metodo, p.tipo_medio,
+            SELECT p.id, p.turno_id, p.membresia_id, p.paquete_id, p.monto, p.metodo, p.tipo_medio,
                    p.dias_agregados, p.anulado, p.motivo_anulacion, p.idempotency_key, p.created_at,
+                   p.precio_lista, p.precio_cobrado, p.descuento_pct, p.motivo_descuento,
                    m.fecha_vencimiento
             FROM platform.pagos_membresia p
-            JOIN platform.membresias m ON m.id = p.membresia_id
+            LEFT JOIN platform.membresias m ON m.id = p.membresia_id
             WHERE p.gimnasio_id = :gym_id AND p.idempotency_key = :key
         """)
         res_p = await session.execute(p_query, {"gym_id": gym_id, "key": idempotency_key})
@@ -1196,11 +1744,16 @@ class CajaService:
             id=p["id"],
             turno_id=p["turno_id"],
             membresia_id=p["membresia_id"],
+            paquete_id=p["paquete_id"],
             monto=Decimal(str(p["monto"])),
             metodo=p["metodo"],
             tipo_medio=p["tipo_medio"],
             dias_agregados=p["dias_agregados"],
             nueva_fecha_vencimiento=p["fecha_vencimiento"],
+            precio_lista=Decimal(str(p["precio_lista"])) if p["precio_lista"] is not None else None,
+            precio_cobrado=Decimal(str(p["precio_cobrado"])) if p["precio_cobrado"] is not None else None,
+            descuento_pct=Decimal(str(p["descuento_pct"])) if p["descuento_pct"] is not None else None,
+            motivo_descuento=p["motivo_descuento"],
             valor_recibido=None,
             cambio_devuelto=None,
             anulado=p["anulado"],

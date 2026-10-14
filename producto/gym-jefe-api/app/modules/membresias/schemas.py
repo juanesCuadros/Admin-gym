@@ -85,6 +85,8 @@ class CancelarMembresiaRequest(BaseModel):
 
 class CongelarMembresiaRequest(BaseModel):
     motivo: Optional[str] = Field(None, max_length=255, description="Motivo opcional del congelamiento")
+    dias: Optional[int] = Field(None, ge=1, description="Días programados de congelamiento")
+    fecha_fin: Optional[date] = Field(None, description="Fecha programada de fin del congelamiento")
 
 
 class MembresiaResponse(BaseModel):
@@ -100,6 +102,8 @@ class MembresiaResponse(BaseModel):
     dias_restantes_o_vencido: int
     congelamiento_activo: bool
     congelamiento_id: Optional[UUID] = None
+    plan_precio_vendido: Optional[Decimal] = None
+    plan_duracion_dias_vendida: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -120,6 +124,8 @@ class MembresiaListItemResponse(BaseModel):
     dias_restantes_o_vencido: int
     congelamiento_activo: bool
     congelamiento_id: Optional[UUID] = None
+    plan_precio_vendido: Optional[Decimal] = None
+    plan_duracion_dias_vendida: Optional[int] = None
 
 
 class MembresiasPaginadasResponse(BaseModel):
@@ -143,3 +149,41 @@ class FichaMembresiaResponse(BaseModel):
     membresia: MembresiaResponse
     congelamientos: List[CongelamientoItemResponse]
     pagos: List[Dict[str, Any]]
+
+
+# =============================================================================
+# 4. PLANES GRUPALES Y PAQUETES (GW-RF-52, Contrato 1.3)
+# =============================================================================
+
+class CrearPaqueteRequest(BaseModel):
+    plan_id: UUID = Field(..., description="UUID del plan grupal/paquete a contratar")
+    titular_id: UUID = Field(..., description="UUID del deportista titular (debe ser mayor de edad y beneficiario)")
+    beneficiarios: List[UUID] = Field(..., min_length=1, description="Lista de UUIDs de todos los beneficiarios (incluyendo al titular)")
+    fecha_inicio: Optional[date] = Field(None, description="Fecha de inicio general (default hoy local)")
+
+
+class PaqueteMembresiaItemDto(BaseModel):
+    id: UUID
+    deportista_id: UUID
+    deportista_nombre: str
+    fecha_inicio: date
+    fecha_vencimiento: date
+    precio_asignado: Decimal
+
+
+class CrearPaqueteResponse(BaseModel):
+    paquete_id: UUID
+    membresias: List[PaqueteMembresiaItemDto]
+
+
+class TitularResumenDto(BaseModel):
+    id: UUID
+    nombre: str
+    telefono: Optional[str] = None
+
+
+class DetallePaqueteResponse(BaseModel):
+    id: UUID
+    plan_nombre: str
+    titular: TitularResumenDto
+    membresias: List[PaqueteMembresiaItemDto]

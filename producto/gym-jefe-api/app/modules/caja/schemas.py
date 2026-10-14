@@ -19,6 +19,11 @@ class CierreForzadoRequest(BaseModel):
     efectivo_contado: Optional[Decimal] = Field(None, ge=0, description="Efectivo contado si se realizó arqueo físico")
 
 
+class CerrarTurnoAjenoRequest(BaseModel):
+    conteo_efectivo: Decimal = Field(..., ge=0, description="Efectivo físico real contado en caja al cerrar turno ajeno")
+    nota: Optional[str] = Field(None, max_length=500, description="Nota explicativa del cierre de turno ajeno")
+
+
 class TurnoResumenDto(BaseModel):
     id: UUID
     gimnasio_id: UUID
@@ -39,6 +44,10 @@ class TurnoResumenDto(BaseModel):
     diferencia: Optional[Decimal] = None
     cierre_forzado: bool = False
     revisado_en: Optional[datetime] = None
+    es_propio: bool = True
+    abierto_por_nombre: Optional[str] = None
+    cerrado_por_nombre: Optional[str] = None
+    descuadre_atribuido_a_nombre: Optional[str] = None
 
 
 # --- Punto de Venta (Ventas Multi-Ítem) ---
@@ -55,6 +64,8 @@ class VentaItemRequest(BaseModel):
         ge=0,
         description="Precio unitario para pases de día o clase. Para 'producto', se ignora y se toma platform.productos.precio."
     )
+    precio_cobrado: Optional[Decimal] = Field(None, ge=0, description="Precio unitario cobrado si tiene descuento")
+    motivo_descuento: Optional[str] = Field(None, max_length=255, description="Motivo obligatorio si precio_cobrado < precio_lista")
 
 
 class RegistrarVentaRequest(BaseModel):
@@ -73,6 +84,10 @@ class VentaItemResponseDto(BaseModel):
     cantidad: int
     precio_unitario: Decimal
     subtotal: Decimal
+    precio_lista: Optional[Decimal] = None
+    precio_cobrado: Optional[Decimal] = None
+    descuento_pct: Optional[Decimal] = None
+    motivo_descuento: Optional[str] = None
 
 
 class VentaResponseDto(BaseModel):
@@ -102,23 +117,31 @@ class AnularVentaRequest(BaseModel):
 
 # --- Pagos de Membresía ligados al turno ---
 class RegistrarPagoMembresiaRequest(BaseModel):
-    membresia_id: UUID = Field(..., description="UUID de la membresía a renovar o cobrar")
+    membresia_id: Optional[UUID] = Field(None, description="UUID de la membresía a renovar o cobrar")
+    paquete_id: Optional[UUID] = Field(None, description="UUID del paquete a cobrar (un solo pago cubre N membresías)")
     monto: Decimal = Field(..., gt=0, description="Valor pagado")
     metodo: str = Field(..., min_length=2, max_length=50, description="Texto libre (efectivo, nequi, tarjeta)")
     tipo_medio: Literal["efectivo", "otro"] = Field(..., description="Categoría de medio de pago")
-    dias_agregados: int = Field(..., ge=0, description="Días de vigencia a sumar a la membresía")
+    dias_agregados: int = Field(0, ge=0, description="Días de vigencia a sumar a la membresía")
     valor_recibido: Optional[Decimal] = Field(None, ge=0, description="Valor recibido si paga en efectivo para cálculo de cambio")
+    precio_cobrado: Optional[Decimal] = Field(None, ge=0, description="Precio cobrado si tiene descuento")
+    motivo_descuento: Optional[str] = Field(None, max_length=255, description="Motivo obligatorio si precio_cobrado < precio_lista")
 
 
 class PagoMembresiaResponseDto(BaseModel):
     id: UUID
     turno_id: UUID
-    membresia_id: UUID
+    membresia_id: Optional[UUID] = None
+    paquete_id: Optional[UUID] = None
     monto: Decimal
     metodo: str
     tipo_medio: str
     dias_agregados: int
-    nueva_fecha_vencimiento: date
+    nueva_fecha_vencimiento: Optional[date] = None
+    precio_lista: Optional[Decimal] = None
+    precio_cobrado: Optional[Decimal] = None
+    descuento_pct: Optional[Decimal] = None
+    motivo_descuento: Optional[str] = None
     valor_recibido: Optional[Decimal] = None
     cambio_devuelto: Optional[Decimal] = None
     anulado: bool

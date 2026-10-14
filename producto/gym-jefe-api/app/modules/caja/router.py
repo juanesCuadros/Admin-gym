@@ -13,6 +13,7 @@ from app.modules.caja.schemas import (
     AbrirTurnoRequest,
     AnularPagoMembresiaRequest,
     AnularVentaRequest,
+    CerrarTurnoAjenoRequest,
     CerrarTurnoRequest,
     CierreForzadoRequest,
     EgresoResponseDto,
@@ -101,6 +102,31 @@ async def cerrar_turno(
 
 
 @router.post(
+    "/turnos/{turno_id}/cerrar-ajeno",
+    response_model=TurnoResumenDto,
+    summary="Cierre de turno ajeno con atribución de descuadre (GW-RF-08, Contrato 1.1)"
+)
+async def cerrar_turno_ajeno(
+    turno_id: Annotated[UUID, Path(description="UUID del turno ajeno a cerrar")],
+    data: CerrarTurnoAjenoRequest,
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("caja", "crear"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    Permite a un recepcionista cerrar el turno abierto por otro compañero antes de abrir el propio.
+    El descuadre queda atribuido a quien abrió el turno.
+    """
+    return await CajaService.cerrar_turno_ajeno(
+        session=session,
+        gym_id=current_staff.gimnasio_id,
+        turno_id=turno_id,
+        actor_id=current_staff.id,
+        actor_nombre=current_staff.nombre,
+        data=data
+    )
+
+
+@router.post(
     "/turnos/{turno_id}/cierre-forzado",
     response_model=TurnoResumenDto,
     summary="Cierre forzado de turno por el Jefe / Administrador (RF-10, RF-39)"
@@ -183,6 +209,8 @@ async def registrar_venta(
         session=session,
         gym_id=current_staff.gimnasio_id,
         staff_id=current_staff.id,
+        staff_rol=current_staff.rol,
+        staff_nombre=current_staff.nombre,
         idempotency_key=x_idempotency_key,
         data=data
     )
@@ -251,6 +279,8 @@ async def registrar_pago_membresia(
         session=session,
         gym_id=current_staff.gimnasio_id,
         staff_id=current_staff.id,
+        staff_rol=current_staff.rol,
+        staff_nombre=current_staff.nombre,
         idempotency_key=x_idempotency_key,
         data=data
     )
