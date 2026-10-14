@@ -955,6 +955,114 @@ class CajaService:
         )
 
     @classmethod
+    async def _recalcular_vencimiento_membresia_desde_historial(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        membresia_id: UUID
+    ) -> date:
+        """
+        Recalcula la fecha de vencimiento autoritativa desde el historial completo:
+        1. Base: fecha_inicio + plan_duracion_dias_vendida (o duración del plan).
+        2. Replay secuencial de eventos (congelamientos y pagos vigentes no anulados).
+        3. Aplica Regla C2 para cada pago según los check-ins reales en ventana de gracia.
+        """
+        # 1. Obtener membresía y duración base
+        q_m = text("""
+            SELECT m.fecha_inicio, m.plan_duracion_dias_vendida, m.deportista_id, p.duracion_dias as plan_duracion
+            FROM platform.membresias m
+            JOIN platform.planes p ON p.id = m.plan_id
+            WHERE m.id = :m_id AND m.gimnasio_id = :gym_id
+        """)
+        res_m = await session.execute(q_m, {"m_id": membresia_id, "gym_id": gym_id})
+        m = res_m.mappings().first()
+        if not m:
+            return today_local()
+
+        duracion_ini = m["plan_duracion_dias_vendida"] or m["plan_duracion"] or 30
+        curr_venc: date = m["fecha_inicio"] + timedelta(days=duracion_ini)
+        dep_id = m["deportista_id"]
+
+        # 2. Configuración de gracia del tenant
+        q_tg = text("SELECT dias_gracia_mora FROM platform.tenant WHERE id = :gym_id")
+        res_tg = await session.execute(q_tg, {"gym_id": gym_id})
+        dias_gracia = res_tg.scalar() or 3
+
+        # 3. Pagos activos no anulados (excluye el pago recién anulado)
+        q_pagos = text("""
+            SELECT id, dias_agregados,
+                   CAST(created_at AT TIME ZONE 'America/Bogota' AS date) as fecha_pago,
+                   created_at
+            FROM platform.pagos_membresia
+            WHERE gimnasio_id = :gym_id AND membresia_id = :m_id AND anulado = false
+            ORDER BY created_at ASC
+        """)
+        res_p = await session.execute(q_pagos, {"gym_id": gym_id, "m_id": membresia_id})
+        pagos = res_p.mappings().all()
+
+        # 4. Congelamientos cerrados ordenados cronológicamente
+        q_cong = text("""
+            SELECT id, fecha_inicio, fecha_fin, dias, created_at
+            FROM platform.congelamientos
+            WHERE gimnasio_id = :gym_id AND membresia_id = :m_id AND fecha_fin IS NOT NULL
+            ORDER BY fecha_inicio ASC
+        """)
+        res_c = await session.execute(q_cong, {"gym_id": gym_id, "m_id": membresia_id})
+        congelamientos = res_c.mappings().all()
+
+        # 5. Mezclar eventos en orden cronológico
+        eventos = []
+        for p in pagos:
+            eventos.append(("pago", p["fecha_pago"], p["created_at"], p))
+        for c in congelamientos:
+            eventos.append(("congelamiento", c["fecha_inicio"], c["created_at"], c))
+
+        # Ordenar por fecha del evento y timestamp
+        eventos.sort(key=lambda x: (x[1], x[2]))
+
+        # 6. Replay secuencial de eventos
+        for tipo, fecha_ev, _, data in eventos:
+            if tipo == "congelamiento":
+                # Si inició mientras la membresía aún estaba vigente
+                if data["fecha_inicio"] <= curr_venc:
+                    dias_ext = data["dias"] or 0
+                    curr_venc = curr_venc + timedelta(days=dias_ext)
+            elif tipo == "pago":
+                p_fecha = data["fecha_pago"]
+                dias_dur = data["dias_agregados"]
+                tuvo_checkin = False
+                if curr_venc < p_fecha:
+                    f_desde_gracia = curr_venc + timedelta(days=1)
+                    f_hasta_gracia = curr_venc + timedelta(days=dias_gracia)
+                    q_chk = text("""
+                        SELECT EXISTS(
+                            SELECT 1 FROM platform.checkins
+                            WHERE gimnasio_id = :gym_id
+                              AND deportista_id = :dep_id
+                              AND tipo = 'ingreso'
+                              AND resultado IN ('abrio', 'alerta_mora')
+                              AND CAST(ts_utc AT TIME ZONE 'America/Bogota' AS date) BETWEEN :f_desde AND :f_hasta
+                        )
+                    """)
+                    res_chk = await session.execute(q_chk, {
+                        "gym_id": gym_id,
+                        "dep_id": dep_id,
+                        "f_desde": f_desde_gracia,
+                        "f_hasta": f_hasta_gracia
+                    })
+                    tuvo_checkin = bool(res_chk.scalar())
+
+                _, curr_venc = calcular_vencimiento_renovacion_c2(
+                    venc_actual=curr_venc,
+                    hoy=p_fecha,
+                    dias_duracion=dias_dur,
+                    dias_gracia_mora=dias_gracia,
+                    tuvo_checkin_en_gracia=tuvo_checkin
+                )
+
+        return curr_venc
+
+    @classmethod
     async def anular_pago_membresia(
         cls,
         session: AsyncSession,
@@ -964,9 +1072,23 @@ class CajaService:
         staff_nombre: str,
         data: AnularPagoMembresiaRequest
     ) -> None:
-        # 1. Bloqueo pesimista del pago
+        # 1. Validar turno de caja abierto actual en el gimnasio (GW-RF-16 CA3)
+        q_turno = text("""
+            SELECT id FROM platform.turnos_caja
+            WHERE gimnasio_id = :gym_id AND estado = 'abierto'
+        """)
+        res_t = await session.execute(q_turno, {"gym_id": gym_id})
+        t_row = res_t.mappings().first()
+        if not t_row:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "Se requiere un turno de caja abierto actualmente para registrar el reverso contable de la anulación"}
+            )
+        turno_actual_id = t_row["id"]
+
+        # 2. Bloqueo pesimista del pago
         pago_query = text("""
-            SELECT id, turno_id, membresia_id, monto, dias_agregados, anulado
+            SELECT id, turno_id, membresia_id, paquete_id, monto, tipo_medio, dias_agregados, anulado
             FROM platform.pagos_membresia
             WHERE id = :pago_id AND gimnasio_id = :gym_id
             FOR UPDATE
@@ -985,32 +1107,7 @@ class CajaService:
                 detail={"codigo": "PAGO_YA_ANULADO", "mensaje": "El pago de membresía ya se encuentra anulado"}
             )
 
-        # 2. Bloqueo de la membresía para revertir vigencia
-        memb_query = text("""
-            SELECT id, fecha_vencimiento FROM platform.membresias
-            WHERE id = :membresia_id AND gimnasio_id = :gym_id
-            FOR UPDATE
-        """)
-        res_m = await session.execute(memb_query, {"membresia_id": pago["membresia_id"], "gym_id": gym_id})
-        memb = res_m.mappings().first()
-
-        if not memb:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"codigo": "MEMBRESIA_NO_ENCONTRADA", "mensaje": "La membresía asociada al pago no existe"}
-            )
-
-        # 3. Reversión de la extensión de días (RF-16: el acceso histórico ya ocurrido permanece inmutable)
-        fecha_venc_actual: date = memb["fecha_vencimiento"]
-        fecha_venc_revertida = fecha_venc_actual - timedelta(days=pago["dias_agregados"])
-
-        await session.execute(text("""
-            UPDATE platform.membresias
-            SET fecha_vencimiento = :revertida, updated_at = now()
-            WHERE id = :membresia_id
-        """), {"revertida": fecha_venc_revertida, "membresia_id": pago["membresia_id"]})
-
-        # 4. Marcar pago como anulado
+        # 3. Marcar pago como anulado
         now_dt = now_local()
         await session.execute(text("""
             UPDATE platform.pagos_membresia
@@ -1024,7 +1121,44 @@ class CajaService:
             "now_dt": now_dt
         })
 
-        # 5. Auditoría append-only
+        # 4. Registrar reverso contable en platform.devoluciones ligado al turno actual (GW-RF-16 CA3)
+        await session.execute(text("""
+            INSERT INTO platform.devoluciones (
+                gimnasio_id, pago_membresia_id, turno_pago_original_id, turno_devolucion_id,
+                monto, tipo_medio_reembolso, motivo, registrada_por, created_at
+            ) VALUES (
+                :gym_id, :pago_id, :turno_orig_id, :turno_dev_id,
+                :monto, :tipo_medio_reembolso, :motivo, :staff_id, now()
+            )
+        """), {
+            "gym_id": gym_id,
+            "pago_id": pago_id,
+            "turno_orig_id": pago["turno_id"],
+            "turno_dev_id": turno_actual_id,
+            "monto": pago["monto"],
+            "tipo_medio_reembolso": pago["tipo_medio"],
+            "motivo": data.motivo.strip(),
+            "staff_id": staff_id
+        })
+
+        # 5. Recalcular fecha de vencimiento desde el historial (GW-RF-16 CA1)
+        membresias_a_recalcular: List[UUID] = []
+        if pago["membresia_id"]:
+            membresias_a_recalcular.append(pago["membresia_id"])
+        elif pago.get("paquete_id"):
+            q_paq_membs = text("SELECT id FROM platform.membresias WHERE paquete_id = :paq_id AND gimnasio_id = :gym_id")
+            res_pm = await session.execute(q_paq_membs, {"paq_id": pago["paquete_id"], "gym_id": gym_id})
+            membresias_a_recalcular.extend([r["id"] for r in res_pm.mappings().all()])
+
+        for m_id in membresias_a_recalcular:
+            nueva_venc = await cls._recalcular_vencimiento_membresia_desde_historial(session, gym_id, m_id)
+            await session.execute(text("""
+                UPDATE platform.membresias
+                SET fecha_vencimiento = :recalculada, updated_at = now()
+                WHERE id = :m_id
+            """), {"recalculada": nueva_venc, "m_id": m_id})
+
+        # 6. Auditoría append-only
         await AuditService.registrar(
             session=session,
             gimnasio_id=gym_id,
@@ -1034,11 +1168,10 @@ class CajaService:
             entidad="pagos_membresia",
             entidad_id=str(pago_id),
             detalle={
-                "membresia_id": str(pago["membresia_id"]),
+                "membresia_id": str(pago["membresia_id"]) if pago["membresia_id"] else None,
+                "paquete_id": str(pago["paquete_id"]) if pago.get("paquete_id") else None,
                 "monto_anulado": float(pago["monto"]),
-                "dias_revertidos": pago["dias_agregados"],
-                "fecha_vencimiento_anterior": str(fecha_venc_actual),
-                "fecha_vencimiento_revertida": str(fecha_venc_revertida),
+                "turno_reverso_id": str(turno_actual_id),
                 "motivo": data.motivo.strip()
             }
         )
