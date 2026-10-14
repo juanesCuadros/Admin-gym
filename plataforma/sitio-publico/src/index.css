@@ -493,3 +493,160 @@ a:hover {
     width: 100%;
   }
 }
+
+/* ---------- Estados y avisos ---------- */
+.estado {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 0;
+  color: var(--color-texto-suave);
+}
+
+.girando {
+  animation: girar 1s linear infinite;
+}
+
+@keyframes girar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .girando {
+    animation: none;
+  }
+
+  .boton {
+    transition: none;
+  }
+}
+
+.aviso {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px;
+  border-radius: var(--radio);
+  border: 1px solid;
+  margin: 16px 0;
+}
+
+.aviso p:last-child {
+  margin-bottom: 0;
+}
+
+.aviso .boton {
+  margin-top: 4px;
+}
+
+.aviso-icono {
+  flex: none;
+  margin-top: 2px;
+}
+
+.aviso-titulo {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.aviso-error {
+  background: var(--color-error-fondo);
+  border-color: #f0b7b2;
+  color: #5c1410;
+}
+
+.aviso-error .aviso-icono {
+  color: var(--color-error);
+}
+
+.aviso-exito {
+  background: var(--color-exito-fondo);
+  border-color: #b7dcc2;
+  color: #12391f;
+}
+
+.aviso-exito .aviso-icono {
+  color: var(--color-exito);
+}
+
+.aviso-info {
+  background: var(--color-aviso-fondo);
+  border-color: #ecd68f;
+  color: #4a3a0b;
+}
+
+/* ---------- Planes ---------- */
+.rejilla-planes {
+  list-style: none;
+  margin: 24px 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+}
+
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plan-prueba {
+  border: 2px solid var(--color-primario);
+}
+
+.plan-nombre {
+  font-size: 1.25rem;
+  margin-bottom: 4px;
+}
+
+.plan-precio {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-texto);
+  margin-bottom: 8px;
+}
+
+.plan-periodo {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--color-texto-suave);
+}
+
+.plan-descripcion {
+  color: var(--color-texto-suave);
+}
+
+.plan-datos {
+  margin: 0 0 16px;
+  flex: 1;
+}
+
+.plan-datos div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--color-borde);
+}
+
+.plan-datos dt {
+  color: var(--color-texto-suave);
+}
+
+.plan-datos dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.nota-pago {
+  margin-top: 32px;
+  max-width: 720px;
+}
+
+.nota-pago h2 {
+  font-size: 1.25rem;
+}
