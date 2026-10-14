@@ -354,3 +354,142 @@ a:hover {
 .boton-bloque {
   width: 100%;
 }
+
+.boton-claro {
+  background: transparent;
+  color: #ffffff;
+  border-color: rgb(255 255 255 / 70%);
+}
+
+.boton-claro:hover {
+  background: rgb(255 255 255 / 12%);
+  color: #ffffff;
+}
+
+.acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* ---------- Tarjetas ---------- */
+.tarjeta {
+  background: var(--color-superficie);
+  border: 1px solid var(--color-borde);
+  border-radius: var(--radio);
+  padding: 20px;
+  box-shadow: var(--sombra);
+}
+
+/* ---------- Inicio ---------- */
+.heroe {
+  background: var(--color-primario);
+  color: #e8efee;
+}
+
+.heroe-contenido {
+  padding-top: 56px;
+  padding-bottom: 56px;
+  max-width: 820px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.heroe h1 {
+  color: #ffffff;
+}
+
+.heroe-texto {
+  font-size: 1.125rem;
+  margin-bottom: 1.6em;
+}
+
+.heroe :focus-visible {
+  outline-color: var(--color-acento);
+}
+
+.etiqueta {
+  display: inline-block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-acento);
+  margin-bottom: 0.8em;
+}
+
+.intro {
+  max-width: 640px;
+}
+
+.rejilla-modulos {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.modulo p {
+  margin: 0;
+  color: var(--color-texto-suave);
+}
+
+.modulo-icono {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--color-primario-suave);
+  color: var(--color-primario);
+  margin-bottom: 12px;
+}
+
+.franja {
+  background: var(--color-primario-suave);
+}
+
+.pasos {
+  list-style: none;
+  margin: 24px 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+.paso {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.paso p {
+  margin: 0;
+}
+
+.paso-numero {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--color-primario);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.cierre {
+  text-align: center;
+}
+
+@media (max-width: 400px) {
+  .rejilla-modulos {
+    grid-template-columns: 1fr;
+  }
+
+  .acciones .boton {
+    width: 100%;
+  }
+}
