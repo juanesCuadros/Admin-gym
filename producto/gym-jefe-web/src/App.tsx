@@ -33,6 +33,7 @@ import { StaffPage } from './pages/personal/StaffPage';
 import { ConfigGeneralPage } from './pages/configuracion/ConfigGeneralPage';
 import { ConfigLandingPage } from './pages/configuracion/ConfigLandingPage';
 import { ConfigMetodosPagoPage } from './pages/configuracion/ConfigMetodosPagoPage';
+import { ConfigParametrosPage } from './pages/configuracion/ConfigParametrosPage';
 
 import { enConstruccion, PantallaTvAccesoPage } from './pages/enConstruccion/EnConstruccionPage';
 
@@ -46,7 +47,6 @@ const MovimientosStockPage = enConstruccion('Movimientos de stock');
 const ReporteIngresosPage = enConstruccion('Reportes · Ingresos');
 const ReporteMembresiasPage = enConstruccion('Reportes · Membresías');
 const ReporteAsistenciaPage = enConstruccion('Reportes · Asistencia');
-const ConfigParametrosPage = enConstruccion('Configuración · Parámetros');
 const AuditoriaPage = enConstruccion('Auditoría');
 
 /** Escucha eventos del interceptor que exigen cambiar de ruta. */
