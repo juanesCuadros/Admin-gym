@@ -58,6 +58,9 @@ export const PuntoDeVentaPage: React.FC = () => {
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
   const puedeVender = hasPermission('caja', 'crear');
+  // Consultas auxiliares solo con permiso: un 403 de permiso saca al usuario de la vista (interceptor).
+  const puedeVerInventario = hasPermission('inventario', 'leer');
+  const puedeVerConfig = hasPermission('configuracion', 'leer');
 
   // Catálogo
   const [busqueda, setBusqueda] = useState('');
@@ -85,6 +88,11 @@ export const PuntoDeVentaPage: React.FC = () => {
   const tipoMedio = metodosConfigurados ? tipoMedioDe(metodo) : tipoMedioManual;
 
   const cargarProductos = useCallback(async (texto: string) => {
+    if (!puedeVerInventario) {
+      setProductos([]);
+      setCargandoProductos(false);
+      return;
+    }
     setCargandoProductos(true);
     try {
       const res = await inventarioService.listarProductos({
@@ -100,7 +108,7 @@ export const PuntoDeVentaPage: React.FC = () => {
     } finally {
       setCargandoProductos(false);
     }
-  }, []);
+  }, [puedeVerInventario]);
 
   useEffect(() => {
     const t = window.setTimeout(() => cargarProductos(busqueda), 300);
@@ -108,6 +116,7 @@ export const PuntoDeVentaPage: React.FC = () => {
   }, [busqueda, cargarProductos]);
 
   useEffect(() => {
+    if (!puedeVerConfig) return;
     myGymService
       .getInfo()
       .then((i) => {
@@ -117,7 +126,7 @@ export const PuntoDeVentaPage: React.FC = () => {
         }
       })
       .catch(() => setInfo(null));
-  }, []);
+  }, [puedeVerConfig]);
 
   // Cualquier cambio en lo que se cobra invalida la clave anterior (es otra operación).
   useEffect(() => {
@@ -329,7 +338,11 @@ export const PuntoDeVentaPage: React.FC = () => {
             </Button>
           </div>
 
-          {cargandoProductos ? (
+          {!puedeVerInventario ? (
+            <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
+              No tienes permiso para ver el inventario. Puedes vender pases de día y de clase.
+            </p>
+          ) : cargandoProductos ? (
             <Cargando filas={5} alto={40} />
           ) : errorProductos ? (
             <ErrorCarga error={errorProductos} onReintentar={() => cargarProductos(busqueda)} />

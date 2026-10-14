@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Search, X, Loader2 } from 'lucide-react';
 import { deportistasService } from '../../api/deportistas.service';
 import { parseApiError } from '../../api/client';
+import { useAuth } from '../../contexts/AuthContext';
 import type { DeportistaBusquedaItem } from '../../types/comun.types';
 
 interface BuscadorDeportistaProps {
@@ -14,7 +15,8 @@ interface BuscadorDeportistaProps {
 
 /**
  * Autocompletado de deportistas por nombre o documento (`GET /deportistas/buscar`).
- * Requiere el permiso `deportistas:leer`; si falta, muestra el error que devuelve el backend.
+ * Requiere el permiso `deportistas:leer`: sin él no consulta (un 403 sacaría al usuario de la vista)
+ * y lo dice en el campo.
  */
 export const BuscadorDeportista: React.FC<BuscadorDeportistaProps> = ({
   label = 'Deportista',
@@ -29,10 +31,12 @@ export const BuscadorDeportista: React.FC<BuscadorDeportistaProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [abierto, setAbierto] = useState(false);
   const consulta = useRef(0);
+  const { hasPermission } = useAuth();
+  const puedeBuscar = hasPermission('deportistas', 'leer');
 
   useEffect(() => {
     const q = texto.trim();
-    if (q.length < 2) {
+    if (!puedeBuscar || q.length < 2) {
       setResultados([]);
       setError(null);
       return;
@@ -54,7 +58,7 @@ export const BuscadorDeportista: React.FC<BuscadorDeportistaProps> = ({
       }
     }, 300);
     return () => window.clearTimeout(t);
-  }, [texto]);
+  }, [texto, puedeBuscar]);
 
   if (seleccionado) {
     return (
@@ -86,6 +90,15 @@ export const BuscadorDeportista: React.FC<BuscadorDeportistaProps> = ({
             </button>
           )}
         </div>
+      </div>
+    );
+  }
+
+  if (!puedeBuscar) {
+    return (
+      <div className="form-group">
+        {label && <span className="form-label">{label}</span>}
+        <input className="form-input" disabled placeholder="Sin permiso para buscar deportistas" aria-label={label} />
       </div>
     );
   }
