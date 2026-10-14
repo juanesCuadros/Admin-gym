@@ -26,6 +26,7 @@ import { DeportistasPage } from './pages/deportistas/DeportistasPage';
 import { MembresiasPage } from './pages/membresias/MembresiasPage';
 import { ClasesPage } from './pages/clases/ClasesPage';
 import { EntrenamientoPage } from './pages/entrenamiento/EntrenamientoPage';
+import { RutinasAsignadasPage } from './pages/entrenamiento/RutinasAsignadasPage';
 
 import { ProductosPage } from './pages/inventario/ProductosPage';
 import { MovimientosStockPage } from './pages/inventario/MovimientosStockPage';
@@ -48,7 +49,6 @@ import './styles/components.css';
 
 // Rutas del menú (§B2) que aún no tienen pantalla: estado vacío honesto, sin datos falsos.
 const IngresosHoyPage = enConstruccion('Ingresos de hoy');
-const RutinasAsignadasPage = enConstruccion('Rutinas asignadas');
 const AuditoriaPage = enConstruccion('Auditoría');
 
 /** Escucha eventos del interceptor que exigen cambiar de ruta. */

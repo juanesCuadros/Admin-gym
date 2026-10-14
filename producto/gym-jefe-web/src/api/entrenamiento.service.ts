@@ -35,7 +35,7 @@ export const entrenamientoService = {
   },
 
   // Plantillas
-  async getPlantillas(params?: { skip?: number; limit?: number }): Promise<PlantillasPaginadasResponse> {
+  async getPlantillas(params?: { skip?: number; limit?: number; busqueda?: string }): Promise<PlantillasPaginadasResponse> {
     const response = await apiClient.get<PlantillasPaginadasResponse>('/entrenamiento/plantillas', { params });
     return response.data;
   },
@@ -51,15 +51,30 @@ export const entrenamientoService = {
   },
 
   // Rutinas Asignadas
+  // Rutas según `app/modules/entrenamiento/router.py`.
   async asignarRutina(data: AsignarRutinaRequest): Promise<RutinaAsignadaResponse> {
-    const response = await apiClient.post<RutinaAsignadaResponse>('/entrenamiento/rutinas-asignadas', data);
+    const response = await apiClient.post<RutinaAsignadaResponse>('/entrenamiento/asignar-rutina', data);
     return response.data;
   },
 
-  async getRutinasDeportista(deportistaId: string): Promise<RutinaAsignadaResponse[]> {
+  async getRutinasDeportista(deportistaId: string, soloActivas = false): Promise<RutinaAsignadaResponse[]> {
     const response = await apiClient.get<RutinaAsignadaResponse[]>(
-      `/entrenamiento/rutinas-asignadas/deportista/${deportistaId}`
+      `/entrenamiento/deportistas/${deportistaId}/rutinas`,
+      { params: { solo_activas: soloActivas } }
     );
+    return response.data;
+  },
+
+  async getRutinaAsignada(id: string): Promise<RutinaAsignadaResponse> {
+    const response = await apiClient.get<RutinaAsignadaResponse>(`/entrenamiento/rutinas-asignadas/${id}`);
+    return response.data;
+  },
+
+  /** Activa o archiva una rutina asignada. */
+  async cambiarEstadoRutina(id: string, activa: boolean): Promise<RutinaAsignadaResponse> {
+    const response = await apiClient.patch<RutinaAsignadaResponse>(`/entrenamiento/rutinas-asignadas/${id}/estado`, {
+      activa,
+    });
     return response.data;
   },
 
@@ -67,7 +82,7 @@ export const entrenamientoService = {
     rutinaAsignadaId: string,
     data: PersonalizarRutinaAsignadaRequest
   ): Promise<RutinaAsignadaResponse> {
-    const response = await apiClient.post<RutinaAsignadaResponse>(
+    const response = await apiClient.put<RutinaAsignadaResponse>(
       `/entrenamiento/rutinas-asignadas/${rutinaAsignadaId}/personalizar`,
       data
     );
