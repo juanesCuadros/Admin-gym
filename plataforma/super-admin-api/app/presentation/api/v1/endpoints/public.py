@@ -2,8 +2,10 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.application.use_cases.export_use_cases import ExportUseCases
 from app.application.use_cases.plan_use_cases import PlanUseCases, plan_a_dict
 from app.application.use_cases.signup_use_cases import MENSAJE_SIGNUP, SignupUseCases
 from app.infrastructure.database.session import get_db
@@ -48,3 +50,12 @@ def signup_info(token: str, db: Session = Depends(get_db)):
 def signup_confirm(token: str, data: SignupConfirmRequest, db: Session = Depends(get_db)):
     subdominio, url = SignupUseCases(db).confirmar(token, data.password)
     return SignupConfirmResponse(subdominio=subdominio, url_login=url)
+
+
+@router.get("/exports/{token}", summary="Descargar la exportación ZIP de un gimnasio cancelado",
+            response_class=FileResponse)
+def descargar_exportacion(token: str, request: Request, db: Session = Depends(get_db)):
+    """SA-RF-30: ZIP con CSV de deportistas, membresías, pagos y asistencia. 410 si venció o se
+    eliminó. Cada descarga queda en auditoría."""
+    ruta, nombre = ExportUseCases(db).descargar(token, request.client.host if request.client else None)
+    return FileResponse(ruta, media_type="application/zip", filename=nombre)

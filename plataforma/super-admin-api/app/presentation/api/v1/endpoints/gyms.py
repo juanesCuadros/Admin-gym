@@ -1,6 +1,6 @@
 from datetime import date
 from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Body, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.session import get_db
@@ -11,8 +11,10 @@ from app.application.use_cases.gym_use_cases import GymUseCases
 from app.presentation.schemas.gym_schemas import (
     GymCreateStepByStep, GymUpdate, GymStateChangeRequest, GymCancelRequest,
     GymListItemResponse, GymDetailResponse, SubdomainCheckResponse,
-    CredentialsIssuanceResponse, JefeResponse, SubscriptionResponse
+    CredentialsIssuanceResponse, JefeResponse, SubscriptionResponse,
+    GymDeleteRequest, GymDeleteResponse
 )
+from app.application.use_cases.export_use_cases import ExportUseCases
 from app.presentation.schemas.payment_schemas import PaymentResponse
 from app.presentation.schemas.audit_schemas import AuditLogResponse
 from app.core.config import settings
@@ -282,7 +284,7 @@ def change_gym_status(
     """
     use_cases = GymUseCases(db)
     use_cases.change_state(gym_id, data.nuevo_estado, data.motivo, actor=current_user, pago=data.pago)
-    return get_gym_detail(gym_id=gym_id, db=db, current_user=current_user)
+    return _con_exportacion(get_gym_detail(gym_id=gym_id, db=db, current_user=current_user), use_cases, db)
 
 @router.post("/{gym_id}/cancel", response_model=GymDetailResponse, summary="Cancelar un gimnasio formalmente")
 def cancel_gym(
@@ -292,8 +294,33 @@ def cancel_gym(
     current_user: UsuarioInterno = Depends(get_current_admin_user)
 ):
     """
-    RF-10: Cancelar un gimnasio (baja formal): congela el acceso y conserva los datos, no elimina.
+    RF-10 / SA-RF-30: Cancelar un gimnasio: bloqueo inmediato, conserva los datos y genera el ZIP
+    con su enlace de descarga de 30 días (`export_url`, se muestra una sola vez).
     """
     use_cases = GymUseCases(db)
     use_cases.cancel_gym(gym_id, data.motivo, actor=current_user)
-    return get_gym_detail(gym_id=gym_id, db=db, current_user=current_user)
+    return _con_exportacion(get_gym_detail(gym_id=gym_id, db=db, current_user=current_user), use_cases, db)
+
+
+def _con_exportacion(detalle: GymDetailResponse, use_cases: GymUseCases, db: Session) -> GymDetailResponse:
+    if use_cases.ultima_exportacion:
+        token, expira_en, _ = use_cases.ultima_exportacion
+        detalle.export_url = ExportUseCases(db).url_publica(token)
+        detalle.export_expira_en = expira_en
+    return detalle
+
+
+@router.delete("/{gym_id}", response_model=GymDeleteResponse, summary="Eliminar definitivamente un gimnasio cancelado")
+def delete_gym(
+    gym_id: str,
+    data: GymDeleteRequest = Body(...),
+    db: Session = Depends(get_db),
+    current_user: UsuarioInterno = Depends(get_current_admin_user)
+):
+    """
+    SA-RF-31: solo con 30 días cumplidos desde la cancelación (`409 AUN_NO_ELIMINABLE`) y escribiendo
+    el subdominio. Borra los datos del tenant, invalida el enlace de exportación y libera el subdominio.
+    MVC conserva sus pagos y su auditoría.
+    """
+    gym = ExportUseCases(db).eliminar_definitivo(gym_id, data.confirmar_subdominio, current_user)
+    return GymDeleteResponse(id=gym.id, subdominio_liberado=gym.subdominio, eliminado_en=gym.deleted_at)

@@ -26,6 +26,7 @@ from app.presentation.schemas.gym_schemas import (
 from app.presentation.schemas.payment_schemas import PaymentCreate
 from app.application.use_cases.payment_use_cases import PaymentUseCases
 from app.application.use_cases.plan_use_cases import PlanUseCases
+from app.application.use_cases.export_use_cases import ExportUseCases
 
 # Transiciones de estado guardado permitidas (§2.1). Cualquier otra responde 422.
 TRANSICIONES = {
@@ -41,6 +42,8 @@ class GymUseCases:
         self.db = db
         self.gym_repo = GymRepository(db)
         self.audit_repo = AuditRepository(db)
+        # (token, expira_en, registro) de la exportación generada al cancelar, si la hubo.
+        self.ultima_exportacion = None
 
     def check_subdomain(self, subdomain: str) -> Tuple[bool, bool, str]:
         """Checks subdomain syntax and database availability (RF-05)."""
@@ -310,6 +313,10 @@ class GymUseCases:
             if platform_tenant:
                 platform_tenant.activo = nuevo_estado == "activo"
 
+            if nuevo_estado == "cancelado":
+                # §2.4 / SA-RF-30: al cancelar se genera el ZIP y el enlace de 30 días.
+                self.ultima_exportacion = ExportUseCases(self.db).generar(gym, actor.id)
+
             if pago_registrado is not None:
                 self.audit_repo.record_action(
                     actor_id=actor.id,
@@ -348,6 +355,9 @@ class GymUseCases:
                 self.db.commit()
         except Exception:
             self.db.rollback()
+            if self.ultima_exportacion:
+                ExportUseCases.borrar_archivo(self.ultima_exportacion[2].ruta_archivo)
+                self.ultima_exportacion = None
             raise
 
         if commit:

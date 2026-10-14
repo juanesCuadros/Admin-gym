@@ -34,3 +34,6 @@ htmlcov/
 
 *.db
 *.sqlite3
+
+# Exportaciones ZIP de gimnasios cancelados (SA-RF-30)
+data/

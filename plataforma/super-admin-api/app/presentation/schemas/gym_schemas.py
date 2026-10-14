@@ -143,6 +143,19 @@ class GymDetailResponse(BaseModel):
     total_pagos_registrados: int = 0
     historial_pagos: List[PaymentResponse] = []
     actividad_reciente: List[AuditLogResponse] = []
+    # Solo en la respuesta de cancelar (contrato 3.4): el enlace se muestra una vez.
+    export_url: Optional[str] = None
+    export_expira_en: Optional[datetime] = None
+
+
+class GymDeleteRequest(BaseModel):
+    confirmar_subdominio: str = Field(..., min_length=1, description="Escriba el subdominio para confirmar")
+
+
+class GymDeleteResponse(BaseModel):
+    id: str
+    subdominio_liberado: str
+    eliminado_en: datetime
 
 class CredentialsIssuanceResponse(BaseModel):
     gimnasio_id: str

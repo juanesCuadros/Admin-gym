@@ -82,7 +82,8 @@ class Gimnasio(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     gimnasio_id = Column(String(36), nullable=False, unique=True, default=lambda: str(uuid.uuid4()))
     nombre = Column(String(255), nullable=False, index=True)
-    subdominio = Column(String(63), nullable=False, unique=True, index=True)
+    # Único solo entre gimnasios no eliminados (índice parcial ux_gym_subdominio_vivo, migración 032).
+    subdominio = Column(String(63), nullable=False, index=True)
     nit = Column(String(50), nullable=True)
     direccion = Column(String(255), nullable=True)
     ciudad = Column(String(100), nullable=True)
@@ -312,3 +313,22 @@ class RegistroAutonomo(Base):
     acepta_terminos_en = Column(DateTime(timezone=True), nullable=False)
     ip = Column(String(45), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class ExportacionGimnasio(Base):
+    """Enlace de exportación ZIP al cancelar (SA-RF-30). Tabla de la migración 032."""
+    __tablename__ = "exportaciones_gimnasio"
+    __table_args__ = {"schema": _schema()}
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    gimnasio_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}gimnasios.id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    ruta_archivo = Column(Text, nullable=False)
+    tamano_bytes = Column(BigInteger().with_variant(Integer, "sqlite"), nullable=False, default=0)
+    expira_en = Column(DateTime(timezone=True), nullable=False)
+    eliminado_en = Column(DateTime(timezone=True), nullable=True)
+    descargas = Column(Integer, nullable=False, default=0)
+    creada_por = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}usuarios_internos.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    gimnasio = relationship("Gimnasio")
