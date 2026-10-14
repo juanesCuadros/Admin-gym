@@ -8,6 +8,8 @@ from typing import List, Literal, Optional
 from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
+from app.core.timezone import today_local
+
 
 # =====================================================================
 # 1. Registro y Edición de Deportistas (RF-17, RF-19)
@@ -52,7 +54,7 @@ class CrearDeportistaRequest(BaseModel):
     @model_validator(mode="after")
     def validar_menor_edad(self) -> "CrearDeportistaRequest":
         if self.fecha_nacimiento:
-            today = date.today()
+            today = today_local()
             age = (
                 today.year
                 - self.fecha_nacimiento.year
@@ -85,7 +87,7 @@ class EditarDeportistaRequest(BaseModel):
     @model_validator(mode="after")
     def validar_menor_edad_edicion(self) -> "EditarDeportistaRequest":
         if self.fecha_nacimiento:
-            today = date.today()
+            today = today_local()
             age = (
                 today.year
                 - self.fecha_nacimiento.year

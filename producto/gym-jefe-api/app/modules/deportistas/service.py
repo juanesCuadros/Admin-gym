@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditService
 from app.core.config import settings
+from app.core.email.plantillas import url_sistema_web
 from app.core.security import encrypt_biometric_template, hash_token
 from app.modules.deportistas.schemas import (
     AccesoFichaResponse,
@@ -782,7 +783,7 @@ class DeportistasService:
             },
         )
 
-        enlace = f"https://{subdominio}.gymos.co/activar-app?codigo={codigo_plano}"
+        enlace = url_sistema_web(subdominio, f"activar-app?codigo={codigo_plano}")
 
         await AuditService.registrar(
             session=session,
