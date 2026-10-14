@@ -12,6 +12,7 @@ from app.modules.personal.schemas import (
     CambiarEstadoStaffRequest,
     CambiarEstadoStaffResponse,
     CrearStaffRequest,
+    RegenerarCredencialResponse,
     StaffListResponse,
     StaffResponse,
     TransferirJefeRequest,
@@ -170,3 +171,24 @@ async def eliminar_personal(
         staff_id=id,
         actor=current_staff,
     )
+
+
+@router.post(
+    "/{id}/regenerar-credencial",
+    response_model=RegenerarCredencialResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Regenerar credencial temporal de 72 h (GW-RF-39, Contrato 2.7)",
+    description="Genera una nueva contraseña temporal válida por 72 horas para el staff, exige cambio obligatorio en su próximo login y revoca todas sus sesiones activas. Solo permitido para el Jefe.",
+)
+async def regenerar_credencial_staff(
+    id: UUID,
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_role("jefe"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    return await PersonalService.regenerar_credencial(
+        session=session,
+        gym_id=current_staff.gimnasio_id,
+        staff_id=id,
+        actor=current_staff,
+    )
+
