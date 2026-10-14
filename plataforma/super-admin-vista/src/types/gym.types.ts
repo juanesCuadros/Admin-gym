@@ -1,7 +1,17 @@
-import { Payment } from './payment.types';
+// Tipos escritos a mano desde plataforma/super-admin-api/app/presentation/schemas/gym_schemas.py
+import { Payment, PaymentCreate } from './payment.types';
 import { AuditLog } from './audit.types';
 
+/** Estado guardado del gimnasio (§2.1). */
 export type GymState = 'prueba' | 'activo' | 'suspendido' | 'cancelado';
+
+/** Estado calculado por `platform.estado_suscripcion()` (§2.2). Nunca se guarda. */
+export type EstadoCalculado = 'al_dia' | 'por_vencer' | 'en_gracia' | 'bloqueado';
+
+/** Valores que acepta el filtro `estado_calculado=` de `GET /admin/gyms`. */
+export type FiltroEstadoCalculado = EstadoCalculado | 'prueba_por_vencer';
+
+export type TipoInicio = 'prueba' | 'cliente_activo';
 
 export interface JefeAccountCreate {
   nombre: string;
@@ -11,7 +21,7 @@ export interface JefeAccountCreate {
 
 export interface SubscriptionCreate {
   valor_mensual: number;
-  tipo_inicio: 'prueba' | 'cliente_activo';
+  tipo_inicio: TipoInicio;
 }
 
 export interface GymCreateStepByStep {
@@ -49,13 +59,30 @@ export interface GymUpdate {
   whatsapp?: string;
 }
 
+/**
+ * `PATCH /admin/gyms/{id}/status` (SA-RF-09).
+ * - `activo`: exige `pago` (activar una prueba o reactivar un suspendido).
+ * - `suspendido` / `cancelado`: exige `motivo` (mín. 5 caracteres).
+ * - Pedir el estado actual o una transición no permitida responde 422.
+ */
 export interface GymStateChangeRequest {
   nuevo_estado: GymState;
   motivo?: string;
+  pago?: PaymentCreate;
 }
 
 export interface GymCancelRequest {
   motivo: string;
+}
+
+export interface GymDeleteRequest {
+  confirmar_subdominio: string;
+}
+
+export interface GymDeleteResponse {
+  id: string;
+  subdominio_liberado: string;
+  eliminado_en: string;
 }
 
 export interface SubdomainCheckResponse {
@@ -80,6 +107,8 @@ export interface SubscriptionResponse {
   tipo_inicio: string;
   vigente_desde: string;
   vigente_hasta?: string | null;
+  plan_id?: string | null;
+  plan_nombre?: string | null;
 }
 
 export interface GymListItem {
@@ -93,6 +122,9 @@ export interface GymListItem {
   fecha_inicio: string;
   fecha_corte?: string | null;
   dias_restantes?: number | null;
+  estado_calculado?: EstadoCalculado | null;
+  motivo_bloqueo?: string | null;
+  plan_nombre?: string | null;
   logo_url?: string | null;
   jefe_nombre?: string | null;
   jefe_correo?: string | null;
@@ -115,6 +147,9 @@ export interface GymDetail {
   fecha_inicio: string;
   fecha_corte?: string | null;
   dias_restantes?: number | null;
+  estado_calculado?: EstadoCalculado | null;
+  motivo_bloqueo?: string | null;
+  plan_nombre?: string | null;
   logo_url?: string | null;
   banner_url?: string | null;
   descripcion?: string | null;
@@ -131,6 +166,9 @@ export interface GymDetail {
   total_pagos_registrados: number;
   historial_pagos: Payment[];
   actividad_reciente: AuditLog[];
+  /** Solo en la respuesta de cancelar (contrato 3.4). Se muestra una sola vez. */
+  export_url?: string | null;
+  export_expira_en?: string | null;
 }
 
 export interface CredentialsIssuanceResponse {

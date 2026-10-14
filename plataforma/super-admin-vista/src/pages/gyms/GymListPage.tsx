@@ -10,7 +10,7 @@ import { StatusBadge } from '@/components/data/StatusBadge';
 import { Pagination } from '@/components/navigation/Pagination';
 import { Button } from '@/components/actions/Button';
 import { useGyms } from '@/hooks/useGyms';
-import { GymListItem } from '@/types/gym.types';
+import { GymListItem, GymState } from '@/types/gym.types';
 import { PlusCircle, Building2, ChevronRight, Phone, Mail } from 'lucide-react';
 
 export const GymListPage: React.FC = () => {
@@ -200,7 +200,7 @@ export const GymListPage: React.FC = () => {
         <div style={{ width: '180px' }}>
           <Select
             value={estado}
-            onChange={(e) => setEstado(e.target.value)}
+            onChange={(e) => setEstado(e.target.value as GymState | '')}
             options={[
               { value: '', label: 'Todos los estados' },
               { value: 'activo', label: 'Activo' },

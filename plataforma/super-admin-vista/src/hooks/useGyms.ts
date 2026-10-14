@@ -1,18 +1,22 @@
 import { useState, useEffect, useCallback } from 'react';
-import { GymListItem, GymState } from '@/types/gym.types';
-import { gymService, ListGymsParams } from '@/services/gymService';
+import { FiltroEstadoCalculado, GymListItem, GymState } from '@/types/gym.types';
+import { gymService, ListGymsParams, OrdenGimnasios } from '@/services/gymService';
 import { parseApiError } from '@/services/api/errorHandler';
+
+/** Tamaño de página del listado (SA-RF-03 CA2). */
+export const TAMANO_PAGINA = 20;
 
 export function useGyms(initialParams: ListGymsParams = {}) {
   const [gyms, setGyms] = useState<GymListItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState<string>(initialParams.search || '');
-  const [estado, setEstado] = useState<GymState | string>(initialParams.estado || '');
-  const [orderBy, setOrderBy] = useState<'urgency' | 'nombre' | 'fecha_corte' | 'created_at'>(
-    initialParams.order_by || 'urgency'
+  const [estado, setEstado] = useState<GymState | ''>(initialParams.estado || '');
+  const [estadoCalculado, setEstadoCalculado] = useState<FiltroEstadoCalculado | ''>(
+    initialParams.estado_calculado || ''
   );
-  const [limit, setLimit] = useState<number>(initialParams.limit || 50);
+  const [orderBy, setOrderBy] = useState<OrdenGimnasios>(initialParams.order_by || 'urgency');
+  const [limit, setLimit] = useState<number>(initialParams.limit || TAMANO_PAGINA);
   const [offset, setOffset] = useState<number>(initialParams.offset || 0);
 
   const fetchGyms = useCallback(async () => {
@@ -22,6 +26,7 @@ export function useGyms(initialParams: ListGymsParams = {}) {
       const data = await gymService.listGyms({
         search: search || undefined,
         estado: estado || undefined,
+        estado_calculado: estadoCalculado || undefined,
         order_by: orderBy,
         limit,
         offset,
@@ -33,7 +38,7 @@ export function useGyms(initialParams: ListGymsParams = {}) {
     } finally {
       setIsLoading(false);
     }
-  }, [search, estado, orderBy, limit, offset]);
+  }, [search, estado, estadoCalculado, orderBy, limit, offset]);
 
   useEffect(() => {
     fetchGyms();
@@ -47,6 +52,8 @@ export function useGyms(initialParams: ListGymsParams = {}) {
     setSearch,
     estado,
     setEstado,
+    estadoCalculado,
+    setEstadoCalculado,
     orderBy,
     setOrderBy,
     limit,
