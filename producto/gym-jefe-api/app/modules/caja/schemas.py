@@ -19,6 +19,11 @@ class CierreForzadoRequest(BaseModel):
     efectivo_contado: Optional[Decimal] = Field(None, ge=0, description="Efectivo contado si se realizó arqueo físico")
 
 
+class CerrarTurnoAjenoRequest(BaseModel):
+    conteo_efectivo: Decimal = Field(..., ge=0, description="Efectivo físico real contado en caja al cerrar turno ajeno")
+    nota: Optional[str] = Field(None, max_length=500, description="Nota explicativa del cierre de turno ajeno")
+
+
 class TurnoResumenDto(BaseModel):
     id: UUID
     gimnasio_id: UUID
@@ -39,6 +44,10 @@ class TurnoResumenDto(BaseModel):
     diferencia: Optional[Decimal] = None
     cierre_forzado: bool = False
     revisado_en: Optional[datetime] = None
+    es_propio: bool = True
+    abierto_por_nombre: Optional[str] = None
+    cerrado_por_nombre: Optional[str] = None
+    descuadre_atribuido_a_nombre: Optional[str] = None
 
 
 # --- Punto de Venta (Ventas Multi-Ítem) ---

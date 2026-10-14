@@ -16,6 +16,7 @@ from app.modules.caja.schemas import (
     AbrirTurnoRequest,
     AnularPagoMembresiaRequest,
     AnularVentaRequest,
+    CerrarTurnoAjenoRequest,
     CerrarTurnoRequest,
     EgresoResponseDto,
     HistorialMovimientosTurnoResponse,
@@ -48,17 +49,34 @@ class CajaService:
         staff_nombre: str,
         data: AbrirTurnoRequest
     ) -> TurnoResumenDto:
-        # 1. Validar que no tenga turno abierto previo
+        # 1. Validar si ya hay un turno abierto en el gimnasio (GW-RF-08, Contrato 1.1)
         check_query = text("""
-            SELECT id FROM platform.turnos_caja
-            WHERE staff_id = :staff_id AND estado = 'abierto'
+            SELECT t.id, t.staff_id, s.nombre as staff_nombre, t.abierto_en
+            FROM platform.turnos_caja t
+            JOIN platform.staff s ON s.id = t.staff_id
+            WHERE t.gimnasio_id = :gym_id AND t.estado = 'abierto'
         """)
-        res_check = await session.execute(check_query, {"staff_id": staff_id})
-        if res_check.mappings().first():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={"codigo": "TURNO_YA_ABIERTO", "mensaje": "Ya posee un turno de caja abierto actualmente"}
-            )
+        res_check = await session.execute(check_query, {"gym_id": gym_id})
+        turno_existente = res_check.mappings().first()
+        if turno_existente:
+            if turno_existente["staff_id"] == staff_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"codigo": "TURNO_YA_ABIERTO", "mensaje": "Ya posee un turno de caja abierto actualmente"}
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "codigo": "TURNO_AJENO_ABIERTO",
+                        "mensaje": f"Existe un turno de caja abierto por {turno_existente['staff_nombre']}",
+                        "detalles": {
+                            "turno_id": str(turno_existente["id"]),
+                            "abierto_por_nombre": turno_existente["staff_nombre"],
+                            "abierto_en": turno_existente["abierto_en"].isoformat()
+                        }
+                    }
+                )
 
         # 2. Inserción con Savepoint para prevenir condiciones de carrera (TOCTOU) ante requests simultáneos
         try:
@@ -79,7 +97,21 @@ class CajaService:
                 turno_id = row["id"]
                 abierto_en = row["abierto_en"]
         except IntegrityError:
-            # Captura violación de constraint único ux_turno_abierto_por_staff ante concurrencia
+            res_carrera = await session.execute(check_query, {"gym_id": gym_id})
+            t_carrera = res_carrera.mappings().first()
+            if t_carrera and t_carrera["staff_id"] != staff_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "codigo": "TURNO_AJENO_ABIERTO",
+                        "mensaje": f"Existe un turno de caja abierto por {t_carrera['staff_nombre']}",
+                        "detalles": {
+                            "turno_id": str(t_carrera["id"]),
+                            "abierto_por_nombre": t_carrera["staff_nombre"],
+                            "abierto_en": t_carrera["abierto_en"].isoformat()
+                        }
+                    }
+                )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={"codigo": "TURNO_YA_ABIERTO", "mensaje": "Ya posee un turno de caja abierto actualmente"}
@@ -105,7 +137,9 @@ class CajaService:
             base_inicial=data.base_inicial,
             abierto_en=abierto_en,
             estado="abierto",
-            total_esperado_efectivo=data.base_inicial
+            total_esperado_efectivo=data.base_inicial,
+            es_propio=True,
+            abierto_por_nombre=staff_nombre
         )
 
     @classmethod
@@ -120,17 +154,20 @@ class CajaService:
                    t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia
             FROM platform.turnos_caja t
             JOIN platform.staff s ON s.id = t.staff_id
-            WHERE t.gimnasio_id = :gym_id AND t.staff_id = :staff_id AND t.estado = 'abierto'
+            WHERE t.gimnasio_id = :gym_id AND t.estado = 'abierto'
         """)
-        res = await session.execute(query, {"gym_id": gym_id, "staff_id": staff_id})
-        turno = res.mappings().first()
+        res = await session.execute(query, {"gym_id": gym_id})
+        turno_dict = res.mappings().first()
 
-        if not turno:
+        if not turno_dict:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "No tiene un turno de caja abierto actualmente"}
+                detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "No hay un turno de caja abierto actualmente en este gimnasio"}
             )
 
+        turno = dict(turno_dict)
+        turno["es_propio"] = (turno["staff_id"] == staff_id)
+        turno["abierto_por_nombre"] = turno["staff_nombre"]
         return await cls._calcular_acumulados_turno(session, turno)
 
     @classmethod
@@ -142,7 +179,7 @@ class CajaService:
         actor_nombre: str,
         data: CerrarTurnoRequest
     ) -> TurnoResumenDto:
-        # 1. Bloqueo pesimista del turno abierto
+        # 1. Bloqueo pesimista del turno abierto propio
         query = text("""
             SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre as staff_nombre, t.base_inicial,
                    t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia
@@ -169,14 +206,16 @@ class CajaService:
         update_query = text("""
             UPDATE platform.turnos_caja
             SET estado = 'cerrado', cerrado_en = :now_dt,
-                efectivo_contado = :contado, diferencia = :diff
+                efectivo_contado = :contado, diferencia = :diff,
+                cerrado_por = :staff_id
             WHERE id = :turno_id
         """)
         await session.execute(update_query, {
             "turno_id": turno["id"],
             "now_dt": now_dt,
             "contado": data.efectivo_contado,
-            "diff": diferencia
+            "diff": diferencia,
+            "staff_id": staff_id
         })
 
         # 4. Auditoría
@@ -200,6 +239,97 @@ class CajaService:
         resumen.cerrado_en = now_dt
         resumen.efectivo_contado = data.efectivo_contado
         resumen.diferencia = diferencia
+        resumen.cerrado_por_nombre = actor_nombre
+        resumen.es_propio = True
+        return resumen
+
+    @classmethod
+    async def cerrar_turno_ajeno(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        turno_id: UUID,
+        actor_id: UUID,
+        actor_nombre: str,
+        data: CerrarTurnoAjenoRequest
+    ) -> TurnoResumenDto:
+        """
+        Cierra un turno ajeno abierto fijando el conteo de efectivo y atribuyendo el descuadre
+        al staff que abrió el turno (GW-RF-08, Contrato 1.1).
+        """
+        # 1. Bloqueo pesimista del turno ajeno
+        query = text("""
+            SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre as staff_nombre, t.base_inicial,
+                   t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia
+            FROM platform.turnos_caja t
+            JOIN platform.staff s ON s.id = t.staff_id
+            WHERE t.id = :turno_id AND t.gimnasio_id = :gym_id
+            FOR UPDATE
+        """)
+        res = await session.execute(query, {"turno_id": turno_id, "gym_id": gym_id})
+        turno = res.mappings().first()
+
+        if not turno:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"codigo": "TURNO_NO_ENCONTRADO", "mensaje": "El turno de caja especificado no existe"}
+            )
+        if turno["estado"] != "abierto":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"codigo": "TURNO_YA_CERRADO", "mensaje": "El turno de caja ya se encuentra cerrado"}
+            )
+
+        # 2. Calcular acumulados y diferencia
+        resumen = await cls._calcular_acumulados_turno(session, turno)
+        diferencia = data.conteo_efectivo - resumen.total_esperado_efectivo
+
+        # 3. Cerrar turno ajeno registrando cerrado_por y nota
+        now_dt = now_local()
+        update_query = text("""
+            UPDATE platform.turnos_caja
+            SET estado = 'cerrado', cerrado_en = :now_dt,
+                efectivo_contado = :contado, diferencia = :diff,
+                cerrado_por = :actor_id, nota_cierre = :nota
+            WHERE id = :turno_id
+        """)
+        await session.execute(update_query, {
+            "turno_id": turno["id"],
+            "now_dt": now_dt,
+            "contado": data.conteo_efectivo,
+            "diff": diferencia,
+            "actor_id": actor_id,
+            "nota": data.nota
+        })
+
+        # 4. Auditoría append-only
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=gym_id,
+            actor_id=actor_id,
+            actor_nombre=actor_nombre,
+            accion="CERRAR_TURNO_AJENO",
+            entidad="turnos_caja",
+            entidad_id=str(turno["id"]),
+            detalle={
+                "staff_titular_id": str(turno["staff_id"]),
+                "staff_titular_nombre": turno["staff_nombre"],
+                "total_esperado_efectivo": float(resumen.total_esperado_efectivo),
+                "conteo_efectivo": float(data.conteo_efectivo),
+                "diferencia": float(diferencia),
+                "descuadre_atribuido_a": turno["staff_nombre"],
+                "nota": data.nota
+            }
+        )
+
+        resumen.estado = "cerrado"
+        resumen.cerrado_en = now_dt
+        resumen.efectivo_contado = data.conteo_efectivo
+        resumen.diferencia = diferencia
+        resumen.cerrado_por_nombre = actor_nombre
+        resumen.descuadre_atribuido_a_nombre = turno["staff_nombre"]
+        resumen.es_propio = (turno["staff_id"] == actor_id)
+        resumen.abierto_por_nombre = turno["staff_nombre"]
         return resumen
 
     @classmethod
@@ -1111,7 +1241,11 @@ class CajaService:
             total_esperado_efectivo=total_esperado,
             efectivo_contado=Decimal(str(turno["efectivo_contado"])) if turno.get("efectivo_contado") is not None else None,
             diferencia=Decimal(str(turno["diferencia"])) if turno.get("diferencia") is not None else None,
-            cierre_forzado=bool(turno.get("cierre_forzado", False))
+            cierre_forzado=bool(turno.get("cierre_forzado", False)),
+            es_propio=turno.get("es_propio", True),
+            abierto_por_nombre=turno.get("abierto_por_nombre") or turno.get("staff_nombre"),
+            cerrado_por_nombre=turno.get("cerrado_por_nombre"),
+            descuadre_atribuido_a_nombre=turno.get("descuadre_atribuido_a_nombre")
         )
 
     @classmethod
