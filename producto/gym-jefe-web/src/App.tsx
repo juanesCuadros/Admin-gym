@@ -21,6 +21,7 @@ import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { ControlIngresoPage } from './pages/controlIngreso/ControlIngresoPage';
 import { CajaPage } from './pages/caja/CajaPage';
 import { PuntoDeVentaPage } from './pages/caja/PuntoDeVentaPage';
+import { HistorialTurnosPage } from './pages/caja/HistorialTurnosPage';
 import { DeportistasPage } from './pages/deportistas/DeportistasPage';
 import { MembresiasPage } from './pages/membresias/MembresiasPage';
 import { ClasesPage } from './pages/clases/ClasesPage';
@@ -35,7 +36,6 @@ import './styles/components.css';
 
 // Rutas del menú (§B2) que aún no tienen pantalla: estado vacío honesto, sin datos falsos.
 const IngresosHoyPage = enConstruccion('Ingresos de hoy');
-const HistorialTurnosPage = enConstruccion('Historial de turnos');
 const RutinasAsignadasPage = enConstruccion('Rutinas asignadas');
 const ProductosPage = enConstruccion('Productos');
 const MovimientosStockPage = enConstruccion('Movimientos de stock');
