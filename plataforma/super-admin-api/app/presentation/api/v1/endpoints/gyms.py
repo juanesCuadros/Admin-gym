@@ -24,7 +24,7 @@ router = APIRouter(prefix="/admin/gyms", tags=["Gimnasios (Tenants)"])
 
 @router.get("/check-subdomain", response_model=SubdomainCheckResponse, summary="Validar disponibilidad de subdominio en vivo")
 def check_subdomain(
-    subdomain: str = Query(..., min_length=2, max_length=50),
+    subdomain: str = Query(..., min_length=1, max_length=100),
     db: Session = Depends(get_db),
     current_user: UsuarioInterno = Depends(get_current_admin_user)
 ):

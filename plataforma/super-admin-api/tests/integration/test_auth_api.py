@@ -26,13 +26,20 @@ def test_login_lockout_after_max_attempts(client, test_superadmin):
             json={"correo": test_superadmin.correo, "password": "WrongPassword!"}
         )
     
-    # Next attempt should return 423 Locked
+    # SA-RF-00.4 CA1: durante el bloqueo, incluso la contraseña correcta recibe el mensaje
+    # genérico de credenciales inválidas (no un 423 que revele el bloqueo).
+    invalid_resp = client.post(
+        "/api/v1/auth/login",
+        json={"correo": test_superadmin.correo, "password": "WrongPassword!"}
+    )
     locked_resp = client.post(
         "/api/v1/auth/login",
         json={"correo": test_superadmin.correo, "password": "SuperSecret123!"}
     )
-    assert locked_resp.status_code == 423
-    assert "bloqueada" in locked_resp.json()["message"].lower()
+    assert locked_resp.status_code == 401
+    assert locked_resp.json()["codigo"] == invalid_resp.json()["codigo"] == "CREDENCIALES_INVALIDAS"
+    assert locked_resp.json()["mensaje"] == invalid_resp.json()["mensaje"]
+    assert "bloque" not in locked_resp.text.lower()
 
 def test_get_current_user_profile(client, superadmin_auth_headers, test_superadmin):
     response = client.get("/api/v1/auth/me", headers=superadmin_auth_headers)

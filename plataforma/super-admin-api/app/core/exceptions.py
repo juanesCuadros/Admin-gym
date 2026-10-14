@@ -50,17 +50,6 @@ class AuthenticationFailedException(AppException):
         super().__init__(message=message, status_code=401)
 
 
-class AccountLockedException(AppException):
-    codigo_por_defecto = "CUENTA_BLOQUEADA"
-
-    def __init__(self, lockout_minutes: int):
-        super().__init__(
-            message=f"Cuenta temporalmente bloqueada por múltiples intentos fallidos. Intente nuevamente en {lockout_minutes} minutos.",
-            status_code=423,
-            details={"lockout_minutes": lockout_minutes}
-        )
-
-
 class ForbiddenException(AppException):
     codigo_por_defecto = "SIN_PERMISO"
 

@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     # Brute Force Protection (RF-00.4)
     MAX_LOGIN_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_MINUTES: int = 15
+    # Recuperación de contraseña (SA-RF-00.2 CA2): 1 hora
+    RECOVERY_TOKEN_MINUTES: int = 60
 
     # Database: Default to sqlite in-memory for testing, or PostgreSQL with RLS
     DATABASE_URL: str = Field(

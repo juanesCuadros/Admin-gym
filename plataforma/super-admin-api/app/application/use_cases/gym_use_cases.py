@@ -2,6 +2,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional, Tuple
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.infrastructure.models.superadmin_models import (
@@ -45,12 +46,27 @@ class GymUseCases:
         # (token, expira_en, registro) de la exportación generada al cancelar, si la hubo.
         self.ultima_exportacion = None
 
+    @staticmethod
+    def validar_subdominio(subdominio: str) -> None:
+        """SA-RF-05 CA2 y CA3: formato y palabras reservadas. 422 con código específico."""
+        if SubdomainGenerator.es_reservado(subdominio):
+            raise BusinessRuleException(
+                f"El subdominio '{subdominio}' está reservado.", codigo="SUBDOMINIO_RESERVADO"
+            )
+        if not SubdomainGenerator.is_valid(subdominio):
+            raise BusinessRuleException(
+                "El subdominio solo admite a-z, 0-9 y guion, no puede empezar ni terminar en guion "
+                "y debe tener entre 3 y 63 caracteres.",
+                codigo="SUBDOMINIO_INVALIDO",
+            )
+
     def check_subdomain(self, subdomain: str) -> Tuple[bool, bool, str]:
         """Checks subdomain syntax and database availability (RF-05)."""
-        clean = SubdomainGenerator.slugify(subdomain)
-        is_valid = SubdomainGenerator.is_valid(clean)
-        if not is_valid:
-            return False, False, "El subdominio contiene caracteres inválidos o longitud fuera de rango (2-50 caracteres)."
+        clean = (subdomain or "").strip().lower()
+        if SubdomainGenerator.es_reservado(clean):
+            return False, False, "El subdominio está reservado (admin, www, api, app, mail)."
+        if not SubdomainGenerator.is_valid(clean):
+            return False, False, "El subdominio solo admite a-z, 0-9 y guion, sin guion al inicio ni al final, de 3 a 63 caracteres."
 
         existing = self.gym_repo.get_by_subdomain(clean)
         if existing:
@@ -74,13 +90,15 @@ class GymUseCases:
         6. Credentials issuance
         """
         # 1. Resolve & validate subdomain
-        raw_subdomain = data.subdominio if data.subdominio else SubdomainGenerator.slugify(data.nombre)
-        subdomain = SubdomainGenerator.slugify(raw_subdomain)
-        if not SubdomainGenerator.is_valid(subdomain):
-            raise BusinessRuleException(f"El subdominio '{subdomain}' no cumple con el formato permitido.")
+        # Si MVC escribe el subdominio se valida tal cual; si no, se autogenera del nombre (SA-RF-05).
+        if data.subdominio:
+            subdomain = data.subdominio.strip().lower()
+        else:
+            subdomain = SubdomainGenerator.slugify(data.nombre)
+        self.validar_subdominio(subdomain)
 
         if self.gym_repo.get_by_subdomain(subdomain):
-            raise EntityConflictException(f"El subdominio '{subdomain}' ya está en uso.")
+            raise EntityConflictException(f"El subdominio '{subdomain}' ya está en uso.", codigo="SUBDOMINIO_EN_USO")
 
         # Check Jefe email uniqueness
         existing_jefe = self.db.query(CuentaJefe).filter(CuentaJefe.correo == data.jefe.correo).first()
@@ -113,6 +131,12 @@ class GymUseCases:
                 },
             )
             self.db.commit()
+        except IntegrityError as exc:
+            # SA-RF-05 CA4: dos altas simultáneas con el mismo subdominio → la segunda recibe 409.
+            self.db.rollback()
+            if "subdominio" in str(exc.orig).lower():
+                raise EntityConflictException(f"El subdominio '{subdomain}' ya está en uso.", codigo="SUBDOMINIO_EN_USO")
+            raise
         except Exception:
             self.db.rollback()
             raise
