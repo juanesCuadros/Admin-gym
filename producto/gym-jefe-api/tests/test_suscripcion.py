@@ -1,7 +1,8 @@
 """
 Tanda 1.5 · puntos 5 y 6 · Estado de la suscripción (GW-RF-51) y duración de sesión (GW-RF-48).
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -13,7 +14,8 @@ def _auth(access: str) -> dict:
 
 
 def _hoy() -> date:
-    return date.today()
+    """Fecha de negocio en Bogotá: después de las 19:00 la fecha UTC ya es la del día siguiente."""
+    return datetime.now(ZoneInfo("America/Bogota")).date()
 
 
 @pytest.mark.parametrize(
@@ -87,8 +89,8 @@ async def test_bloqueo_se_levanta_con_la_primera_peticion_tras_el_pago(cliente, 
     from sqlalchemy import text
     async with fabrica.admin_engine.begin() as conn:
         await conn.execute(
-            text("UPDATE superadmin.gimnasios SET fecha_corte = current_date + 30 WHERE id = :id"),
-            {"id": gym.superadmin_id},
+            text("UPDATE superadmin.gimnasios SET fecha_corte = :corte WHERE id = :id"),
+            {"id": gym.superadmin_id, "corte": _hoy() + timedelta(days=30)},
         )
     assert (await login(cliente, gym, st)).status_code == 200
 
@@ -101,8 +103,8 @@ async def test_sesion_vigente_queda_fuera_cuando_el_gimnasio_se_bloquea(cliente,
     from sqlalchemy import text
     async with fabrica.admin_engine.begin() as conn:
         await conn.execute(
-            text("UPDATE superadmin.gimnasios SET fecha_corte = current_date - 4 WHERE id = :id"),
-            {"id": gym.superadmin_id},
+            text("UPDATE superadmin.gimnasios SET fecha_corte = :corte WHERE id = :id"),
+            {"id": gym.superadmin_id, "corte": _hoy() - timedelta(days=4)},
         )
 
     r = await cliente.get("/api/v1/auth/me", headers=_auth(body["access_token"]))
