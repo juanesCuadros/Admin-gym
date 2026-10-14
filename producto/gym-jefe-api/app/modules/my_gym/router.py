@@ -9,7 +9,7 @@ Exposiciones:
 - Control de Concurrencia Optimista (OCC)
 """
 from datetime import date
-from typing import Annotated, Optional
+from typing import Annotated, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
@@ -24,11 +24,16 @@ from app.modules.my_gym.schemas import (
     ActualizarParametrosRequest,
     AuditoriaFiltrosDisponiblesResponse,
     AuditoriaPaginadaResponse,
+    CrearSolicitudPlanRequest,
+    EstadoSuscripcionResponse,
     InfoGymResponse,
     LandingInfoResponse,
+    MensajeAccionResponse,
     ParametrosTenantResponse,
+    PlanDisponibleItem,
+    PlanSuscripcionResponse,
     PublicBrandingResponse,
-    EstadoSuscripcionResponse,
+    SolicitudPlanCreadaResponse,
 )
 from app.modules.my_gym.service import MyGymService
 
@@ -322,3 +327,86 @@ async def obtener_filtros_auditoria(
         session=session,
         gimnasio_id=current_staff.gimnasio_id
     )
+
+
+# ==============================================================================
+# CONTRATO 2.6: MI SUSCRIPCIÓN (PLANES DEL SAAS)
+# ==============================================================================
+
+@router.get(
+    "/plan",
+    response_model=PlanSuscripcionResponse,
+    summary="Consultar plan actual, uso del tenant y solicitud pendiente (Contrato 2.6)"
+)
+async def obtener_mi_plan(
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("configuracion", "leer"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    Retorna la información del plan vigente, las métricas de uso actuales (clientes activos y staff)
+    y la solicitud de cambio de plan pendiente si existiere.
+    """
+    return await MyGymService.obtener_mi_plan(
+        session=session,
+        gimnasio_id=current_staff.gimnasio_id
+    )
+
+
+@router.get(
+    "/planes",
+    response_model=List[PlanDisponibleItem],
+    summary="Listar planes disponibles para suscripción (Contrato 2.6)"
+)
+async def listar_planes_disponibles(
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("configuracion", "leer"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    Retorna el catálogo de planes públicos, activos y de pago disponibles en el SaaS
+    para solicitud de suscripción o cambio de plan.
+    """
+    return await MyGymService.listar_planes_disponibles(session=session)
+
+
+@router.post(
+    "/plan/solicitud",
+    response_model=SolicitudPlanCreadaResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Solicitar cambio de plan de suscripción (Contrato 2.6)"
+)
+async def crear_solicitud_plan(
+    data: CrearSolicitudPlanRequest,
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_role("jefe"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    Registra una solicitud de cambio de plan. Solo puede ser solicitada por el Jefe.
+    Responde 409 si ya existe una solicitud pendiente y 422 si el plan no está disponible.
+    """
+    return await MyGymService.crear_solicitud_plan(
+        session=session,
+        gimnasio_id=current_staff.gimnasio_id,
+        data=data,
+        current_staff=current_staff
+    )
+
+
+@router.delete(
+    "/plan/solicitud",
+    response_model=MensajeAccionResponse,
+    summary="Cancelar solicitud de cambio de plan pendiente (Contrato 2.6)"
+)
+async def cancelar_solicitud_plan(
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_role("jefe"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    Cancela la solicitud de cambio de plan pendiente del gimnasio. Solo ejecutable por el Jefe.
+    Responde 404 si no hay ninguna solicitud pendiente para cancelar.
+    """
+    return await MyGymService.cancelar_solicitud_plan(
+        session=session,
+        gimnasio_id=current_staff.gimnasio_id,
+        current_staff=current_staff
+    )
+

@@ -240,3 +240,58 @@ class AuditoriaPaginadaResponse(BaseModel):
 class AuditoriaFiltrosDisponiblesResponse(BaseModel):
     acciones: List[str]
     entidades: List[str]
+
+
+# ==============================================================================
+# CONTRATO 2.6: MI SUSCRIPCIÓN (PLANES DEL SAAS)
+# ==============================================================================
+
+class PlanActualDetalle(BaseModel):
+    codigo: str
+    nombre: str
+    tipo: str
+    max_clientes_activos: Optional[int] = None
+    max_staff: Optional[int] = None
+
+
+class UsoTenantDetalle(BaseModel):
+    clientes_activos: int
+    staff: int
+
+
+class SolicitudPlanPendienteDetalle(BaseModel):
+    id: UUID
+    plan_nombre: str
+    solicitado_por: str
+    created_at: datetime
+
+
+class PlanSuscripcionResponse(BaseModel):
+    plan_actual: Optional[PlanActualDetalle] = None
+    uso: UsoTenantDetalle
+    solicitud_pendiente: Optional[SolicitudPlanPendienteDetalle] = None
+
+
+class PlanDisponibleItem(BaseModel):
+    id: UUID
+    codigo: str
+    nombre: str
+    descripcion: Optional[str] = None
+    precio: int
+    duracion_meses: int
+    max_clientes_activos: Optional[int] = None
+    max_staff: Optional[int] = None
+
+
+class CrearSolicitudPlanRequest(BaseModel):
+    plan_id: UUID
+    nota: Optional[str] = None
+
+
+class SolicitudPlanCreadaResponse(BaseModel):
+    id: UUID
+
+
+class MensajeAccionResponse(BaseModel):
+    mensaje: str
+
