@@ -1,171 +1,101 @@
-import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { FilterBar } from '@/components/forms/FilterBar';
 import { SearchInput } from '@/components/forms/SearchInput';
 import { Select } from '@/components/forms/Select';
 import { DataTable, ColumnDef } from '@/components/data/DataTable';
-import { StatusBadge } from '@/components/data/StatusBadge';
-import { Pagination } from '@/components/navigation/Pagination';
 import { Button } from '@/components/actions/Button';
 import { useGyms } from '@/hooks/useGyms';
-import { GymListItem, GymState } from '@/types/gym.types';
-import { PlusCircle, Building2, ChevronRight, Phone, Mail } from 'lucide-react';
+import { useDebounce } from '@/hooks/useDebounce';
+import { FiltroEstadoCalculado, GymListItem, GymState } from '@/types/gym.types';
+import { OrdenGimnasios } from '@/services/gymService';
+import { ETIQUETA_ESTADO, ETIQUETA_ESTADO_CALCULADO } from '@/utils/estados';
+import {
+  columnaCorte,
+  columnaEstados,
+  columnaGimnasio,
+  columnaJefe,
+  columnaPlan,
+} from '@/components/business/GymColumns';
+import { PlusCircle, ChevronRight, ChevronLeft } from 'lucide-react';
 
+const ESTADOS: GymState[] = ['prueba', 'activo', 'suspendido', 'cancelado'];
+const CALCULADOS: FiltroEstadoCalculado[] = ['bloqueado', 'en_gracia', 'prueba_por_vencer', 'por_vencer', 'al_dia'];
+
+function leerEstado(v: string | null): GymState | '' {
+  return v && (ESTADOS as string[]).includes(v) ? (v as GymState) : '';
+}
+function leerCalculado(v: string | null): FiltroEstadoCalculado | '' {
+  return v && (CALCULADOS as string[]).includes(v) ? (v as FiltroEstadoCalculado) : '';
+}
+
+/** Listado de gimnasios (SA-RF-03): búsqueda, filtros por estado guardado y calculado, 20 por página. */
 export const GymListPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const {
     gyms,
+    hayMas,
     isLoading,
     error,
     search,
     setSearch,
     estado,
     setEstado,
+    estadoCalculado,
+    setEstadoCalculado,
     orderBy,
     setOrderBy,
     limit,
     offset,
     setOffset,
     refetch,
-  } = useGyms();
+  } = useGyms({
+    estado: leerEstado(searchParams.get('estado')),
+    estado_calculado: leerCalculado(searchParams.get('estado_calculado')),
+    search: searchParams.get('q') || '',
+  });
 
-  const formatCOP = (val: number) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      maximumFractionDigits: 0,
-    }).format(val);
-  };
+  // Búsqueda con espera para no pedir en cada tecla.
+  const [texto, setTexto] = useState(search);
+  const textoDebounced = useDebounce(texto, 350);
+  useEffect(() => {
+    if (textoDebounced !== search) setSearch(textoDebounced);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textoDebounced]);
+
+  // Los filtros quedan en la URL para poder compartir o volver al mismo listado.
+  useEffect(() => {
+    const p = new URLSearchParams();
+    if (estado) p.set('estado', estado);
+    if (estadoCalculado) p.set('estado_calculado', estadoCalculado);
+    if (search) p.set('q', search);
+    setSearchParams(p, { replace: true });
+  }, [estado, estadoCalculado, search, setSearchParams]);
+
+  const hayFiltros = !!(search || estado || estadoCalculado);
+  const pagina = Math.floor(offset / limit) + 1;
 
   const columns: ColumnDef<GymListItem>[] = [
+    columnaGimnasio,
+    columnaEstados,
+    columnaCorte,
+    columnaPlan,
+    columnaJefe,
     {
-      id: 'nombre',
-      header: 'Gimnasio',
-      sortable: true,
-      accessorKey: 'nombre',
-      render: (row) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: 'var(--color-bg-subtle)',
-              border: '1px solid var(--color-border)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 'var(--font-weight-bold)',
-              color: 'var(--color-action)',
-            }}
-          >
-            {row.nombre.substring(0, 2).toUpperCase()}
-          </div>
-          <div>
-            <div style={{ fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-primary)' }}>
-              {row.nombre}
-            </div>
-            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)' }}>
-              {row.subdominio}.gymos.io
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      id: 'estado',
-      header: 'Estado',
-      accessorKey: 'estado',
-      render: (row) => <StatusBadge status={row.estado} />,
-    },
-    {
-      id: 'fecha_corte',
-      header: 'Corte / Vencimiento',
-      sortable: true,
-      accessorKey: 'fecha_corte',
-      render: (row) => {
-        if (!row.fecha_corte) return <span style={{ color: 'var(--color-text-tertiary)' }}>Sin fecha</span>;
-        const dias = row.dias_restantes;
-        const isUrgent = dias !== null && dias !== undefined && dias <= 5;
-        const isExpired = dias !== null && dias !== undefined && dias < 0;
-
-        return (
-          <div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--font-weight-medium)' }}>
-              {row.fecha_corte}
-            </div>
-            {dias !== null && dias !== undefined && (
-              <div
-                style={{
-                  fontSize: 'var(--font-size-xs)',
-                  fontWeight: 'var(--font-weight-semibold)',
-                  color: isExpired
-                    ? 'var(--color-error)'
-                    : isUrgent
-                    ? 'var(--color-warning)'
-                    : 'var(--color-text-secondary)',
-                }}
-              >
-                {isExpired
-                  ? `Vencido (${Math.abs(dias)}d)`
-                  : dias === 0
-                  ? 'Vence hoy'
-                  : `En ${dias} días`}
-              </div>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      id: 'ubicacion',
-      header: 'Ciudad / Teléfono',
-      render: (row) => (
-        <div>
-          <div style={{ fontWeight: 'var(--font-weight-medium)' }}>{row.ciudad || 'Colombia'}</div>
-          {row.telefono && (
-            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Phone size={12} />
-              <span>{row.telefono}</span>
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
-      id: 'jefe',
-      header: 'Jefe / Dueño',
-      render: (row) => (
-        <div>
-          <div style={{ fontWeight: 'var(--font-weight-medium)' }}>{row.jefe_nombre || '—'}</div>
-          {row.jefe_correo && (
-            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Mail size={12} />
-              <span>{row.jefe_correo}</span>
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
-      id: 'valor_mensual',
-      header: 'Tarifa Mensual',
-      align: 'right',
-      accessorKey: 'valor_mensual',
-      render: (row) => (
-        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 'var(--font-weight-semibold)' }}>
-          {row.valor_mensual ? formatCOP(row.valor_mensual) : '—'}
-        </span>
-      ),
+      id: 'ciudad',
+      header: 'Ciudad',
+      render: (row) => <span>{row.ciudad || '—'}</span>,
     },
     {
       id: 'acciones',
       header: '',
       align: 'right',
       render: (row) => (
-        <Link to={`/gyms/${row.id}`}>
+        <Link to={`/gyms/${row.id}`} onClick={(e) => e.stopPropagation()}>
           <Button variant="ghost" size="sm" rightIcon={<ChevronRight size={14} />}>
             Ficha
           </Button>
@@ -177,55 +107,86 @@ export const GymListPage: React.FC = () => {
   return (
     <PageContainer>
       <PageHeader
-        title="Directorio de Gimnasios"
-        subtitle="Administración centralizada de centros afiliados, estados de suscripción y accesos (RF-02/RF-03)."
+        title="Gimnasios"
+        subtitle="Ordenados por urgencia: bloqueados, en gracia, pruebas por vencer y por vencer primero."
         actions={
           <Link to="/gyms/new">
             <Button variant="primary" leftIcon={<PlusCircle size={16} />}>
-              Nuevo Gimnasio
+              Crear gimnasio
             </Button>
           </Link>
         }
       />
 
-      {/* Filter Bar */}
       <FilterBar>
         <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Buscar por nombre, subdominio o ciudad…"
-          style={{ maxWidth: '340px' }}
+          value={texto}
+          onChange={setTexto}
+          onClear={() => setTexto('')}
+          placeholder="Buscar por nombre, subdominio, NIT o ciudad…"
+          style={{ maxWidth: '320px' }}
         />
 
-        <div style={{ width: '180px' }}>
+        <div style={{ width: '190px' }}>
           <Select
             value={estado}
             onChange={(e) => setEstado(e.target.value as GymState | '')}
+            aria-label="Estado guardado"
             options={[
-              { value: '', label: 'Todos los estados' },
-              { value: 'activo', label: 'Activo' },
-              { value: 'prueba', label: 'En prueba' },
-              { value: 'suspendido', label: 'Suspendido' },
-              { value: 'cancelado', label: 'Cancelado' },
+              { value: '', label: 'Estado: todos' },
+              ...ESTADOS.map((e) => ({ value: e, label: ETIQUETA_ESTADO[e] })),
             ]}
           />
         </div>
 
         <div style={{ width: '220px' }}>
           <Select
-            value={orderBy}
-            onChange={(e) => setOrderBy(e.target.value as any)}
+            value={estadoCalculado}
+            onChange={(e) => setEstadoCalculado(e.target.value as FiltroEstadoCalculado | '')}
+            aria-label="Estado calculado"
             options={[
-              { value: 'urgency', label: 'Orden: Por Urgencia (Corte)' },
-              { value: 'nombre', label: 'Orden: Nombre Alfabético' },
-              { value: 'fecha_corte', label: 'Orden: Fecha de Corte' },
-              { value: 'created_at', label: 'Orden: Más recientes' },
+              { value: '', label: 'Estado calculado: todos' },
+              ...CALCULADOS.map((c) => ({ value: c, label: ETIQUETA_ESTADO_CALCULADO[c] })),
             ]}
           />
         </div>
+
+        <div style={{ width: '210px' }}>
+          <Select
+            value={orderBy}
+            onChange={(e) => setOrderBy(e.target.value as OrdenGimnasios)}
+            aria-label="Orden"
+            options={[
+              { value: 'urgency', label: 'Orden: urgencia' },
+              { value: 'nombre', label: 'Orden: nombre' },
+              { value: 'fecha_corte', label: 'Orden: fecha de corte' },
+              { value: 'created_at', label: 'Orden: más recientes' },
+            ]}
+          />
+        </div>
+
+        {hayFiltros && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setTexto('');
+              setSearch('');
+              setEstado('');
+              setEstadoCalculado('');
+            }}
+          >
+            Limpiar filtros
+          </Button>
+        )}
       </FilterBar>
 
-      {/* Main Table */}
+      {estadoCalculado && estado === 'cancelado' && (
+        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginBottom: '12px' }}>
+          Los cancelados no tienen estado calculado: esta combinación no devuelve resultados.
+        </div>
+      )}
+
       <DataTable
         columns={columns}
         data={gyms}
@@ -234,29 +195,53 @@ export const GymListPage: React.FC = () => {
         error={error}
         onRetry={refetch}
         onRowClick={(row) => navigate(`/gyms/${row.id}`)}
-        emptyTitle="No se encontraron gimnasios"
+        emptyTitle={hayFiltros ? 'Sin resultados' : 'Aún no hay gimnasios'}
         emptyDescription={
-          search || estado
-            ? 'Prueba ajustando los filtros de búsqueda o estado.'
-            : 'Aún no se han dado de alta gimnasios en el sistema.'
+          hayFiltros ? 'Ningún gimnasio coincide con la búsqueda o los filtros.' : 'Crea el primer gimnasio para empezar.'
         }
         emptyAction={
-          <Link to="/gyms/new">
-            <Button variant="primary" leftIcon={<PlusCircle size={16} />}>
-              Crear Gimnasio
-            </Button>
-          </Link>
+          hayFiltros ? undefined : (
+            <Link to="/gyms/new">
+              <Button variant="primary" leftIcon={<PlusCircle size={16} />}>
+                Crear el primer gimnasio
+              </Button>
+            </Link>
+          )
         }
       />
 
-      {/* Pagination */}
-      {gyms.length > 0 && (
-        <Pagination
-          limit={limit}
-          offset={offset}
-          totalCount={gyms.length >= limit ? offset + limit + 1 : offset + gyms.length}
-          onPageChange={setOffset}
-        />
+      {(offset > 0 || hayMas) && !error && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: '12px',
+            padding: '12px 0',
+            fontSize: 'var(--font-size-sm)',
+            color: 'var(--color-text-secondary)',
+          }}
+        >
+          <span>Página {pagina}</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<ChevronLeft size={14} />}
+            disabled={offset === 0 || isLoading}
+            onClick={() => setOffset(Math.max(0, offset - limit))}
+          >
+            Anterior
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            rightIcon={<ChevronRight size={14} />}
+            disabled={!hayMas || isLoading}
+            onClick={() => setOffset(offset + limit)}
+          >
+            Siguiente
+          </Button>
+        </div>
       )}
     </PageContainer>
   );
