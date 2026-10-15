@@ -155,10 +155,16 @@ async def run_modulo_5_full_test_suite():
         # 3. Asignación Inicial de Membresía (RF-25)
         print("\n--- Probando Asignación de Membresía (RF-25) ---")
         # 3.1 Intento de asignar plan desactivado -> 400
+        # Vender un plan cobra en el mismo paso: exige turno propio abierto y clave de cobro.
+        r_turno_a = await client.post("/api/v1/caja/turnos/abrir", json={"base_inicial": 0}, headers=headers_a)
+        assert r_turno_a.status_code == 201, r_turno_a.text
+        pago_plan_a = {"monto": 950000, "metodo": "efectivo", "tipo_medio": "efectivo"}
+
         r_asig_inact = await client.post("/api/v1/membresias/asignar", json={
             "deportista_id": str(dep_a_id),
-            "plan_id": str(plan_sec_id)
-        }, headers=headers_a)
+            "plan_id": str(plan_sec_id),
+            "pago": {"monto": 250000, "metodo": "efectivo", "tipo_medio": "efectivo"},
+        }, headers={**headers_a, "X-Idempotency-Key": f"venta-inactivo-{uuid4().hex}"})
         assert r_asig_inact.status_code == 400
         assert r_asig_inact.json()["error"]["codigo"] == "PLAN_INACTIVO"
         print(" [PASS] Intento de asignar plan desactivado bloqueado (400 PLAN_INACTIVO).")
@@ -166,8 +172,9 @@ async def run_modulo_5_full_test_suite():
         # 3.2 Asignación legítima de Plan Black
         r_asig = await client.post("/api/v1/membresias/asignar", json={
             "deportista_id": str(dep_a_id),
-            "plan_id": str(plan_a_id)
-        }, headers=headers_a)
+            "plan_id": str(plan_a_id),
+            "pago": pago_plan_a,
+        }, headers={**headers_a, "X-Idempotency-Key": f"venta-a-{uuid4().hex}"})
         assert r_asig.status_code == 201
         memb_a_id = r_asig.json()["id"]
         assert r_asig.json()["estado_calculado"] == "activo"
@@ -176,8 +183,9 @@ async def run_modulo_5_full_test_suite():
         # 3.3 Bloqueo de membresía activa duplicada (Ajuste Crítico 2)
         r_asig_dup = await client.post("/api/v1/membresias/asignar", json={
             "deportista_id": str(dep_a_id),
-            "plan_id": str(plan_a_id)
-        }, headers=headers_a)
+            "plan_id": str(plan_a_id),
+            "pago": pago_plan_a,
+        }, headers={**headers_a, "X-Idempotency-Key": f"venta-dup-{uuid4().hex}"})
         assert r_asig_dup.status_code == 409
         assert r_asig_dup.json()["error"]["codigo"] == "MEMBRESIA_ACTIVA_EXISTENTE"
         print(" [PASS] Asignación duplicada sobre membresía activa bloqueada (409 MEMBRESIA_ACTIVA_EXISTENTE).")
@@ -225,15 +233,25 @@ async def run_modulo_5_full_test_suite():
         assert r_plan_sem.status_code == 201
         plan_sem_id = r_plan_sem.json()["id"]
 
-        # Congelamos de nuevo la membresía para verificar que cambiar_plan cierra el congelamiento
+        # Con la membresía congelada no se cambia de plan: primero se descongela (no se pierden días).
         await client.post(f"/api/v1/membresias/{memb_a_id}/congelar", json={"motivo": "Pausa previa a cambio"}, headers=headers_a)
+        pago_semestral = {"monto": 500000, "metodo": "efectivo", "tipo_medio": "efectivo"}
+        r_cambio_cong = await client.post(f"/api/v1/membresias/{memb_a_id}/cambiar-plan", json={
+            "nuevo_plan_id": str(plan_sem_id),
+            "pago": pago_semestral,
+        }, headers={**headers_a, "X-Idempotency-Key": f"cambio-cong-{uuid4().hex}"})
+        assert r_cambio_cong.status_code == 409
+        assert r_cambio_cong.json()["error"]["codigo"] == "MEMBRESIA_CONGELADA"
+        r_descong_2 = await client.post(f"/api/v1/membresias/{memb_a_id}/descongelar", headers=headers_a)
+        assert r_descong_2.status_code == 200
 
         # 5.2 Cambiar de plan
         r_cambio = await client.post(f"/api/v1/membresias/{memb_a_id}/cambiar-plan", json={
             "nuevo_plan_id": str(plan_sem_id),
-            "motivo": "Upgrade a VIP Semestral"
-        }, headers=headers_a)
-        assert r_cambio.status_code == 200
+            "motivo": "Upgrade a VIP Semestral",
+            "pago": pago_semestral,
+        }, headers={**headers_a, "X-Idempotency-Key": f"cambio-{uuid4().hex}"})
+        assert r_cambio.status_code == 200, r_cambio.text
         nueva_memb_id = r_cambio.json()["id"]
         assert nueva_memb_id != memb_a_id
         assert r_cambio.json()["plan_nombre"] == "Plan Semestral VIP"
@@ -334,9 +352,12 @@ async def run_modulo_5_full_test_suite():
         print(" [PASS] Cross-Tenant: POST /descongelar sobre membresía de Gym A bloqueado.")
 
         # 8.5 Gym B no puede cambiar plan ni cancelar membresías de Gym A
+        r_turno_b = await client.post("/api/v1/caja/turnos/abrir", json={"base_inicial": 0}, headers=headers_b)
+        assert r_turno_b.status_code == 201, r_turno_b.text
         r_cross_change = await client.post(f"/api/v1/membresias/{nueva_memb_id}/cambiar-plan", json={
-            "nuevo_plan_id": str(plan_sem_id)
-        }, headers=headers_b)
+            "nuevo_plan_id": str(plan_sem_id),
+            "pago": {"monto": 500000, "metodo": "efectivo", "tipo_medio": "efectivo"},
+        }, headers={**headers_b, "X-Idempotency-Key": f"cambio-cross-{uuid4().hex}"})
         assert r_cross_change.status_code == 404
         print(" [PASS] Cross-Tenant: POST /cambiar-plan sobre membresía de Gym A -> 404.")
 

@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
+from app.modules.caja.schemas import PagoMembresiaResponseDto
+
 
 # =============================================================================
 # 1. CATÁLOGO DE PLANES (RF-24)
@@ -68,15 +70,31 @@ class PlanesListResponse(BaseModel):
 # 2. GESTIÓN DE MEMBRESÍAS Y CICLO DE VIDA (RF-25, RF-27, RF-42)
 # =============================================================================
 
+class PagoVentaDto(BaseModel):
+    """
+    Cobro que acompaña la venta de un plan (asignar, plan grupal o cambio de plan). Se registra en el turno
+    de caja propio, en la misma transacción que la membresía, y no suma días: la vigencia la da el plan.
+    Mismas reglas de descuento que `POST /caja/pagos-membresia`.
+    """
+    monto: Decimal = Field(..., gt=0, description="Valor cobrado")
+    metodo: str = Field(..., min_length=2, max_length=50, description="Texto libre (efectivo, nequi, tarjeta)")
+    tipo_medio: Literal["efectivo", "otro"] = Field(..., description="Categoría de medio de pago")
+    precio_cobrado: Optional[Decimal] = Field(None, ge=0, description="Precio cobrado si tiene descuento")
+    motivo_descuento: Optional[str] = Field(None, max_length=255, description="Obligatorio si hay descuento")
+    valor_recibido: Optional[Decimal] = Field(None, ge=0, description="Valor recibido en efectivo, para el cambio")
+
+
 class AsignarMembresiaRequest(BaseModel):
     deportista_id: UUID = Field(..., description="UUID del deportista que recibe la membresía")
     plan_id: UUID = Field(..., description="UUID del plan tarifario a asignar")
     fecha_inicio: Optional[date] = Field(None, description="Fecha de inicio (default hoy local)")
+    pago: PagoVentaDto = Field(..., description="Cobro de la venta, en el mismo paso")
 
 
 class CambiarPlanRequest(BaseModel):
     nuevo_plan_id: UUID = Field(..., description="UUID del nuevo plan a contratar")
     motivo: Optional[str] = Field(None, max_length=255, description="Motivo opcional del cambio de plan")
+    pago: PagoVentaDto = Field(..., description="Cobro del plan nuevo, en el mismo paso")
 
 
 class CancelarMembresiaRequest(BaseModel):
@@ -106,6 +124,8 @@ class MembresiaResponse(BaseModel):
     plan_duracion_dias_vendida: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    # Pago de la venta (asignar y cambio de plan). Ausente en las consultas.
+    pago: Optional[PagoMembresiaResponseDto] = None
 
 
 class MembresiaListItemResponse(BaseModel):
@@ -160,6 +180,7 @@ class CrearPaqueteRequest(BaseModel):
     titular_id: UUID = Field(..., description="UUID del deportista titular (debe ser mayor de edad y beneficiario)")
     beneficiarios: List[UUID] = Field(..., min_length=1, description="Lista de UUIDs de todos los beneficiarios (incluyendo al titular)")
     fecha_inicio: Optional[date] = Field(None, description="Fecha de inicio general (default hoy local)")
+    pago: PagoVentaDto = Field(..., description="Un solo cobro por todo el paquete, en el mismo paso")
 
 
 class PaqueteMembresiaItemDto(BaseModel):
@@ -174,6 +195,7 @@ class PaqueteMembresiaItemDto(BaseModel):
 class CrearPaqueteResponse(BaseModel):
     paquete_id: UUID
     membresias: List[PaqueteMembresiaItemDto]
+    pago: Optional[PagoMembresiaResponseDto] = None
 
 
 class TitularResumenDto(BaseModel):

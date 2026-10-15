@@ -15,6 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditService
 from app.core.timezone import today_local
+from app.modules.caja.reglas import calcular_vencimiento_renovacion_c2
+from app.modules.caja.schemas import PagoMembresiaResponseDto, RegistrarPagoMembresiaRequest
+from app.modules.caja.service import CajaService
 from app.modules.membresias.domain import MembresiaDomainService
 from app.modules.membresias.schemas import (
     AsignarMembresiaRequest,
@@ -32,6 +35,7 @@ from app.modules.membresias.schemas import (
     MembresiaListItemResponse,
     MembresiaResponse,
     MembresiasPaginadasResponse,
+    PagoVentaDto,
     PaqueteMembresiaItemDto,
     PlanResponse,
     PlanesListResponse,
@@ -78,6 +82,69 @@ class MembresiasService:
         """)
         await session.execute(q_close, {"hoy": hoy, "dias": dias_efectivos, "id": cong["id"]})
         return cong["id"]
+
+    @staticmethod
+    def _clave_en_uso() -> HTTPException:
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "codigo": "CLAVE_IDEMPOTENCIA_EN_USO",
+                "mensaje": "Esa clave de cobro ya se usó en otra operación. Recarga e inténtalo de nuevo.",
+            },
+        )
+
+    @classmethod
+    async def _venta_previa(
+        cls, session: AsyncSession, gym_id: UUID, idempotency_key: str
+    ) -> Optional[PagoMembresiaResponseDto]:
+        """Pago ya registrado con esta clave: el reintento devuelve la venta original sin repetirla."""
+        return await CajaService._consultar_pago_membresia_existente_por_key(session, gym_id, idempotency_key.strip())
+
+    @classmethod
+    async def _respuesta_venta_previa(
+        cls, session: AsyncSession, gym_id: UUID, previo: PagoMembresiaResponseDto, deportista_id: UUID
+    ) -> MembresiaResponse:
+        if previo.membresia_id is None:
+            raise cls._clave_en_uso()
+        ficha = await cls.obtener_ficha_membresia(session, gym_id, previo.membresia_id)
+        if ficha.membresia.deportista_id != deportista_id:
+            raise cls._clave_en_uso()
+        return ficha.membresia.model_copy(update={"pago": previo})
+
+    @classmethod
+    async def _cobrar_venta(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        staff_id: UUID,
+        staff_rol: str,
+        staff_nombre: str,
+        idempotency_key: str,
+        pago: PagoVentaDto,
+        membresia_id: Optional[UUID] = None,
+        paquete_id: Optional[UUID] = None,
+    ) -> PagoMembresiaResponseDto:
+        """Registra el cobro de la venta en el turno propio, en la misma transacción que la membresía."""
+        return await CajaService.registrar_pago_membresia(
+            session=session,
+            gym_id=gym_id,
+            staff_id=staff_id,
+            staff_rol=staff_rol,
+            staff_nombre=staff_nombre,
+            idempotency_key=idempotency_key,
+            data=RegistrarPagoMembresiaRequest(
+                membresia_id=membresia_id,
+                paquete_id=paquete_id,
+                monto=pago.monto,
+                metodo=pago.metodo,
+                tipo_medio=pago.tipo_medio,
+                dias_agregados=0,
+                valor_recibido=pago.valor_recibido,
+                precio_cobrado=pago.precio_cobrado,
+                motivo_descuento=pago.motivo_descuento,
+            ),
+            venta=True,
+        )
 
     @classmethod
     async def _obtener_config_tenant(cls, session: AsyncSession, gym_id: UUID) -> Tuple[int, int]:
@@ -314,9 +381,12 @@ class MembresiasService:
         staff_id: UUID,
         staff_nombre: str,
         req: AsignarMembresiaRequest,
+        staff_rol: str = "",
+        idempotency_key: str = "",
     ) -> MembresiaResponse:
         """
-        Asigna el plan inicial a un deportista sin membresía activa previa.
+        Vende el plan inicial a un deportista sin membresía previa: crea la membresía (inicio + duración)
+        y registra su cobro en el turno propio, todo en la misma transacción. El cobro no suma días.
         Bloquea duplicados activos con 409 MEMBRESIA_ACTIVA_EXISTENTE.
         """
         # 1. Validar y bloquear deportista como mutex de concurrencia (evita TOCTOU)
@@ -333,6 +403,11 @@ class MembresiasService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"codigo": "DEPORTISTA_NO_ENCONTRADO", "mensaje": "Deportista no encontrado"}
             )
+
+        # Reintento de la misma venta (con el deportista ya bloqueado): devuelve la original.
+        previo = await cls._venta_previa(session, gym_id, idempotency_key)
+        if previo:
+            return await cls._respuesta_venta_previa(session, gym_id, previo, req.deportista_id)
 
         # 2. Validar plan
         q_plan = text("SELECT id, nombre, precio, duracion_dias, activo FROM platform.planes WHERE id = :id AND gimnasio_id = :gym_id")
@@ -394,6 +469,10 @@ class MembresiasService:
         })
         m = res_ins.mappings().one()
 
+        pago = await cls._cobrar_venta(
+            session, gym_id, staff_id, staff_rol, staff_nombre, idempotency_key, req.pago, membresia_id=m["id"]
+        )
+
         await AuditService.registrar(
             session=session,
             gimnasio_id=gym_id,
@@ -402,7 +481,13 @@ class MembresiasService:
             accion="ASIGNAR_MEMBRESIA",
             entidad="membresias",
             entidad_id=m["id"],
-            detalle={"plan_nombre": plan["nombre"], "fecha_inicio": str(f_inicio), "fecha_vencimiento": str(f_vencimiento)}
+            detalle={
+                "plan_nombre": plan["nombre"],
+                "fecha_inicio": str(f_inicio),
+                "fecha_vencimiento": str(f_vencimiento),
+                "pago_id": str(pago.id),
+                "monto": float(pago.monto),
+            }
         )
 
         hoy = today_local()
@@ -423,7 +508,8 @@ class MembresiasService:
             plan_nombre=plan["nombre"],
             estado_calculado=calc.estado,
             dias_restantes_o_vencido=calc.dias_restantes_o_vencido,
-            congelamiento_activo=False
+            congelamiento_activo=False,
+            pago=pago,
         )
 
     @classmethod
@@ -435,18 +521,21 @@ class MembresiasService:
         staff_nombre: str,
         membresia_id: UUID,
         req: CambiarPlanRequest,
+        staff_rol: str = "",
+        idempotency_key: str = "",
     ) -> MembresiaResponse:
         """
-        Cambio de plan sin prorrateo (Opción A):
-        1. Cierra congelamientos abiertos si existieran.
-        2. Marca membresía anterior cancelada = true.
-        3. Crea nueva membresía desde hoy con vigencia completa del nuevo plan.
+        Cambio de plan sin prorrateo y sin pérdida de días (GW-RF-25 CA3), cobrado en el mismo paso:
+        1. Rechaza el cambio si la membresía está congelada hoy (hay que descongelarla primero).
+        2. El plan nuevo empieza cuando termina el actual. Si ya venció, aplica la regla C2.
+        3. Marca la membresía anterior cancelada = true y crea la nueva con su cobro de venta.
         """
         hoy = today_local()
 
         # 1. Bloquear y validar membresía actual
         q_curr = text("""
-            SELECT m.id, m.deportista_id, m.plan_id, m.cancelada, d.activo as deportista_activo
+            SELECT m.id, m.deportista_id, m.plan_id, m.cancelada, m.fecha_vencimiento,
+                   d.activo as deportista_activo
             FROM platform.membresias m
             JOIN platform.deportistas d ON d.id = m.deportista_id
             WHERE m.id = :id AND m.gimnasio_id = :gym_id
@@ -459,10 +548,30 @@ class MembresiasService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"codigo": "MEMBRESIA_NO_ENCONTRADA", "mensaje": "Membresía no encontrada"}
             )
+        # Reintento del mismo cambio (con la membresía ya bloqueada): devuelve el original.
+        previo = await cls._venta_previa(session, gym_id, idempotency_key)
+        if previo:
+            return await cls._respuesta_venta_previa(session, gym_id, previo, curr["deportista_id"])
+
         if curr["cancelada"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"codigo": "MEMBRESIA_CANCELADA", "mensaje": "No se puede cambiar el plan de una membresía que ya está cancelada"}
+            )
+
+        res_cong = await session.execute(
+            text("""
+                SELECT 1 FROM platform.congelamientos
+                WHERE gimnasio_id = :gym_id AND membresia_id = :memb_id
+                  AND fecha_inicio <= :hoy AND (fecha_fin IS NULL OR fecha_fin > :hoy)
+                LIMIT 1
+            """),
+            {"gym_id": gym_id, "memb_id": membresia_id, "hoy": hoy},
+        )
+        if res_cong.first():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"codigo": "MEMBRESIA_CONGELADA", "mensaje": "Descongela la membresía antes de cambiar de plan."}
             )
 
         # 2. Validar nuevo plan
@@ -491,8 +600,21 @@ class MembresiasService:
         """)
         await session.execute(q_cancel, {"id": membresia_id})
 
-        # 5. Insertar nueva membresía desde hoy
-        nueva_venc = hoy + timedelta(days=new_plan["duracion_dias"])
+        # 5. Insertar la nueva membresía: empieza cuando termina la actual (CA3); si ya venció, regla C2.
+        gracia, umbral = await cls._obtener_config_tenant(session, gym_id)
+        venc_actual: date = curr["fecha_vencimiento"]
+        checkin_en_gracia = False
+        if venc_actual < hoy:
+            checkin_en_gracia = await CajaService.tuvo_checkin_en_gracia(
+                session, gym_id, curr["deportista_id"], venc_actual, gracia
+            )
+        f_inicio_nueva, nueva_venc = calcular_vencimiento_renovacion_c2(
+            venc_actual=venc_actual,
+            hoy=hoy,
+            dias_duracion=new_plan["duracion_dias"],
+            dias_gracia_mora=gracia,
+            tuvo_checkin_en_gracia=checkin_en_gracia,
+        )
         q_ins = text("""
             INSERT INTO platform.membresias (
                 gimnasio_id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada,
@@ -507,12 +629,16 @@ class MembresiasService:
             "gym_id": gym_id,
             "dep_id": curr["deportista_id"],
             "plan_id": new_plan["id"],
-            "fini": hoy,
+            "fini": f_inicio_nueva,
             "fvenc": nueva_venc,
             "plan_precio_vendido": new_plan["precio"],
             "plan_duracion_dias_vendida": new_plan["duracion_dias"],
         })
         nueva_m = res_ins.mappings().one()
+
+        pago = await cls._cobrar_venta(
+            session, gym_id, staff_id, staff_rol, staff_nombre, idempotency_key, req.pago, membresia_id=nueva_m["id"]
+        )
 
         await AuditService.registrar(
             session=session,
@@ -526,11 +652,14 @@ class MembresiasService:
                 "membresia_anterior_id": str(membresia_id),
                 "nueva_membresia_id": str(nueva_m["id"]),
                 "nuevo_plan_nombre": new_plan["nombre"],
-                "motivo": req.motivo or "CAMBIO_DE_PLAN"
+                "motivo": req.motivo or "CAMBIO_DE_PLAN",
+                "fecha_inicio": str(f_inicio_nueva),
+                "fecha_vencimiento": str(nueva_venc),
+                "pago_id": str(pago.id),
+                "monto": float(pago.monto),
             }
         )
 
-        gracia, umbral = await cls._obtener_config_tenant(session, gym_id)
         calc = MembresiaDomainService.evaluar_estado_puro(
             hoy=hoy,
             activo_deportista=curr["deportista_activo"],
@@ -547,7 +676,8 @@ class MembresiasService:
             plan_nombre=new_plan["nombre"],
             estado_calculado=calc.estado,
             dias_restantes_o_vencido=calc.dias_restantes_o_vencido,
-            congelamiento_activo=False
+            congelamiento_activo=False,
+            pago=pago,
         )
 
     @classmethod
@@ -1075,7 +1205,10 @@ class MembresiasService:
         staff_id: UUID,
         staff_nombre: str,
         req: CrearPaqueteRequest,
+        staff_rol: str = "",
+        idempotency_key: str = "",
     ) -> CrearPaqueteResponse:
+        """Vende un plan grupal: crea el paquete, sus N membresías y un solo cobro, en la misma transacción."""
         hoy = today_local()
 
         # 1. Validar que no haya beneficiarios duplicados en la petición (Contrato 1.3: 409 BENEFICIARIO_DUPLICADO)
@@ -1129,9 +1262,19 @@ class MembresiasService:
             SELECT id, nombre, fecha_nacimiento, activo
             FROM platform.deportistas
             WHERE gimnasio_id = :gym_id AND id = ANY(:ids) AND deleted_at IS NULL
+            ORDER BY id
+            FOR UPDATE
         """)
         res_deps = await session.execute(q_deps, {"gym_id": gym_id, "ids": req.beneficiarios})
         deps_map = {r["id"]: r for r in res_deps.mappings()}
+
+        # Reintento de la misma venta (con los beneficiarios bloqueados): devuelve la original.
+        previo = await cls._venta_previa(session, gym_id, idempotency_key)
+        if previo:
+            if previo.paquete_id is None:
+                raise cls._clave_en_uso()
+            detalle = await cls.obtener_paquete(session, gym_id, previo.paquete_id)
+            return CrearPaqueteResponse(paquete_id=detalle.id, membresias=detalle.membresias, pago=previo)
 
         for b_id in req.beneficiarios:
             if b_id not in deps_map:
@@ -1242,7 +1385,12 @@ class MembresiasService:
                 precio_asignado=p_asignado
             ))
 
-        # 9. Auditoría inmutable de creación de paquete
+        # 9. Un solo cobro por todo el paquete (venta: no suma días)
+        pago = await cls._cobrar_venta(
+            session, gym_id, staff_id, staff_rol, staff_nombre, idempotency_key, req.pago, paquete_id=paquete_id
+        )
+
+        # 10. Auditoría inmutable de creación de paquete
         await AuditService.registrar(
             session=session,
             gimnasio_id=gym_id,
@@ -1257,13 +1405,16 @@ class MembresiasService:
                 "titular_id": str(req.titular_id),
                 "titular_nombre": titular["nombre"],
                 "total_beneficiarios": n,
-                "membresias_ids": [str(it.id) for it in membresias_creadas]
+                "membresias_ids": [str(it.id) for it in membresias_creadas],
+                "pago_id": str(pago.id),
+                "monto": float(pago.monto),
             }
         )
 
         return CrearPaqueteResponse(
             paquete_id=paquete_id,
-            membresias=membresias_creadas
+            membresias=membresias_creadas,
+            pago=pago,
         )
 
     @classmethod

@@ -64,14 +64,19 @@ async def test_copia_plan_en_la_venta_gw_rf_24_ca2():
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver/api/v1") as client:
+        # Vender un plan cobra en el mismo paso: exige turno propio abierto.
+        r_turno = await client.post("/caja/turnos/abrir", json={"base_inicial": 0}, headers=headers)
+        assert r_turno.status_code == 201, r_turno.text
+
         # 1. Asignar Plan A
         r_asig = await client.post(
             "/membresias/asignar",
             json={
                 "deportista_id": str(dep_id),
-                "plan_id": str(plan_a_id)
+                "plan_id": str(plan_a_id),
+                "pago": {"monto": 85000, "metodo": "efectivo", "tipo_medio": "efectivo"},
             },
-            headers=headers
+            headers={**headers, "X-Idempotency-Key": f"venta-a-{prefix}"}
         )
         assert r_asig.status_code == 201, r_asig.text
         m_asig = r_asig.json()
@@ -110,9 +115,10 @@ async def test_copia_plan_en_la_venta_gw_rf_24_ca2():
             f"/membresias/{membresia_1_id}/cambiar-plan",
             json={
                 "nuevo_plan_id": str(plan_b_id),
-                "motivo": "Upgrade a Plan Oro"
+                "motivo": "Upgrade a Plan Oro",
+                "pago": {"monto": 200000, "metodo": "efectivo", "tipo_medio": "efectivo"},
             },
-            headers=headers
+            headers={**headers, "X-Idempotency-Key": f"cambio-b-{prefix}"}
         )
         assert r_cambio.status_code == 200, r_cambio.text
         m_cambio = r_cambio.json()

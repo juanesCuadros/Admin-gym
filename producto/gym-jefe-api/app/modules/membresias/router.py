@@ -4,7 +4,7 @@ Expositor de endpoints REST protegidos por permisos granulares en PostgreSQL.
 """
 from typing import Annotated, Any, Dict, List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Path, Query, status
+from fastapi import APIRouter, Depends, Header, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
@@ -28,6 +28,18 @@ from app.modules.membresias.schemas import (
     PlanesListResponse,
 )
 from app.modules.membresias.service import MembresiasService
+
+# Vender un plan registra dinero: además del permiso de membresías exige `caja:crear`, igual que el cobro.
+ClaveCobro = Annotated[
+    str,
+    Header(
+        alias="X-Idempotency-Key",
+        description="Clave única por intento de venta; el reintento con la misma clave no cobra dos veces",
+        min_length=8,
+        max_length=128,
+    ),
+]
+PermisoCaja = Annotated[AuthenticatedStaff, Depends(require_permission("caja", "crear"))]
 
 router = APIRouter(tags=["05. Membresías y Planes"])
 
@@ -149,13 +161,16 @@ async def cambiar_estado_plan(
     "/membresias/asignar",
     response_model=MembresiaResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Asignar plan inicial a deportista (RF-25)",
-    description="Asigna el primer plan a un deportista. Valida que no exista ya una membresía activa."
+    summary="Vender el plan inicial a un deportista (RF-25)",
+    description="Crea la membresía y registra su cobro en el turno propio, en un solo paso. "
+                "Valida que no exista ya una membresía activa."
 )
 async def asignar_plan(
     req: AsignarMembresiaRequest,
+    x_idempotency_key: ClaveCobro,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     staff: Annotated[AuthenticatedStaff, Depends(require_permission("membresias", "crear"))],
+    _caja: PermisoCaja,
 ):
     return await MembresiasService.asignar_plan(
         session=session,
@@ -163,6 +178,8 @@ async def asignar_plan(
         staff_id=staff.staff_id,
         staff_nombre=staff.nombre,
         req=req,
+        staff_rol=staff.rol,
+        idempotency_key=x_idempotency_key,
     )
 
 
@@ -233,14 +250,16 @@ async def obtener_membresias_deportista(
     "/membresias/{id}/cambiar-plan",
     response_model=MembresiaResponse,
     status_code=status.HTTP_200_OK,
-    summary="Cambiar de plan sin prorrateo (RF-25)",
-    description="Sustitución inmediata: cancela la membresía anterior, cierra congelamientos y crea una nueva desde hoy."
+    summary="Cambiar de plan sin prorrateo y sin perder días (RF-25 CA3)",
+    description="El plan nuevo empieza cuando termina el actual y se cobra en el mismo paso."
 )
 async def cambiar_plan(
     id: Annotated[UUID, Path(description="UUID de la membresía actual")],
     req: CambiarPlanRequest,
+    x_idempotency_key: ClaveCobro,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     staff: Annotated[AuthenticatedStaff, Depends(require_permission("membresias", "editar"))],
+    _caja: PermisoCaja,
 ):
     return await MembresiasService.cambiar_plan(
         session=session,
@@ -249,6 +268,8 @@ async def cambiar_plan(
         staff_nombre=staff.nombre,
         membresia_id=id,
         req=req,
+        staff_rol=staff.rol,
+        idempotency_key=x_idempotency_key,
     )
 
 
@@ -336,8 +357,10 @@ async def descongelar_membresia(
 )
 async def crear_paquete(
     req: CrearPaqueteRequest,
+    x_idempotency_key: ClaveCobro,
     session: Annotated[AsyncSession, Depends(get_db_session)],
     staff: Annotated[AuthenticatedStaff, Depends(require_permission("membresias", "crear"))],
+    _caja: PermisoCaja,
 ):
     return await MembresiasService.crear_paquete(
         session=session,
@@ -345,6 +368,8 @@ async def crear_paquete(
         staff_id=staff.staff_id,
         staff_nombre=staff.nombre,
         req=req,
+        staff_rol=staff.rol,
+        idempotency_key=x_idempotency_key,
     )
 
 

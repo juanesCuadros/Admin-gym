@@ -34,6 +34,16 @@ from app.modules.caja.schemas import (
 logger = logging.getLogger(__name__)
 
 
+def _clave_idempotencia_en_uso() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "codigo": "CLAVE_IDEMPOTENCIA_EN_USO",
+            "mensaje": "Esta venta ya se está registrando o ya se registró. Recarga para ver el resultado.",
+        },
+    )
+
+
 class CajaService:
     """Orquestador de turnos de caja, punto de venta atómico, control de inventario e idempotencia."""
 
@@ -907,13 +917,22 @@ class CajaService:
         staff_rol: str,
         staff_nombre: str,
         idempotency_key: str,
-        data: RegistrarPagoMembresiaRequest
+        data: RegistrarPagoMembresiaRequest,
+        venta: bool = False,
     ) -> PagoMembresiaResponseDto:
+        """
+        Cobro de membresía ligado al turno.
+        - Renovación (`venta=False`): suma los días al vencimiento con la regla C2.
+        - Venta (`venta=True`): lo invoca membresías al vender un plan, en la misma transacción que crea la
+          membresía. No suma días (la vigencia ya es inicio + duración) y queda con `es_venta = true`.
+        """
         clean_key = idempotency_key.strip()
 
-        # 1. Idempotencia HIT previa
+        # 1. Idempotencia HIT previa (en una venta el llamador ya la consultó con la fila bloqueada)
         existente = await cls._consultar_pago_membresia_existente_por_key(session, gym_id, clean_key)
         if existente:
+            if venta:
+                raise _clave_idempotencia_en_uso()
             return existente
 
         # 2. Exigir turno abierto
@@ -991,7 +1010,7 @@ class CajaService:
             dias_sumar = data.dias_agregados if data.dias_agregados > 0 else (memb["plan_duracion"] or 30)
 
             tuvo_checkin_en_gracia = False
-            if venc_actual < hoy:
+            if not venta and venc_actual < hoy:
                 f_desde_gracia = venc_actual + timedelta(days=1)
                 f_hasta_gracia = venc_actual + timedelta(days=dias_gracia)
                 q_chk = text("""
@@ -1012,20 +1031,23 @@ class CajaService:
                 })
                 tuvo_checkin_en_gracia = bool(res_chk.scalar())
 
-            _, nueva_fecha_venc = calcular_vencimiento_renovacion_c2(
-                venc_actual=venc_actual,
-                hoy=hoy,
-                dias_duracion=dias_sumar,
-                dias_gracia_mora=dias_gracia,
-                tuvo_checkin_en_gracia=tuvo_checkin_en_gracia
-            )
+            if venta:
+                nueva_fecha_venc = venc_actual
+            else:
+                _, nueva_fecha_venc = calcular_vencimiento_renovacion_c2(
+                    venc_actual=venc_actual,
+                    hoy=hoy,
+                    dias_duracion=dias_sumar,
+                    dias_gracia_mora=dias_gracia,
+                    tuvo_checkin_en_gracia=tuvo_checkin_en_gracia
+                )
 
-            # Actualizar vencimiento en platform.membresias
-            await session.execute(text("""
-                UPDATE platform.membresias
-                SET fecha_vencimiento = :nueva_fecha, updated_at = now()
-                WHERE id = :membresia_id
-            """), {"nueva_fecha": nueva_fecha_venc, "membresia_id": data.membresia_id})
+                # Actualizar vencimiento en platform.membresias
+                await session.execute(text("""
+                    UPDATE platform.membresias
+                    SET fecha_vencimiento = :nueva_fecha, updated_at = now()
+                    WHERE id = :membresia_id
+                """), {"nueva_fecha": nueva_fecha_venc, "membresia_id": data.membresia_id})
 
         else:
             # --- Caso B: Pago de Paquete Grupal (un solo pago cubre N membresías, GW-RF-52) ---
@@ -1072,9 +1094,12 @@ class CajaService:
             dias_sumar = data.dias_agregados if data.dias_agregados > 0 else paq["duracion_dias"]
 
             nueva_fecha_venc = None
-            # Extender cada membresía del paquete con Regla C2
+            # Extender cada membresía del paquete con Regla C2 (una venta no extiende)
             for m in membs:
                 v_act: date = m["fecha_vencimiento"]
+                if venta:
+                    nueva_fecha_venc = v_act
+                    continue
                 chk_gracia = False
                 if v_act < hoy:
                     f_d = v_act + timedelta(days=1)
@@ -1128,11 +1153,11 @@ class CajaService:
                     INSERT INTO platform.pagos_membresia (
                         gimnasio_id, turno_id, membresia_id, paquete_id, monto, metodo, tipo_medio,
                         dias_agregados, idempotency_key, registrado_por, created_at,
-                        precio_lista, precio_cobrado, descuento_pct, motivo_descuento
+                        precio_lista, precio_cobrado, descuento_pct, motivo_descuento, es_venta
                     ) VALUES (
                         :gym_id, :turno_id, :membresia_id, :paquete_id, :monto, :metodo, :tipo_medio,
                         :dias_agregados, :idempotency_key, :registrado_por, now(),
-                        :precio_lista, :precio_cobrado, :descuento_pct, :motivo_descuento
+                        :precio_lista, :precio_cobrado, :descuento_pct, :motivo_descuento, :es_venta
                     ) RETURNING id, created_at
                 """)
                 res_p = await session.execute(insert_pago, {
@@ -1143,13 +1168,15 @@ class CajaService:
                     "monto": monto_a_cobrar,
                     "metodo": data.metodo.strip(),
                     "tipo_medio": data.tipo_medio,
-                    "dias_agregados": data.dias_agregados,
+                    # Se guardan los días que realmente sumó: el recálculo tras una anulación los repite.
+                    "dias_agregados": dias_sumar,
                     "idempotency_key": clean_key,
                     "registrado_por": staff_id,
                     "precio_lista": precio_lista,
                     "precio_cobrado": precio_cobrado_final,
                     "descuento_pct": desc_pct,
-                    "motivo_descuento": mot_desc
+                    "motivo_descuento": mot_desc,
+                    "es_venta": venta,
                 })
                 row_p = res_p.mappings().one()
                 pago_id = row_p["id"]
@@ -1157,6 +1184,9 @@ class CajaService:
         except IntegrityError:
             existente_carrera = await cls._consultar_pago_membresia_existente_por_key(session, gym_id, clean_key)
             if existente_carrera:
+                if venta:
+                    # La membresía de esta venta ya se insertó: hay que deshacer toda la transacción.
+                    raise _clave_idempotencia_en_uso()
                 return existente_carrera
             raise
 
@@ -1168,7 +1198,7 @@ class CajaService:
             monto=monto_a_cobrar,
             metodo=data.metodo.strip(),
             tipo_medio=data.tipo_medio,
-            dias_agregados=data.dias_agregados,
+            dias_agregados=dias_sumar,
             nueva_fecha_vencimiento=nueva_fecha_venc,
             precio_lista=precio_lista,
             precio_cobrado=precio_cobrado_final,
@@ -1182,6 +1212,31 @@ class CajaService:
             created_at=created_at,
             idempotente_reintento=False
         )
+
+    @classmethod
+    async def tuvo_checkin_en_gracia(
+        cls, session: AsyncSession, gym_id: UUID, deportista_id: UUID, venc: date, dias_gracia: int
+    ) -> bool:
+        """Regla C2: ¿el deportista entró en algún día de gracia (venc+1 … venc+g)?"""
+        res = await session.execute(
+            text("""
+                SELECT EXISTS(
+                    SELECT 1 FROM platform.checkins
+                    WHERE gimnasio_id = :gym_id
+                      AND deportista_id = :dep_id
+                      AND tipo = 'ingreso'
+                      AND resultado IN ('abrio', 'alerta_mora')
+                      AND CAST(ts_utc AT TIME ZONE 'America/Bogota' AS date) BETWEEN :f_desde AND :f_hasta
+                )
+            """),
+            {
+                "gym_id": gym_id,
+                "dep_id": deportista_id,
+                "f_desde": venc + timedelta(days=1),
+                "f_hasta": venc + timedelta(days=dias_gracia),
+            },
+        )
+        return bool(res.scalar())
 
     @classmethod
     async def _recalcular_vencimiento_membresia_desde_historial(
@@ -1209,6 +1264,19 @@ class CajaService:
             return today_local()
 
         duracion_ini = m["plan_duracion_dias_vendida"] or m["plan_duracion"] or 30
+        # Si la membresía se vendió con pago (es_venta) y ese pago está anulado, la venta no cuenta y la
+        # membresía queda sin vigencia propia. Las migradas y las anteriores a la 021 no tienen pago de venta.
+        q_venta = text("""
+            SELECT count(*) AS total, count(*) FILTER (WHERE NOT anulado) AS vigentes
+            FROM platform.pagos_membresia
+            WHERE gimnasio_id = :gym_id AND es_venta = true
+              AND (membresia_id = :m_id OR (paquete_id IS NOT NULL AND paquete_id = :paq_id))
+        """)
+        venta_row = (await session.execute(
+            q_venta, {"gym_id": gym_id, "m_id": membresia_id, "paq_id": m["paquete_id"]}
+        )).mappings().one()
+        if venta_row["total"] > 0 and venta_row["vigentes"] == 0:
+            duracion_ini = 0
         curr_venc: date = m["fecha_inicio"] + timedelta(days=duracion_ini)
         dep_id = m["deportista_id"]
         paq_id = m["paquete_id"]
@@ -1229,7 +1297,7 @@ class CajaService:
                 FROM platform.pagos_membresia
                 WHERE gimnasio_id = :gym_id 
                   AND (membresia_id = :m_id OR paquete_id = :paq_id)
-                  AND anulado = false
+                  AND anulado = false AND es_venta = false
                 ORDER BY created_at ASC
             """)
             res_p = await session.execute(q_pagos, {"gym_id": gym_id, "m_id": membresia_id, "paq_id": paq_id})
@@ -1241,7 +1309,7 @@ class CajaService:
                 FROM platform.pagos_membresia
                 WHERE gimnasio_id = :gym_id 
                   AND membresia_id = :m_id
-                  AND anulado = false
+                  AND anulado = false AND es_venta = false
                 ORDER BY created_at ASC
             """)
             res_p = await session.execute(q_pagos, {"gym_id": gym_id, "m_id": membresia_id})

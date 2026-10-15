@@ -75,6 +75,14 @@ async def test_c1_planes_grupales_paquetes():
         tok_jefe = create_access_token(str(jefe_id), str(gym_id), "jefe")
         h_jefe = {"Authorization": f"Bearer {tok_jefe}"}
 
+        # Vender el plan grupal cobra en el mismo paso: turno propio abierto y clave por intento.
+        r_abrir = await client.post("/api/v1/caja/turnos/abrir", json={"base_inicial": 50000}, headers=h_jefe)
+        assert r_abrir.status_code == 201, r_abrir.text
+        pago_paq = {"monto": 150001, "metodo": "efectivo", "tipo_medio": "efectivo"}
+
+        def h_venta(n: str) -> dict:
+            return {**h_jefe, "X-Idempotency-Key": f"venta-paq-{n}-{prefix}"}
+
         # ---------------------------------------------------------------------
         # 1. Error 422 BENEFICIARIOS_INCOMPLETOS (requiere 3, se envían 2)
         # ---------------------------------------------------------------------
@@ -83,9 +91,10 @@ async def test_c1_planes_grupales_paquetes():
             json={
                 "plan_id": str(plan_id),
                 "titular_id": str(titular_id),
-                "beneficiarios": [str(titular_id), str(ben1_id)]
+                "beneficiarios": [str(titular_id), str(ben1_id)],
+                "pago": pago_paq
             },
-            headers=h_jefe
+            headers=h_venta("1")
         )
         assert r_inc.status_code == 422
         err_inc = r_inc.json()["error"]
@@ -101,9 +110,10 @@ async def test_c1_planes_grupales_paquetes():
             json={
                 "plan_id": str(plan_id),
                 "titular_id": str(titular_id),
-                "beneficiarios": [str(ben1_id), str(ben2_id), str(menor_id)]
+                "beneficiarios": [str(ben1_id), str(ben2_id), str(menor_id)],
+                "pago": pago_paq
             },
-            headers=h_jefe
+            headers=h_venta("2")
         )
         assert r_no_ben.status_code == 422
         assert r_no_ben.json()["error"]["codigo"] == "TITULAR_NO_ES_BENEFICIARIO"
@@ -116,9 +126,10 @@ async def test_c1_planes_grupales_paquetes():
             json={
                 "plan_id": str(plan_id),
                 "titular_id": str(titular_id),
-                "beneficiarios": [str(titular_id), str(ben1_id), str(ben1_id)]
+                "beneficiarios": [str(titular_id), str(ben1_id), str(ben1_id)],
+                "pago": pago_paq
             },
-            headers=h_jefe
+            headers=h_venta("3")
         )
         assert r_dup.status_code == 409
         assert r_dup.json()["error"]["codigo"] == "BENEFICIARIO_DUPLICADO"
@@ -131,9 +142,10 @@ async def test_c1_planes_grupales_paquetes():
             json={
                 "plan_id": str(plan_id),
                 "titular_id": str(menor_id),
-                "beneficiarios": [str(menor_id), str(ben1_id), str(ben2_id)]
+                "beneficiarios": [str(menor_id), str(ben1_id), str(ben2_id)],
+                "pago": pago_paq
             },
-            headers=h_jefe
+            headers=h_venta("4")
         )
         assert r_menor.status_code == 422
         assert r_menor.json()["error"]["codigo"] == "TITULAR_MENOR_DE_EDAD"
@@ -146,12 +158,33 @@ async def test_c1_planes_grupales_paquetes():
             json={
                 "plan_id": str(plan_id),
                 "titular_id": str(titular_id),
-                "beneficiarios": [str(titular_id), str(ben1_id), str(ben2_id)]
+                "beneficiarios": [str(titular_id), str(ben1_id), str(ben2_id)],
+                "pago": pago_paq
             },
-            headers=h_jefe
+            headers=h_venta("5")
         )
-        assert r_crear.status_code == 201
+        assert r_crear.status_code == 201, r_crear.text
         paq_data = r_crear.json()
+        assert Decimal(str(paq_data["pago"]["monto"])) == Decimal("150001")
+        assert paq_data["pago"]["paquete_id"] == paq_data["paquete_id"]
+        # La venta da exactamente la duración del plan: el cobro no suma días
+        for m in paq_data["membresias"]:
+            assert (date.fromisoformat(m["fecha_vencimiento"]) - date.fromisoformat(m["fecha_inicio"])).days == 30
+
+        # Reintento con la misma clave: devuelve la venta original sin crear otro paquete ni otro cobro
+        r_reintento = await client.post(
+            "/api/v1/membresias/paquetes",
+            json={
+                "plan_id": str(plan_id),
+                "titular_id": str(titular_id),
+                "beneficiarios": [str(titular_id), str(ben1_id), str(ben2_id)],
+                "pago": pago_paq
+            },
+            headers=h_venta("5")
+        )
+        assert r_reintento.status_code == 201, r_reintento.text
+        assert r_reintento.json()["paquete_id"] == paq_data["paquete_id"]
+        assert r_reintento.json()["pago"]["id"] == paq_data["pago"]["id"]
         paquete_id = paq_data["paquete_id"]
         membresias = paq_data["membresias"]
         assert len(membresias) == 3
@@ -184,11 +217,7 @@ async def test_c1_planes_grupales_paquetes():
         # ---------------------------------------------------------------------
         # 7. Cobro unificado en Caja POST /caja/pagos-membresia con paquete_id
         # ---------------------------------------------------------------------
-        # Abrir turno de caja
-        r_abrir = await client.post("/api/v1/caja/turnos/abrir", json={"base_inicial": 50000}, headers=h_jefe)
-        assert r_abrir.status_code == 201
-
-        # Pago de paquete: cubre las 3 membresías y extiende su vigencia por 30 días
+        # Renovación del paquete: un pago cubre las 3 membresías y extiende su vigencia por 30 días
         r_pago = await client.post(
             "/api/v1/caja/pagos-membresia",
             json={
@@ -212,7 +241,7 @@ async def test_c1_planes_grupales_paquetes():
         for m in r_get_after.json()["membresias"]:
             f_ini = date.fromisoformat(m["fecha_inicio"])
             f_venc = date.fromisoformat(m["fecha_vencimiento"])
-            assert (f_venc - f_ini).days == 60 # 30 iniciales + 30 agregados
+            assert (f_venc - f_ini).days == 60  # 30 de la venta + 30 de la renovación
 
         # ---------------------------------------------------------------------
         # 8. Anulación del pago de paquete revierte las 3 membresías (GW-RF-52)
@@ -230,3 +259,16 @@ async def test_c1_planes_grupales_paquetes():
             f_ini = date.fromisoformat(m["fecha_inicio"])
             f_venc = date.fromisoformat(m["fecha_vencimiento"])
             assert (f_venc - f_ini).days == 30
+
+        # ---------------------------------------------------------------------
+        # 9. Anular el cobro de la venta deja las membresías sin vigencia propia
+        # ---------------------------------------------------------------------
+        r_anular_venta = await client.post(
+            f"/api/v1/caja/pagos-membresia/{paq_data['pago']['id']}/anular",
+            json={"motivo": "Venta registrada por error"},
+            headers=h_jefe
+        )
+        assert r_anular_venta.status_code == 200, r_anular_venta.text
+        r_get_sin_venta = await client.get(f"/api/v1/membresias/paquetes/{paquete_id}", headers=h_jefe)
+        for m in r_get_sin_venta.json()["membresias"]:
+            assert m["fecha_vencimiento"] == m["fecha_inicio"]
