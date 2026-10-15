@@ -24,6 +24,7 @@ import {
   ExternalLink,
   ChevronRight,
   ShieldCheck,
+  Inbox,
 } from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
@@ -311,6 +312,34 @@ export const DashboardPage: React.FC = () => {
               {(metrics.por_estado?.['suspendido'] || 0) + (metrics.por_estado?.['cancelado'] || 0)}
             </span>
           </div>
+
+          {/* Contrato 3.3: solicitudes de plan pendientes, con enlace a la bandeja. */}
+          <Link
+            to="/plan-requests"
+            style={{
+              backgroundColor: 'var(--color-bg-card)',
+              padding: '14px 18px',
+              borderRadius: 'var(--radius-md)',
+              border:
+                metrics.solicitudes_plan_pendientes > 0
+                  ? '1px solid var(--color-warning)'
+                  : '1px solid var(--color-border)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              color: 'inherit',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Inbox size={16} color="var(--color-action)" />
+              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                Solicitudes de plan pendientes
+              </span>
+            </div>
+            <span style={{ fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-bold)' }}>
+              {metrics.solicitudes_plan_pendientes}
+            </span>
+          </Link>
         </div>
       )}
 

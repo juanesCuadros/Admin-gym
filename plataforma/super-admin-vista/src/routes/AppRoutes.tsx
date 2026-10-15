@@ -12,6 +12,7 @@ import { GymListPage } from '@/pages/gyms/GymListPage';
 import { GymCreateWizardPage } from '@/pages/gyms/GymCreateWizardPage';
 import { GymDetailPage } from '@/pages/gyms/GymDetailPage';
 import { PlansPage } from '@/pages/plans/PlansPage';
+import { PlanRequestsPage } from '@/pages/plan-requests/PlanRequestsPage';
 import { ExercisesPage } from '@/pages/exercises/ExercisesPage';
 import { AuditPage } from '@/pages/audit/AuditPage';
 import { NotFoundPage } from '@/pages/not-found/NotFoundPage';
@@ -33,6 +34,7 @@ export const AppRoutes: React.FC = () => {
             <Route path="/gyms/new" element={<GymCreateWizardPage />} />
             <Route path="/gyms/:id" element={<GymDetailPage />} />
             <Route path="/plans" element={<PlansPage />} />
+            <Route path="/plan-requests" element={<PlanRequestsPage />} />
             <Route path="/exercises" element={<ExercisesPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="*" element={<NotFoundPage />} />

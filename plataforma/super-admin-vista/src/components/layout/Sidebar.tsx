@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   PlusCircle,
   Layers,
+  Inbox,
   X,
 } from 'lucide-react';
 import { IconButton } from '@/components/actions/IconButton';
@@ -31,6 +32,11 @@ const navItems = [
     to: '/plans',
     label: 'Planes',
     icon: <Layers size={19} />,
+  },
+  {
+    to: '/plan-requests',
+    label: 'Solicitudes de plan',
+    icon: <Inbox size={19} />,
   },
   {
     to: '/exercises',
