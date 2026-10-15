@@ -47,6 +47,23 @@ Parámetros que lee: `tenant.permitir_descuentos`, `tenant.tope_descuento_pct` (
 Errores: `422 BENEFICIARIOS_INCOMPLETOS` (`detalles: {requeridos, recibidos}`), `422 TITULAR_MENOR_DE_EDAD`,
 `422 TITULAR_NO_ES_BENEFICIARIO`, `409 BENEFICIARIO_DUPLICADO`.
 
+### 1.5 Venta de membresía en un solo paso (decisión del 15-oct, migración 021)
+Vender un plan crea la membresía **y** su cobro en la misma transacción. El cobro de una venta (`es_venta`) no
+suma días: la vigencia es inicio + duración del plan. `POST /caja/pagos-membresia` queda para **renovar**.
+
+| Método y ruta | Cambio |
+|---|---|
+| `POST /membresias/asignar` | Body agrega `pago` (obligatorio). Header `X-Idempotency-Key`. Exige `membresias:crear` **y** `caja:crear` y turno propio abierto. Respuesta agrega `pago` |
+| `POST /membresias/paquetes` | Igual: `pago` cubre todo el paquete. Respuesta agrega `pago` |
+| `POST /membresias/{id}/cambiar-plan` | Igual (`membresias:editar` + `caja:crear`). El plan nuevo empieza cuando termina el actual (GW-RF-25 CA3); si ya venció aplica la regla C2. `409 MEMBRESIA_CONGELADA` si está congelada hoy |
+
+`pago = {monto, metodo, tipo_medio: "efectivo"|"otro", precio_cobrado?, motivo_descuento?, valor_recibido?}`, con las
+mismas reglas y errores de descuento de 1.2 y `404 NO_HAY_TURNO_ABIERTO`. Reintento con la misma clave → la venta
+original (201/200). Clave usada en otra operación → `409 CLAVE_IDEMPOTENCIA_EN_USO`.
+Las renovaciones guardan en `dias_agregados` los días que sumaron. Anular el cobro de una venta deja la membresía sin
+vigencia propia.
+El header de idempotencia en todo el GW es `X-Idempotency-Key`.
+
 ### 1.4 Copia del plan en la venta (GW-RF-24 CA2) y regla C2 (GW-RF-25 CA2)
 Sin cambio de contrato: las respuestas de membresía agregan `plan_precio_vendido`, `plan_duracion_dias_vendida`.
 
