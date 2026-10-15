@@ -20,23 +20,31 @@ def listar_planes(db: Session = Depends(get_db), current_user: UsuarioInterno = 
     return [PlanResponse(**plan_a_dict(p), gimnasios_actuales=n) for p, n in PlanUseCases(db).listar()]
 
 
+def _respuesta(uc: PlanUseCases, plan) -> PlanResponse:
+    """Respuesta de escritura con el mismo conteo de gimnasios que el listado."""
+    return PlanResponse(**plan_a_dict(plan), gimnasios_actuales=uc.gimnasios_por_plan().get(plan.id, 0))
+
+
 @router.post("/admin/plans", response_model=PlanResponse, status_code=status.HTTP_201_CREATED, summary="Crear plan")
 def crear_plan(data: PlanCreate, db: Session = Depends(get_db), current_user: UsuarioInterno = Depends(get_current_admin_user)):
     """SA-RF-33: crea un plan. `409 CODIGO_DUPLICADO` si el código ya existe."""
-    return PlanResponse(**plan_a_dict(PlanUseCases(db).crear(data, current_user)))
+    uc = PlanUseCases(db)
+    return _respuesta(uc, uc.crear(data, current_user))
 
 
 @router.put("/admin/plans/{plan_id}", response_model=PlanResponse, summary="Editar plan (con versión)")
 def editar_plan(plan_id: str, data: PlanUpdate, db: Session = Depends(get_db),
                 current_user: UsuarioInterno = Depends(get_current_admin_user)):
     """SA-RF-33: edita con concurrencia optimista (`version`). `codigo` y `tipo` no se editan."""
-    return PlanResponse(**plan_a_dict(PlanUseCases(db).actualizar(plan_id, data, current_user)))
+    uc = PlanUseCases(db)
+    return _respuesta(uc, uc.actualizar(plan_id, data, current_user))
 
 
 @router.patch("/admin/plans/{plan_id}/status", response_model=PlanResponse, summary="Activar o desactivar plan")
 def estado_plan(plan_id: str, data: PlanStatusUpdate, db: Session = Depends(get_db),
                 current_user: UsuarioInterno = Depends(get_current_admin_user)):
-    return PlanResponse(**plan_a_dict(PlanUseCases(db).cambiar_estado(plan_id, data.activo, current_user)))
+    uc = PlanUseCases(db)
+    return _respuesta(uc, uc.cambiar_estado(plan_id, data.activo, current_user))
 
 
 @router.patch("/admin/gyms/{gym_id}/plan", response_model=CambioPlanResponse, summary="Cambiar el plan de un gimnasio")

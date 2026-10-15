@@ -71,6 +71,23 @@ def test_activar_y_desactivar_plan(pg_client, pg_headers):
     assert r.status_code == 200 and r.json()["activo"] is False
 
 
+def test_escrituras_de_plan_devuelven_gimnasios_actuales(pg_client, pg_headers):
+    """Editar o cambiar el estado de un plan responde el mismo conteo de gimnasios que el listado."""
+    crear_gimnasio(pg_client, pg_headers, tipo="cliente_activo")
+    listado = {p["codigo"]: p for p in pg_client.get(BASE, headers=pg_headers).json()}
+    mensual = listado["mensual"]
+    assert mensual["gimnasios_actuales"] >= 1
+
+    body = {k: mensual[k] for k in ("nombre", "descripcion", "precio", "duracion_meses", "dias_prueba",
+                                    "max_clientes_activos", "max_staff", "publico", "orden", "version")}
+    r = pg_client.put(f"{BASE}/{mensual['id']}", json=body, headers=pg_headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["gimnasios_actuales"] == mensual["gimnasios_actuales"]
+
+    r2 = pg_client.patch(f"{BASE}/{mensual['id']}/status", json={"activo": True}, headers=pg_headers)
+    assert r2.status_code == 200 and r2.json()["gimnasios_actuales"] == mensual["gimnasios_actuales"]
+
+
 def test_alta_exige_plan_id_activo_y_coherente(pg_client, pg_headers, pg_session):
     sufijo = uuid.uuid4().hex[:6]
     base = {
