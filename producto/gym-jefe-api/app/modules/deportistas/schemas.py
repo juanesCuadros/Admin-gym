@@ -205,6 +205,9 @@ class MembresiaFichaResponse(BaseModel):
     dias_restantes: int
     congelado: bool
     estado: str  # activo, por_vencer, en_gracia, vencido, congelado, cancelado
+    # Plan grupal (contrato 1.3): la membresía pertenece a un paquete y quién es su titular.
+    paquete_id: Optional[UUID] = None
+    titular_nombre: Optional[str] = None
 
 
 class PagoFichaResponse(BaseModel):

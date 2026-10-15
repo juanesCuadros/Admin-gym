@@ -174,6 +174,13 @@ async def test_c1_planes_grupales_paquetes():
         assert get_data["titular"]["nombre"] == "Titular Adulto"
         assert len(get_data["membresias"]) == 3
 
+        # La ficha de un beneficiario muestra el paquete y su titular (contrato 1.3)
+        r_ficha = await client.get(f"/api/v1/deportistas/{m_otros[0]['deportista_id']}", headers=h_jefe)
+        assert r_ficha.status_code == 200, r_ficha.text
+        memb_ficha = r_ficha.json()["membresia_actual"]
+        assert memb_ficha["paquete_id"] == paquete_id
+        assert memb_ficha["titular_nombre"] == "Titular Adulto"
+
         # ---------------------------------------------------------------------
         # 7. Cobro unificado en Caja POST /caja/pagos-membresia con paquete_id
         # ---------------------------------------------------------------------

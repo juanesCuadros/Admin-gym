@@ -434,6 +434,10 @@ class DeportistasService:
                 p.nombre AS plan_nombre,
                 m.fecha_inicio,
                 m.fecha_vencimiento,
+                m.paquete_id,
+                (SELECT tit.nombre FROM platform.paquetes pq
+                   JOIN platform.deportistas tit ON tit.id = pq.titular_id
+                  WHERE pq.id = m.paquete_id) AS titular_nombre,
                 m.cancelada,
                 (m.fecha_vencimiento - :today) AS dias_restantes,
                 EXISTS (
@@ -483,6 +487,8 @@ class DeportistasService:
                 dias_restantes=row_memb["dias_restantes"],
                 congelado=row_memb["congelado"],
                 estado=calc.estado,
+                paquete_id=row_memb["paquete_id"],
+                titular_nombre=row_memb["titular_nombre"],
             )
 
         # 3. Historial de últimos 10 pagos
