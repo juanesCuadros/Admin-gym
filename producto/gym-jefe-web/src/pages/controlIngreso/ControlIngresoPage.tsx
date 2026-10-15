@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, Fingerprint, Search, Gift, CheckCircle2, AlertTriangle, XCircle, Users, LogIn } from 'lucide-react';
+import { ShieldCheck, Search, Gift, CheckCircle2, AlertTriangle, XCircle, Users, LogIn } from 'lucide-react';
 import { controlIngresoService } from '../../api/controlIngreso.service';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -75,23 +75,6 @@ export const ControlIngresoPage: React.FC = () => {
     }
   };
 
-  const handleBiometricSimulation = async () => {
-    setIsProcessing(true);
-    try {
-      // Find deportista or send default mock UUID
-      const res = await controlIngresoService.checkinHuella({
-        deportista_id: '00000000-0000-0000-0000-000000000001',
-      });
-      setLastCheckin(res);
-      trasRegistro();
-    } catch (err) {
-      const msg = parseApiError(err);
-      showToast('warning', 'Simulador Biométrico', `Lector emuló lectura: ${msg}`);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
   const cerrarCortesia = () => {
     if (isProcessing) return;
     setShowCortesiaModal(false);
@@ -131,14 +114,6 @@ export const ControlIngresoPage: React.FC = () => {
 
         {puedeRegistrar && (
           <div style={{ display: 'flex', gap: 10 }}>
-            <Button
-              variant="secondary"
-              leftIcon={<Fingerprint size={18} color="var(--primary)" />}
-              onClick={handleBiometricSimulation}
-              disabled={isProcessing}
-            >
-              Simular Huella
-            </Button>
             <Button
               variant="outline"
               leftIcon={<Gift size={18} color="var(--accent)" />}

@@ -5,7 +5,6 @@ import {
   Calendar,
   Sparkles,
   ArrowLeft,
-  Volume2,
   Maximize2,
   Dumbbell,
   CheckCircle,
@@ -181,22 +180,6 @@ export const PantallaTvPage: React.FC = () => {
 
     // Update query params if appropriate
     setSearchParams({ device_token: clean });
-  };
-
-  const triggerTestSaludo = async () => {
-    const nombre = 'Laura Gómez';
-    try {
-      await pantallaTvService.testSaludo(nombre);
-    } catch (err) {
-      // Fallback local visual explícitamente etiquetado como no verificado por el servidor
-      setSaludoActivo({
-        nombre,
-        mensaje: `¡Hola, ${nombre}! Bienvenido a entrenar 💪 [Prueba local — no verificada por el servidor]`,
-        estado: 'activo',
-        diasRestantes: 22,
-      });
-      setTimeout(() => setSaludoActivo(null), 7000);
-    }
   };
 
   const toggleFullScreen = () => {
@@ -427,16 +410,6 @@ export const PantallaTvPage: React.FC = () => {
             style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
           >
             Token TV
-          </Button>
-
-          <Button
-            variant="secondary"
-            size="sm"
-            leftIcon={<Volume2 size={16} />}
-            onClick={triggerTestSaludo}
-            style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-          >
-            Probar Saludo
           </Button>
 
           <Button
