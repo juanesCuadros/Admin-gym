@@ -1,36 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Users,
-  UserPlus,
-  Search,
-  Eye,
-  Activity,
-  Fingerprint,
-  Calendar,
-  AlertCircle,
-  Trash2,
-  Scale,
-  Edit2,
-} from 'lucide-react';
+import { UserPlus, Eye, Scale, Edit2 } from 'lucide-react';
 import { deportistasService } from '../../api/deportistas.service';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { parseApiError } from '../../api/client';
-import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { Input, Select, SearchInput } from '../../components/ui/Input';
-import { Badge } from '../../components/ui/Badge';
+import { Input, SearchInput } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
+import { Cargando, ErrorCarga, MensajeFijo, VacioFiltro, VacioInicial } from '../../components/estados/Estados';
 import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
-import { formatVencimiento } from '../../utils/formato';
+import { FILAS_POR_PAGINA, formatDocumento, formatFechaHora, formatVencimiento } from '../../utils/formato';
 import { formatFechaNegocio, hoyBogota } from '../../utils/fechasBogota';
 import {
   DeportistaResumenResponse,
   FichaDeportistaResponse,
-  CrearDeportistaRequest,
   RegistrarMedicionRequest,
   DeportistaResponse,
 } from '../../types/deportistas.types';
+import { FormularioDeportista } from './FormularioDeportista';
 
 /** Días de `desde` a `hasta` (fechas de negocio `YYYY-MM-DD`), sin pasar por la zona del navegador. */
 function diasEntre(desde: string, hasta: string): number {
@@ -41,507 +29,418 @@ function diasEntre(desde: string, hasta: string): number {
   return Math.round((utc(hasta) - utc(desde)) / 86400000);
 }
 
+const MEDICION_VACIA: Record<keyof Omit<RegistrarMedicionRequest, 'fecha'>, string> = {
+  peso: '',
+  grasa_pct: '',
+  masa_muscular: '',
+  cintura: '',
+  cadera: '',
+  brazo: '',
+  pierna: '',
+  pecho: '',
+};
+
+const ETIQUETAS_MEDICION: Record<keyof typeof MEDICION_VACIA, string> = {
+  peso: 'Peso (kg)',
+  grasa_pct: '% grasa',
+  masa_muscular: 'Músculo (kg)',
+  cintura: 'Cintura (cm)',
+  cadera: 'Cadera (cm)',
+  brazo: 'Brazo (cm)',
+  pierna: 'Pierna (cm)',
+  pecho: 'Pecho (cm)',
+};
+
+const filaDato: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '4px 0', fontSize: '0.875rem' };
+
 export const DeportistasPage: React.FC = () => {
   const { showToast } = useToast();
+  const { hasPermission } = useAuth();
+  const puedeCrear = hasPermission('deportistas', 'crear');
+  const puedeEditar = hasPermission('deportistas', 'editar');
 
+  // Listado
   const [deportistas, setDeportistas] = useState<DeportistaResumenResponse[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [limit] = useState(10);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorLista, setErrorLista] = useState<unknown>(null);
 
-  // New Athlete Modal
-  const [showCrearModal, setShowCrearModal] = useState(false);
-  const [formData, setFormData] = useState<CrearDeportistaRequest>({
-    documento: '',
-    nombre: '',
-    correo: '',
-    telefono: '',
-    sexo: 'M',
-    fecha_nacimiento: '',
-    altura_cm: 175,
-    consentimiento_1581: false,
-    acudiente_nombre: '',
-  });
+  // Formulario (crear o editar)
+  const [formAbierto, setFormAbierto] = useState(false);
+  const [editando, setEditando] = useState<DeportistaResponse | null>(null);
 
-  // Edit Athlete Modal (OCC with version)
-  const [showEditarModal, setShowEditarModal] = useState(false);
-  const [editFormData, setEditFormData] = useState({
-    id: '',
-    version: 1,
-    documento: '',
-    nombre: '',
-    correo: '',
-    telefono: '',
-    sexo: 'M' as 'M' | 'F' | 'otro',
-    fecha_nacimiento: '',
-    altura_cm: 175,
-    acudiente_nombre: '',
-  });
-
-  // Ficha 360 Modal
+  // Ficha 360°
   const [selectedDeportistaId, setSelectedDeportistaId] = useState<string | null>(null);
   const [ficha, setFicha] = useState<FichaDeportistaResponse | null>(null);
-  const [isLoadingFicha, setIsLoadingFicha] = useState(false);
+  const [errorFicha, setErrorFicha] = useState<unknown>(null);
 
-  // Measurement Modal
+  // Medición
   const [showMedicionModal, setShowMedicionModal] = useState(false);
-  const [medicionData, setMedicionData] = useState<RegistrarMedicionRequest>({
-    peso: 72.5,
-    grasa_pct: 18.2,
-    masa_muscular: 36.4,
-    cintura: 82,
-    cadera: 98,
-    brazo: 34,
-    pierna: 55,
-    pecho: 102,
-  });
-
+  const [medicion, setMedicion] = useState(MEDICION_VACIA);
+  const [errorMedicion, setErrorMedicion] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const q = searchQuery.trim();
 
   const loadDeportistas = useCallback(async () => {
     setIsLoading(true);
     try {
-      const q = searchQuery.trim();
       const res = await deportistasService.getDeportistas({
-        skip: (page - 1) * limit,
-        limit,
+        skip: (page - 1) * FILAS_POR_PAGINA,
+        limit: FILAS_POR_PAGINA,
         q: q.length >= 2 ? q : undefined,
       });
       setDeportistas(res.items);
       setTotal(res.total);
+      setErrorLista(null);
     } catch (e) {
-      console.error('Error loading deportistas', e);
+      setErrorLista(e);
     } finally {
       setIsLoading(false);
     }
-  }, [page, limit, searchQuery]);
+  }, [page, q]);
 
   useEffect(() => {
     loadDeportistas();
   }, [loadDeportistas]);
 
-  const handleCrearSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.consentimiento_1581) {
-      showToast('warning', 'Consentimiento Ley 1581', 'El deportista debe autorizar el tratamiento de datos personales.');
-      return;
-    }
+  useEffect(() => {
+    setPage(1);
+  }, [q]);
 
-    setIsProcessing(true);
-    try {
-      await deportistasService.crear(formData);
-      showToast('success', 'Deportista Registrado', 'Ficha creada con consentimiento de Habeas Data');
-      setShowCrearModal(false);
-      setFormData({
-        documento: '',
-        nombre: '',
-        correo: '',
-        telefono: '',
-        sexo: 'M',
-        fecha_nacimiento: '',
-        altura_cm: 175,
-        consentimiento_1581: false,
-        acudiente_nombre: '',
-      });
-      loadDeportistas();
-    } catch (err) {
-      showToast('error', 'Error al crear deportista', parseApiError(err));
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleOpenEditar = (d: DeportistaResumenResponse | DeportistaResponse | any) => {
-    setEditFormData({
-      id: d.id,
-      version: d.version,
-      documento: d.documento,
-      nombre: d.nombre,
-      correo: d.correo || '',
-      telefono: d.telefono || '',
-      sexo: (d.sexo as any) || 'M',
-      fecha_nacimiento: d.fecha_nacimiento || '',
-      altura_cm: d.altura_cm || 170,
-      acudiente_nombre: d.acudiente_nombre || '',
-    });
-    setShowEditarModal(true);
-  };
-
-  const handleEditarSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsProcessing(true);
-    try {
-      await deportistasService.actualizar(editFormData.id, {
-        version: editFormData.version,
-        documento: editFormData.documento,
-        nombre: editFormData.nombre,
-        correo: editFormData.correo || undefined,
-        telefono: editFormData.telefono || undefined,
-        sexo: editFormData.sexo,
-        fecha_nacimiento: editFormData.fecha_nacimiento || undefined,
-        altura_cm: editFormData.altura_cm ? Number(editFormData.altura_cm) : undefined,
-        acudiente_nombre: editFormData.acudiente_nombre || undefined,
-      });
-
-      showToast('success', 'Deportista Actualizado', 'Información sincronizada con control de versión');
-      setShowEditarModal(false);
-      loadDeportistas();
-
-      if (selectedDeportistaId === editFormData.id) {
-        handleOpenFicha(editFormData.id);
-      }
-    } catch (err) {
-      // parseApiError formats 403 (RBAC) and 409 (CONFLICTO_CONCURRENCIA) consistently
-      showToast('error', 'Error al actualizar deportista', parseApiError(err));
-      // In case of 409, reload list to fetch the updated OCC version
-      loadDeportistas();
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleOpenFicha = async (id: string) => {
-    setSelectedDeportistaId(id);
-    setIsLoadingFicha(true);
+  const cargarFicha = useCallback(async (id: string): Promise<FichaDeportistaResponse | null> => {
+    setErrorFicha(null);
     try {
       const data = await deportistasService.getFicha(id);
       setFicha(data);
+      return data;
     } catch (err) {
-      showToast('error', 'Error al cargar ficha 360°', parseApiError(err));
-    } finally {
-      setIsLoadingFicha(false);
+      setErrorFicha(err);
+      return null;
     }
+  }, []);
+
+  const handleOpenFicha = (id: string) => {
+    setFicha(null);
+    setSelectedDeportistaId(id);
+    cargarFicha(id);
+  };
+
+  const abrirCrear = () => {
+    setEditando(null);
+    setFormAbierto(true);
+  };
+
+  /** La edición siempre parte del registro completo y su versión actual (no del resumen del listado). */
+  const abrirEditar = async (id: string) => {
+    const data = ficha?.deportista.id === id ? ficha : await cargarFicha(id);
+    if (!data) {
+      showToast('error', 'No se pudo abrir la edición', 'Reintenta en unos segundos.');
+      return;
+    }
+    setEditando(data.deportista);
+    setFormAbierto(true);
+  };
+
+  const trasGuardar = (d: DeportistaResponse) => {
+    const eraEdicion = !!editando;
+    setFormAbierto(false);
+    setEditando(null);
+    showToast('success', eraEdicion ? 'Deportista actualizado' : 'Deportista registrado', d.nombre);
+    loadDeportistas();
+    if (selectedDeportistaId === d.id) cargarFicha(d.id);
+  };
+
+  const recargarEdicion = async () => {
+    if (!editando) return;
+    const data = await cargarFicha(editando.id);
+    if (data) setEditando(data.deportista);
   };
 
   const handleRegistrarMedicion = async () => {
-    if (!selectedDeportistaId) return;
+    if (!selectedDeportistaId || isProcessing) return;
+    const data: RegistrarMedicionRequest = {};
+    for (const [k, val] of Object.entries(medicion)) {
+      if (val.trim() !== '') (data as Record<string, number>)[k] = Number(val);
+    }
+    if (Object.keys(data).length === 0) {
+      setErrorMedicion('Escribe al menos una medida.');
+      return;
+    }
     setIsProcessing(true);
+    setErrorMedicion(null);
     try {
-      await deportistasService.registrarMedicion(selectedDeportistaId, medicionData);
-      showToast('success', 'Medición Guardada', 'Progreso corporal registrado en la ficha');
+      await deportistasService.registrarMedicion(selectedDeportistaId, data);
+      showToast('success', 'Medición guardada', 'Quedó en la ficha del deportista.');
       setShowMedicionModal(false);
-      handleOpenFicha(selectedDeportistaId);
+      setMedicion(MEDICION_VACIA);
+      cargarFicha(selectedDeportistaId);
     } catch (err) {
-      showToast('error', 'Error al guardar medición', parseApiError(err));
+      setErrorMedicion(parseApiError(err));
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleEnrolarHuella = async () => {
-    if (!selectedDeportistaId) return;
-    setIsProcessing(true);
-    try {
-      await deportistasService.enrolarHuella(selectedDeportistaId, {
-        dedo: 'indice_derecho',
-        template_base64: 'QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=',
-      });
-      showToast('success', 'Huella Enrolada', 'Plantilla biométrica cifrada con éxito');
-      handleOpenFicha(selectedDeportistaId);
-    } catch (err) {
-      showToast('error', 'Error al enrolar huella', parseApiError(err));
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  const detalleEstado = (d: DeportistaResumenResponse) =>
+    d.fecha_vencimiento ? { dias: diasEntre(hoyBogota(), d.fecha_vencimiento) } : {};
 
-  /** Detalle del badge (§A4): días hasta (o desde) el vencimiento, contados en Bogotá. */
-  const detalleEstado = (d: DeportistaResumenResponse) => {
-    if (!d.fecha_vencimiento) return {};
-    const dias = diasEntre(hoyBogota(), d.fecha_vencimiento);
-    return { dias };
-  };
+  const dep = ficha?.deportista;
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Gestión de Deportistas y Biometría</h1>
-          <p className="page-subtitle">
-            Padrón de afiliados, ficha 360°, consentimiento Ley 1581, mediciones y enrolamiento
-          </p>
+          <h1 className="page-title">Deportistas</h1>
+          <p className="page-subtitle">Registro, ficha 360°, consentimiento de datos y mediciones</p>
         </div>
-
-        <Button
-          variant="primary"
-          leftIcon={<UserPlus size={16} />}
-          onClick={() => setShowCrearModal(true)}
-        >
-          Nuevo Deportista
-        </Button>
+        {puedeCrear && (
+          <Button variant="primary" leftIcon={<UserPlus size={16} />} onClick={abrirCrear}>
+            Registrar deportista
+          </Button>
+        )}
       </div>
 
-      {/* Filters & Search Toolbar */}
-      <Card style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-          <SearchInput
-            placeholder="Buscar por nombre o documento..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+      <div style={{ marginBottom: 16, maxWidth: 420 }}>
+        <SearchInput
+          placeholder="Buscar por nombre o documento"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          aria-label="Buscar deportista"
+        />
+      </div>
 
-        </div>
-      </Card>
+      {errorLista ? (
+        <ErrorCarga error={errorLista} onReintentar={loadDeportistas} />
+      ) : !isLoading && total === 0 && q.length >= 2 ? (
+        <VacioFiltro onLimpiar={() => setSearchQuery('')} mensaje="Ningún deportista coincide con la búsqueda." />
+      ) : !isLoading && total === 0 ? (
+        <VacioInicial
+          titulo="Aún no hay deportistas"
+          descripcion="Registra a tus clientes con su documento y la autorización de tratamiento de datos."
+          textoAccion={puedeCrear ? 'Registrar deportista' : undefined}
+          onAccion={puedeCrear ? abrirCrear : undefined}
+        />
+      ) : (
+        <Table<DeportistaResumenResponse>
+          columns={[
+            {
+              header: 'Documento',
+              accessor: (d) => formatDocumento(d.tipo_documento, d.documento),
+              width: '150px',
+            },
+            {
+              header: 'Nombre',
+              render: (d) => (
+                <div>
+                  <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{d.nombre}</div>
+                  {d.correo && <div style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>{d.correo}</div>}
+                </div>
+              ),
+            },
+            { header: 'Teléfono', accessor: (d) => d.telefono || '—', width: '130px' },
+            { header: 'Plan', accessor: (d) => d.plan_nombre || 'Sin plan' },
+            {
+              header: 'Estado',
+              render: (d) => <EstadoDeportistaBadge estado={d.estado} detalle={detalleEstado(d)} />,
+              width: '170px',
+            },
+            { header: 'Vencimiento', accessor: (d) => formatFechaNegocio(d.fecha_vencimiento), width: '120px' },
+            {
+              header: '',
+              align: 'right',
+              width: '190px',
+              render: (d) => (
+                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                  {puedeEditar && (
+                    <Button variant="ghost" size="sm" leftIcon={<Edit2 size={13} />} onClick={() => abrirEditar(d.id)}>
+                      Editar
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" leftIcon={<Eye size={13} />} onClick={() => handleOpenFicha(d.id)}>
+                    Ficha
+                  </Button>
+                </div>
+              ),
+            },
+          ]}
+          data={deportistas}
+          isLoading={isLoading}
+          keyExtractor={(d) => d.id}
+          pagination={{
+            currentPage: page,
+            totalPages: Math.ceil(total / FILAS_POR_PAGINA) || 1,
+            onPageChange: (p) => setPage(p),
+          }}
+          emptyMessage="No hay deportistas en esta página."
+        />
+      )}
 
-      {/* Athletes Table */}
-      <Table<DeportistaResumenResponse>
-        columns={[
-          {
-            header: 'Documento',
-            accessor: 'documento',
-            width: '120px',
-          },
-          {
-            header: 'Nombre del Deportista',
-            render: (d) => (
-              <div>
-                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{d.nombre}</div>
-                {d.correo && <div style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>{d.correo}</div>}
-              </div>
-            ),
-          },
-          {
-            header: 'Teléfono',
-            accessor: (d) => d.telefono || '-',
-            width: '130px',
-          },
-          {
-            header: 'Plan Actual',
-            accessor: (d) => d.plan_nombre || 'Ninguno',
-          },
-          {
-            header: 'Estado',
-            render: (d) => <EstadoDeportistaBadge estado={d.estado} detalle={detalleEstado(d)} />,
-            width: '140px',
-          },
-          {
-            header: 'Vencimiento',
-            accessor: (d) => formatFechaNegocio(d.fecha_vencimiento),
-            width: '130px',
-          },
-          {
-            header: 'Acciones',
-            align: 'right',
-            width: '180px',
-            render: (d) => (
-              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  leftIcon={<Edit2 size={13} />}
-                  onClick={() => handleOpenEditar(d)}
-                >
-                  Editar
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<Eye size={13} />}
-                  onClick={() => handleOpenFicha(d.id)}
-                >
-                  Ficha 360°
-                </Button>
-              </div>
-            ),
-          },
-        ]}
-        data={deportistas}
-        isLoading={isLoading}
-        keyExtractor={(d) => d.id}
-        pagination={{
-          currentPage: page,
-          totalPages: Math.ceil(total / limit) || 1,
-          onPageChange: (p) => setPage(p),
+      <FormularioDeportista
+        isOpen={formAbierto}
+        inicial={editando}
+        onCerrar={() => {
+          setFormAbierto(false);
+          setEditando(null);
         }}
-        emptyMessage="No se encontraron deportistas registrados"
+        onGuardado={trasGuardar}
+        onRecargar={recargarEdicion}
       />
 
-      {/* Modal: Crear Deportista */}
-      <Modal
-        isOpen={showCrearModal}
-        onClose={() => setShowCrearModal(false)}
-        title="Inscribir Nuevo Deportista"
-        maxWidth="620px"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setShowCrearModal(false)}>
-              Cancelar
-            </Button>
-            <Button variant="primary" onClick={handleCrearSubmit} isLoading={isProcessing}>
-              Registrar Afiliado
-            </Button>
-          </>
-        }
-      >
-        <form onSubmit={handleCrearSubmit}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Input
-              label="Documento de Identidad *"
-              value={formData.documento}
-              onChange={(e) => setFormData({ ...formData, documento: e.target.value })}
-              required
-            />
-            <Input
-              label="Nombre Completo *"
-              value={formData.nombre}
-              onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-              required
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Input
-              label="Correo Electrónico"
-              type="email"
-              value={formData.correo || ''}
-              onChange={(e) => setFormData({ ...formData, correo: e.target.value })}
-            />
-            <Input
-              label="Teléfono / Celular"
-              value={formData.telefono || ''}
-              onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <Select
-              label="Sexo"
-              options={[
-                { value: 'M', label: 'Masculino' },
-                { value: 'F', label: 'Femenino' },
-                { value: 'otro', label: 'Otro' },
-              ]}
-              value={formData.sexo}
-              onChange={(e) => setFormData({ ...formData, sexo: e.target.value as any })}
-            />
-            <Input
-              label="Fecha de Nacimiento"
-              type="date"
-              value={formData.fecha_nacimiento || ''}
-              onChange={(e) => setFormData({ ...formData, fecha_nacimiento: e.target.value })}
-            />
-            <Input
-              label="Estatura (cm)"
-              type="number"
-              value={formData.altura_cm || ''}
-              onChange={(e) => setFormData({ ...formData, altura_cm: Number(e.target.value) })}
-            />
-          </div>
-
-          <Input
-            label="Nombre del Acudiente (Si es menor de edad)"
-            placeholder="Obligatorio para menores de 18 años"
-            value={formData.acudiente_nombre || ''}
-            onChange={(e) => setFormData({ ...formData, acudiente_nombre: e.target.value })}
-          />
-
-          {/* Habeas Data 1581 Checkbox */}
-          <div
-            style={{
-              padding: '12px 14px',
-              borderRadius: 'var(--radius-sm)',
-              backgroundColor: 'var(--bg-surface-elevated)',
-              border: '1px solid var(--border-color)',
-              marginTop: 10,
-              display: 'flex',
-              gap: 12,
-              alignItems: 'flex-start',
-            }}
-          >
-            <input
-              type="checkbox"
-              id="consentimiento_1581"
-              checked={formData.consentimiento_1581}
-              onChange={(e) => setFormData({ ...formData, consentimiento_1581: e.target.checked })}
-              style={{ marginTop: 3, cursor: 'pointer' }}
-            />
-            <label htmlFor="consentimiento_1581" style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-              <strong>Consentimiento de Tratamiento de Datos (Ley 1581 de 2012):</strong> Autorizo de manera previa, expresa e informada el tratamiento de mis datos personales y biométricos para fines de control de acceso y gestión del gimnasio.
-            </label>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Modal: Ficha 360° */}
+      {/* Ficha 360° */}
       <Modal
         isOpen={!!selectedDeportistaId}
         onClose={() => setSelectedDeportistaId(null)}
-        title="Ficha 360° del Deportista"
-        maxWidth="740px"
+        title="Ficha del deportista"
+        maxWidth="760px"
       >
-        {ficha ? (
+        {errorFicha ? (
+          <ErrorCarga
+            error={errorFicha}
+            onReintentar={() => selectedDeportistaId && cargarFicha(selectedDeportistaId)}
+            textoNoEncontrado="Este deportista no existe o ya no está disponible."
+          />
+        ) : !ficha || !dep ? (
+          <Cargando filas={5} />
+        ) : (
           <div>
-            {/* Header info */}
             <div
               style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
                 paddingBottom: 16,
                 borderBottom: '1px solid var(--border-color)',
                 marginBottom: 16,
               }}
             >
               <div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, display: 'flex', gap: 10, alignItems: 'center' }}>
-                  {ficha.deportista.nombre}
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {dep.nombre}
                   <EstadoDeportistaBadge
-                    estado={ficha.deportista.estado}
+                    estado={dep.estado}
                     detalle={ficha.membresia_actual ? { dias: ficha.membresia_actual.dias_restantes } : {}}
                   />
                 </h3>
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  Documento: {ficha.deportista.documento} · Correo: {ficha.deportista.correo || 'No registrado'}
-                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{formatDocumento(dep.tipo_documento, dep.documento)}</div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  leftIcon={<Edit2 size={14} />}
-                  onClick={() => handleOpenEditar(ficha.deportista)}
-                >
-                  Editar Datos
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  leftIcon={<Fingerprint size={14} />}
-                  onClick={handleEnrolarHuella}
-                >
-                  Enrolar Huella
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<Scale size={14} />}
-                  onClick={() => setShowMedicionModal(true)}
-                >
-                  Medición
-                </Button>
+                {puedeEditar && (
+                  <Button variant="secondary" size="sm" leftIcon={<Edit2 size={14} />} onClick={() => abrirEditar(dep.id)}>
+                    Editar datos
+                  </Button>
+                )}
+                {puedeCrear && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Scale size={14} />}
+                    onClick={() => {
+                      setMedicion(MEDICION_VACIA);
+                      setErrorMedicion(null);
+                      setShowMedicionModal(true);
+                    }}
+                  >
+                    Medición
+                  </Button>
+                )}
               </div>
             </div>
 
-            {/* Active Membership Block */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginBottom: 20 }}>
+              <div>
+                <h4 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 6 }}>Datos</h4>
+                <div style={filaDato}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Tipo de documento</span>
+                  <span>{dep.tipo_documento}</span>
+                </div>
+                <div style={filaDato}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Correo</span>
+                  <span>{dep.correo || '—'}</span>
+                </div>
+                <div style={filaDato}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Teléfono</span>
+                  <span>{dep.telefono || '—'}</span>
+                </div>
+                <div style={filaDato}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Fecha de nacimiento</span>
+                  <span>{formatFechaNegocio(dep.fecha_nacimiento)}</span>
+                </div>
+                <div style={filaDato}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Consentimiento de datos</span>
+                  <span>
+                    {dep.consentimiento_1581 ? `Versión ${dep.consentimiento_version ?? '—'}` : 'No registrado'}
+                  </span>
+                </div>
+                {dep.consentimiento_fecha && (
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'right' }}>
+                    Aceptado el {formatFechaHora(dep.consentimiento_fecha)}
+                    {dep.consentimiento_registrado_por_nombre ? ` · registró ${dep.consentimiento_registrado_por_nombre}` : ''}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h4 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 6 }}>Acudiente</h4>
+                {dep.acudiente ? (
+                  <>
+                    <div style={filaDato}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Nombre</span>
+                      <span>{dep.acudiente.nombre}</span>
+                    </div>
+                    <div style={filaDato}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Documento</span>
+                      <span>{formatDocumento(dep.acudiente.tipo_documento, dep.acudiente.documento)}</span>
+                    </div>
+                    <div style={filaDato}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Teléfono</span>
+                      <span>{dep.acudiente.telefono}</span>
+                    </div>
+                    <div style={filaDato}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Parentesco</span>
+                      <span>{dep.acudiente.parentesco}</span>
+                    </div>
+                    <div style={filaDato}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Autorización</span>
+                      <span>{dep.acudiente.autoriza ? 'Autorizó' : 'Sin autorización'}</span>
+                    </div>
+                  </>
+                ) : dep.acudiente_nombre ? (
+                  <div style={filaDato}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Nombre</span>
+                    <span>{dep.acudiente_nombre}</span>
+                  </div>
+                ) : (
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Sin acudiente registrado.</div>
+                )}
+              </div>
+            </div>
+
             <div style={{ marginBottom: 20 }}>
               <h4 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 8 }}>Membresía</h4>
               {ficha.membresia_actual ? (
                 <div
                   style={{
-                    padding: '14px',
+                    padding: 14,
                     borderRadius: 'var(--radius-sm)',
                     backgroundColor: 'var(--bg-surface-elevated)',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
+                    gap: 12,
                   }}
                 >
                   <div>
                     <div style={{ fontWeight: 700 }}>{ficha.membresia_actual.plan_nombre}</div>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      {formatVencimiento(ficha.membresia_actual.fecha_vencimiento + 'T12:00:00-05:00', ficha.membresia_actual.dias_restantes)}
+                      {formatVencimiento(
+                        `${ficha.membresia_actual.fecha_vencimiento}T12:00:00-05:00`,
+                        ficha.membresia_actual.dias_restantes
+                      )}
                     </div>
                   </div>
                   <EstadoDeportistaBadge
@@ -550,21 +449,14 @@ export const DeportistasPage: React.FC = () => {
                   />
                 </div>
               ) : (
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                  El deportista no tiene una membresía activa en este momento.
-                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No tiene una membresía vigente.</div>
               )}
             </div>
 
-            {/* Measurements Block */}
-            <div style={{ marginBottom: 20 }}>
-              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 8 }}>
-                Historial de Mediciones Corporales
-              </h4>
+            <div>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 8 }}>Mediciones recientes</h4>
               {ficha.mediciones_recientes.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                  Aún no se han registrado mediciones antropométricas.
-                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Aún no hay mediciones.</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {ficha.mediciones_recientes.map((m) => (
@@ -577,176 +469,54 @@ export const DeportistasPage: React.FC = () => {
                         fontSize: '0.85rem',
                         display: 'flex',
                         justifyContent: 'space-between',
+                        gap: 8,
+                        flexWrap: 'wrap',
                       }}
                     >
-                      <span>Fecha: {m.fecha}</span>
-                      <span>Peso: {m.peso ? `${m.peso} kg` : '-'}</span>
-                      <span>Grasa: {m.grasa_pct ? `${m.grasa_pct}%` : '-'}</span>
-                      <span>Músculo: {m.masa_muscular ? `${m.masa_muscular} kg` : '-'}</span>
+                      <span>{formatFechaNegocio(m.fecha)}</span>
+                      <span>Peso: {m.peso ? `${m.peso} kg` : '—'}</span>
+                      <span>Grasa: {m.grasa_pct ? `${m.grasa_pct} %` : '—'}</span>
+                      <span>Músculo: {m.masa_muscular ? `${m.masa_muscular} kg` : '—'}</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
           </div>
-        ) : (
-          <div style={{ textAlign: 'center', padding: 30 }}>Cargando ficha...</div>
         )}
       </Modal>
 
-      {/* Modal: Registrar Medición */}
+      {/* Registrar medición */}
       <Modal
         isOpen={showMedicionModal}
-        onClose={() => setShowMedicionModal(false)}
-        title="Registrar Medición Corporal"
+        onClose={() => !isProcessing && setShowMedicionModal(false)}
+        title="Registrar medición"
         footer={
           <>
-            <Button variant="outline" onClick={() => setShowMedicionModal(false)}>
+            <Button variant="outline" onClick={() => setShowMedicionModal(false)} disabled={isProcessing}>
               Cancelar
             </Button>
             <Button variant="primary" onClick={handleRegistrarMedicion} isLoading={isProcessing}>
-              Guardar Medición
+              Guardar medición
             </Button>
           </>
         }
       >
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-          <Input
-            label="Peso (kg)"
-            type="number"
-            value={medicionData.peso || ''}
-            onChange={(e) => setMedicionData({ ...medicionData, peso: Number(e.target.value) })}
-          />
-          <Input
-            label="% Grasa"
-            type="number"
-            value={medicionData.grasa_pct || ''}
-            onChange={(e) => setMedicionData({ ...medicionData, grasa_pct: Number(e.target.value) })}
-          />
-          <Input
-            label="Músculo (kg)"
-            type="number"
-            value={medicionData.masa_muscular || ''}
-            onChange={(e) => setMedicionData({ ...medicionData, masa_muscular: Number(e.target.value) })}
-          />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-          <Input
-            label="Cintura (cm)"
-            type="number"
-            value={medicionData.cintura || ''}
-            onChange={(e) => setMedicionData({ ...medicionData, cintura: Number(e.target.value) })}
-          />
-          <Input
-            label="Cadera (cm)"
-            type="number"
-            value={medicionData.cadera || ''}
-            onChange={(e) => setMedicionData({ ...medicionData, cadera: Number(e.target.value) })}
-          />
-          <Input
-            label="Brazo (cm)"
-            type="number"
-            value={medicionData.brazo || ''}
-            onChange={(e) => setMedicionData({ ...medicionData, brazo: Number(e.target.value) })}
-          />
-        </div>
-      </Modal>
-
-      {/* Modal: Editar Deportista con OCC (version) */}
-      <Modal
-        isOpen={showEditarModal}
-        onClose={() => setShowEditarModal(false)}
-        title="Editar Datos del Deportista"
-        maxWidth="620px"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setShowEditarModal(false)}>
-              Cancelar
-            </Button>
-            <Button variant="primary" onClick={handleEditarSubmit} isLoading={isProcessing}>
-              Guardar Cambios
-            </Button>
-          </>
-        }
-      >
-        <form onSubmit={handleEditarSubmit}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          {(Object.keys(MEDICION_VACIA) as Array<keyof typeof MEDICION_VACIA>).map((k) => (
             <Input
-              label="Documento de Identidad *"
-              value={editFormData.documento}
-              onChange={(e) => setEditFormData({ ...editFormData, documento: e.target.value })}
-              required
-            />
-            <Input
-              label="Nombre Completo *"
-              value={editFormData.nombre}
-              onChange={(e) => setEditFormData({ ...editFormData, nombre: e.target.value })}
-              required
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Input
-              label="Correo Electrónico"
-              type="email"
-              value={editFormData.correo || ''}
-              onChange={(e) => setEditFormData({ ...editFormData, correo: e.target.value })}
-            />
-            <Input
-              label="Teléfono / Celular"
-              value={editFormData.telefono || ''}
-              onChange={(e) => setEditFormData({ ...editFormData, telefono: e.target.value })}
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <Select
-              label="Sexo"
-              options={[
-                { value: 'M', label: 'Masculino' },
-                { value: 'F', label: 'Femenino' },
-                { value: 'otro', label: 'Otro' },
-              ]}
-              value={editFormData.sexo}
-              onChange={(e) => setEditFormData({ ...editFormData, sexo: e.target.value as any })}
-            />
-            <Input
-              label="Fecha de Nacimiento"
-              type="date"
-              value={editFormData.fecha_nacimiento || ''}
-              onChange={(e) => setEditFormData({ ...editFormData, fecha_nacimiento: e.target.value })}
-            />
-            <Input
-              label="Estatura (cm)"
+              key={k}
+              id={`medicion-${k}`}
+              label={ETIQUETAS_MEDICION[k]}
               type="number"
-              value={editFormData.altura_cm || ''}
-              onChange={(e) => setEditFormData({ ...editFormData, altura_cm: Number(e.target.value) })}
+              min={0}
+              step="0.1"
+              value={medicion[k]}
+              onChange={(e) => setMedicion((m) => ({ ...m, [k]: e.target.value }))}
             />
-          </div>
-
-          <Input
-            label="Nombre del Acudiente (Si es menor de edad)"
-            value={editFormData.acudiente_nombre || ''}
-            onChange={(e) => setEditFormData({ ...editFormData, acudiente_nombre: e.target.value })}
-          />
-
-          <div
-            style={{
-              padding: '10px 14px',
-              borderRadius: 'var(--radius-sm)',
-              backgroundColor: 'var(--bg-surface-elevated)',
-              fontSize: '0.8rem',
-              color: 'var(--text-muted)',
-              marginTop: 12,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <span>Control de Concurrencia Optimista (OCC)</span>
-            <span style={{ fontWeight: 700, color: 'var(--primary)' }}>Versión esperada: v{editFormData.version}</span>
-          </div>
-        </form>
+          ))}
+        </div>
+        {errorMedicion && <MensajeFijo tono="error">{errorMedicion}</MensajeFijo>}
       </Modal>
     </div>
   );
