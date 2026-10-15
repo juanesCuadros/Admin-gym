@@ -54,7 +54,15 @@ function tipoMedioDe(metodo: string): 'efectivo' | 'otro' {
  * `POST /caja/ventas` con `X-Idempotency-Key`: el reintento conserva la clave; cambiar el carrito la renueva.
  */
 export const PuntoDeVentaPage: React.FC = () => {
-  const { turno, turnoAbierto, cargando: cargandoTurno, error: errorTurno, refrescar: refrescarTurno } = useCajaTurno();
+  // Turno único (contrato 1.1): solo se vende sobre el turno propio; el de otra persona hay que cerrarlo en Caja.
+  const {
+    turno,
+    turnoAbierto: hayTurnoEnGimnasio,
+    turnoPropio: turnoAbierto,
+    cargando: cargandoTurno,
+    error: errorTurno,
+    refrescar: refrescarTurno,
+  } = useCajaTurno();
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
   const puedeVender = hasPermission('caja', 'crear');
@@ -299,7 +307,23 @@ export const PuntoDeVentaPage: React.FC = () => {
 
       {errorTurno && <ErrorCarga error={errorTurno} onReintentar={refrescarTurno} />}
 
-      {!errorTurno && !turnoAbierto && (
+      {!errorTurno && hayTurnoEnGimnasio && !turnoAbierto && turno && (
+        <MensajeFijo
+          tono="advertencia"
+          titulo={`La caja está abierta por ${turno.abierto_por_nombre ?? turno.staff_nombre ?? 'otra persona'}`}
+          accion={
+            <Link to="/caja" className="btn btn-primary btn-sm">
+              Ir a caja
+            </Link>
+          }
+          style={{ marginBottom: 20 }}
+        >
+          Solo puede haber un turno abierto en el gimnasio. Para vender con tu usuario, cierra ese turno desde Caja y abre el
+          tuyo.
+        </MensajeFijo>
+      )}
+
+      {!errorTurno && !hayTurnoEnGimnasio && (
         <MensajeFijo
           tono="advertencia"
           titulo="No hay un turno de caja abierto"

@@ -3,6 +3,7 @@ import {
   AbrirTurnoRequest,
   CerrarTurnoRequest,
   CierreForzadoRequest,
+  CerrarTurnoAjenoRequest,
   TurnoResumenDto,
   RegistrarVentaRequest,
   VentaResponseDto,
@@ -19,7 +20,10 @@ export const cajaService = {
     return response.data;
   },
 
-  /** `null` cuando no hay turno abierto: el backend lo responde como 404 `NO_HAY_TURNO_ABIERTO`. */
+  /**
+   * Turno abierto del gimnasio (turno único, contrato 1.1): puede ser de otra persona (`es_propio: false`).
+   * `null` cuando no hay turno abierto: el backend lo responde como 404 `NO_HAY_TURNO_ABIERTO`.
+   */
   async getTurnoActual(): Promise<TurnoResumenDto | null> {
     try {
       const response = await apiClient.get<TurnoResumenDto>('/caja/turnos/actual');
@@ -33,6 +37,12 @@ export const cajaService = {
 
   async cerrarTurno(data: CerrarTurnoRequest): Promise<TurnoResumenDto> {
     const response = await apiClient.post<TurnoResumenDto>('/caja/turnos/cerrar', data);
+    return response.data;
+  },
+
+  /** Contrato 1.1: cierra el turno que abrió otra persona; el descuadre queda a nombre de quien lo abrió. */
+  async cerrarTurnoAjeno(turnoId: string, data: CerrarTurnoAjenoRequest): Promise<TurnoResumenDto> {
+    const response = await apiClient.post<TurnoResumenDto>(`/caja/turnos/${turnoId}/cerrar-ajeno`, data);
     return response.data;
   },
 

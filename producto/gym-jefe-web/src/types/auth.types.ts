@@ -6,6 +6,8 @@ export interface UsuarioAuthDto {
   gimnasio_id: string;
   subdominio: string;
   permisos: string[]; // ["*"] o ["submodulo:accion"] ej: ["caja:crear", "caja:leer"]
+  /** Contrato 2.8: true solo para recepcionista sin turno de caja abierto en el gimnasio. */
+  requiere_abrir_caja?: boolean;
 }
 
 export interface LoginRequest {

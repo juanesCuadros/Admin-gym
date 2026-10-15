@@ -6,6 +6,19 @@ export interface CerrarTurnoRequest {
   efectivo_contado: number;
 }
 
+/** Contrato 1.1 · `POST /caja/turnos/{id}/cerrar-ajeno`. */
+export interface CerrarTurnoAjenoRequest {
+  conteo_efectivo: number;
+  nota?: string;
+}
+
+/** Contrato 1.1 · `detalles` de `409 TURNO_AJENO_ABIERTO`. */
+export interface DetallesTurnoAjeno {
+  turno_id: string;
+  abierto_por_nombre: string;
+  abierto_en: string;
+}
+
 export interface CierreForzadoRequest {
   motivo: string;
   efectivo_contado?: number;
@@ -31,6 +44,12 @@ export interface TurnoResumenDto {
   diferencia?: number | null;
   cierre_forzado: boolean;
   revisado_en?: string | null;
+  /** Contrato 1.1: el turno abierto es de quien consulta. */
+  es_propio?: boolean;
+  abierto_por_nombre?: string | null;
+  /** Contrato 1.1: solo en la respuesta de cerrar un turno ajeno. */
+  cerrado_por_nombre?: string | null;
+  descuadre_atribuido_a_nombre?: string | null;
 }
 
 export interface VentaItemRequest {
