@@ -6,6 +6,8 @@ import {
   Dumbbell,
   ShieldCheck,
   PlusCircle,
+  Layers,
+  Inbox,
   X,
 } from 'lucide-react';
 import { IconButton } from '@/components/actions/IconButton';
@@ -25,6 +27,16 @@ const navItems = [
     to: '/gyms',
     label: 'Gimnasios',
     icon: <Building2 size={19} />,
+  },
+  {
+    to: '/plans',
+    label: 'Planes',
+    icon: <Layers size={19} />,
+  },
+  {
+    to: '/plan-requests',
+    label: 'Solicitudes de plan',
+    icon: <Inbox size={19} />,
   },
   {
     to: '/exercises',

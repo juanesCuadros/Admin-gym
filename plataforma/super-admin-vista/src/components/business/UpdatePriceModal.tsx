@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatCOP, hoyBogota } from '@/utils/format';
 import { Modal } from '@/components/feedback/Modal';
 import { Button } from '@/components/actions/Button';
 import { FormField } from '@/components/forms/FormField';
@@ -30,7 +31,7 @@ export const UpdatePriceModal: React.FC<UpdatePriceModalProps> = ({
 
   const [nuevoValor, setNuevoValor] = useState<number>(currentPrice);
   const [vigenteDesde, setVigenteDesde] = useState<string>(
-    new Date().toISOString().split('T')[0]
+    hoyBogota()
   );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -46,7 +47,7 @@ export const UpdatePriceModal: React.FC<UpdatePriceModalProps> = ({
     setErrorMsg(null);
     try {
       await updatePrice(nuevoValor, vigenteDesde);
-      success(`Tarifa mensual para "${gymNombre}" actualizada a $${nuevoValor.toLocaleString('es-CO')}. Se preservó el historial de precios.`);
+      success(`Tarifa mensual para "${gymNombre}" actualizada a ${formatCOP(nuevoValor)}. Se preservó el historial de precios.`);
       if (onSuccess) onSuccess();
       onClose();
     } catch (err) {
@@ -86,7 +87,7 @@ export const UpdatePriceModal: React.FC<UpdatePriceModalProps> = ({
           label="Nuevo Valor Mensual Acordado (COP)"
           required
           error={errorMsg || undefined}
-          helperText={`Tarifa anterior: $${currentPrice.toLocaleString('es-CO')} COP/mes`}
+          helperText={`Valor actual: ${formatCOP(currentPrice)}/mes`}
         >
           <TextInput
             type="number"
