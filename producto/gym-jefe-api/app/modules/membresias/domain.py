@@ -204,7 +204,7 @@ class MembresiaDomainService:
         q_cong = text("""
             SELECT id FROM platform.congelamientos
             WHERE gimnasio_id = :gym_id AND membresia_id = :memb_id
-              AND fecha_inicio <= :hoy AND (fecha_fin IS NULL OR fecha_fin >= :hoy)
+              AND fecha_inicio <= :hoy AND (fecha_fin IS NULL OR fecha_fin > :hoy)
             LIMIT 1
         """)
         res_cong = await session.execute(q_cong, {"gym_id": gym_id, "memb_id": memb["id"], "hoy": hoy})
@@ -248,7 +248,7 @@ class MembresiaDomainService:
                 SELECT id, membresia_id
                 FROM platform.congelamientos
                 WHERE gimnasio_id = :gym_id AND membresia_id = ANY(:ids)
-                  AND fecha_inicio <= :hoy AND (fecha_fin IS NULL OR fecha_fin >= :hoy)
+                  AND fecha_inicio <= :hoy AND (fecha_fin IS NULL OR fecha_fin > :hoy)
             """)
             res_batch = await session.execute(q_batch, {"gym_id": gym_id, "ids": memb_ids, "hoy": hoy})
             for r in res_batch.fetchall():

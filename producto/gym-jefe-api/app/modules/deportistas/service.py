@@ -266,7 +266,7 @@ class DeportistasService:
                         SELECT 1 FROM platform.congelamientos c
                         WHERE c.membresia_id = mb.id
                           AND c.fecha_inicio <= :today
-                          AND (c.fecha_fin IS NULL OR c.fecha_fin >= :today)
+                          AND (c.fecha_fin IS NULL OR c.fecha_fin > :today)
                     ) AS esta_congelada
                 FROM platform.membresias mb
                 JOIN platform.planes p ON p.id = mb.plan_id
@@ -350,7 +350,7 @@ class DeportistasService:
                         SELECT 1 FROM platform.congelamientos c
                         WHERE c.membresia_id = mb.id
                           AND c.fecha_inicio <= :today
-                          AND (c.fecha_fin IS NULL OR c.fecha_fin >= :today)
+                          AND (c.fecha_fin IS NULL OR c.fecha_fin > :today)
                     ) AS esta_congelada
                 FROM platform.membresias mb
                 JOIN platform.planes p ON p.id = mb.plan_id
@@ -444,7 +444,7 @@ class DeportistasService:
                     SELECT 1 FROM platform.congelamientos c
                     WHERE c.membresia_id = m.id
                       AND c.fecha_inicio <= :today
-                      AND (c.fecha_fin IS NULL OR c.fecha_fin >= :today)
+                      AND (c.fecha_fin IS NULL OR c.fecha_fin > :today)
                 ) AS congelado,
                 t.dias_gracia_mora,
                 t.dias_umbral_por_vencer
