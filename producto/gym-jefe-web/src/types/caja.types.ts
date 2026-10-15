@@ -1,3 +1,5 @@
+import type { Monto } from './comun.types';
+
 export interface AbrirTurnoRequest {
   base_inicial: number;
 }
@@ -104,25 +106,47 @@ export interface VentaResponseDto {
 }
 
 export interface RegistrarPagoMembresiaRequest {
-  membresia_id: string;
+  /** Membresía individual. Va esto o `paquete_id`, nunca los dos. */
+  membresia_id?: string;
+  /** Contrato 1.3: un solo pago cubre todas las membresías del paquete. */
+  paquete_id?: string;
+  /** Valor que se cobra (COP enteros). */
   monto: number;
   metodo: string;
   tipo_medio: 'efectivo' | 'otro';
+  /** 0 = la duración del plan. */
   dias_agregados: number;
   valor_recibido?: number;
+  /** Contrato 1.2: si se omite se cobra el precio de lista. */
+  precio_cobrado?: number;
+  /** Contrato 1.2: obligatorio si `precio_cobrado` es menor al precio de lista. */
+  motivo_descuento?: string;
+}
+
+/** `422 DESCUENTO_SUPERA_TOPE` (contrato 1.2). */
+export interface DetallesDescuentoSuperaTope {
+  tope_pct: number;
 }
 
 export interface PagoMembresiaResponseDto {
   id: string;
   turno_id: string;
-  membresia_id: string;
-  monto: number;
+  membresia_id?: string | null;
+  paquete_id?: string | null;
+  monto: Monto;
   metodo: string;
   tipo_medio: string;
   dias_agregados: number;
-  nueva_fecha_vencimiento: string;
-  valor_recibido?: number | null;
-  cambio_devuelto?: number | null;
+  nueva_fecha_vencimiento?: string | null;
+  /** Contrato 1.2. */
+  precio_lista?: Monto | null;
+  precio_cobrado?: Monto | null;
+  descuento_pct?: Monto | null;
+  motivo_descuento?: string | null;
+  idempotency_key?: string;
+  idempotente_reintento?: boolean;
+  valor_recibido?: Monto | null;
+  cambio_devuelto?: Monto | null;
   anulado: boolean;
   motivo_anulacion?: string | null;
   created_at: string;

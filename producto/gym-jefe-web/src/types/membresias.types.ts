@@ -69,6 +69,9 @@ export interface MembresiaResponse {
   dias_restantes_o_vencido: number;
   congelamiento_activo: boolean;
   congelamiento_id?: string | null;
+  /** Copia del plan en la venta (contrato 1.4): precio de lista de esta membresía. */
+  plan_precio_vendido?: number | string | null;
+  plan_duracion_dias_vendida?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -90,6 +93,9 @@ export interface MembresiaListItemResponse {
   dias_restantes_o_vencido: number;
   congelamiento_activo: boolean;
   congelamiento_id?: string | null;
+  /** Copia del plan en la venta (contrato 1.4): precio de lista de esta membresía. */
+  plan_precio_vendido?: number | string | null;
+  plan_duracion_dias_vendida?: number | null;
 }
 
 export interface MembresiasPaginadasResponse {

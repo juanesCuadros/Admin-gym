@@ -21,10 +21,14 @@ import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
+import { formatFechaNegocio } from '../../utils/fechasBogota';
 import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
+import { useAuth } from '../../contexts/AuthContext';
+import { CobroMembresiaModal, DestinoCobro } from './CobroMembresiaModal';
 import {
   PlanResponse,
   MembresiaListItemResponse,
+  MembresiaResponse,
   CrearPlanRequest,
 } from '../../types/membresias.types';
 
@@ -33,6 +37,8 @@ type TabMembresias = 'membresias' | 'planes';
 export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabInicial = 'membresias' }) => {
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
+  const puedeCobrar = hasPermission('caja', 'crear');
 
   // La pestaña activa la decide la ruta (§B2): /membresias · /membresias/planes
   const activeTab = tabInicial;
@@ -74,6 +80,31 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
   const [motivoCancelar, setMotivoCancelar] = useState('');
 
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Cobro (contrato 1.2)
+  const [cobro, setCobro] = useState<DestinoCobro | null>(null);
+
+  /** Precio de lista de una membresía: la copia del plan vendido (contrato 1.4) o, si no la hay, el precio del plan. */
+  const precioListaDe = (m: Pick<MembresiaResponse, 'plan_id' | 'plan_precio_vendido'>): number | null => {
+    if (m.plan_precio_vendido !== null && m.plan_precio_vendido !== undefined) return Math.round(Number(m.plan_precio_vendido));
+    const plan = planes.find((p) => p.id === m.plan_id);
+    return plan ? Math.round(Number(plan.precio)) : null;
+  };
+
+  const abrirCobro = (m: MembresiaListItemResponse | MembresiaResponse, nombre: string) => {
+    const precio = precioListaDe(m);
+    if (precio === null) {
+      showToast('error', 'No se puede cobrar', 'No se encontró el precio de lista del plan.');
+      return;
+    }
+    setCobro({
+      tipo: 'membresia',
+      membresiaId: m.id,
+      titulo: nombre,
+      detalle: `${m.plan_nombre} · vence el ${formatFechaNegocio(m.fecha_vencimiento)}`,
+      precioLista: precio,
+    });
+  };
 
   const loadPlanes = useCallback(async () => {
     setIsLoadingPlanes(true);
@@ -141,13 +172,18 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     if (!asignarData.deportista_id || !asignarData.plan_id) return;
     setIsProcessing(true);
     try {
-      await membresiasService.asignarPlan({
+      const nueva = await membresiasService.asignarPlan({
         deportista_id: asignarData.deportista_id,
         plan_id: asignarData.plan_id,
       });
-      showToast('success', 'Membresía Asignada', 'El deportista ya cuenta con plan activo');
+      showToast('success', 'Membresía asignada', nueva.plan_nombre);
       setShowAsignarModal(false);
       loadMembresias();
+      // Siguiente paso natural: cobrarla.
+      if (puedeCobrar) {
+        const dep = deportistasList.find((d) => d.id === nueva.deportista_id);
+        abrirCobro(nueva, dep?.nombre ?? 'Membresía nueva');
+      }
     } catch (err) {
       showToast('error', 'Error al asignar plan', parseApiError(err));
     } finally {
@@ -285,8 +321,8 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                 header: 'Vigencia',
                 render: (m) => (
                   <div style={{ fontSize: '0.85rem' }}>
-                    <div>Inicio: {m.fecha_inicio}</div>
-                    <div style={{ fontWeight: 600 }}>Vence: {m.fecha_vencimiento}</div>
+                    <div>Inicio: {formatFechaNegocio(m.fecha_inicio)}</div>
+                    <div style={{ fontWeight: 600 }}>Vence: {formatFechaNegocio(m.fecha_vencimiento)}</div>
                   </div>
                 ),
               },
@@ -319,6 +355,16 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                 align: 'right',
                 render: (m) => (
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    {puedeCobrar && !m.cancelada && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        leftIcon={<DollarSign size={14} />}
+                        onClick={() => abrirCobro(m, m.deportista_nombre)}
+                      >
+                        Cobrar
+                      </Button>
+                    )}
                     {m.congelamiento_activo ? (
                       <Button
                         variant="secondary"
@@ -579,6 +625,15 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
           onChange={(e) => setNuevoPlanId(e.target.value)}
         />
       </Modal>
+
+      <CobroMembresiaModal
+        destino={cobro}
+        onCerrar={() => setCobro(null)}
+        onCobrado={() => {
+          showToast('success', 'Pago registrado', cobro?.titulo ?? '');
+          loadMembresias();
+        }}
+      />
 
       {/* Modal: Cancelar */}
       <Modal
