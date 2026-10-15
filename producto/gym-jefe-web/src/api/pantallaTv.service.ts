@@ -27,8 +27,14 @@ export interface PantallaTvWsEvent {
   subdominio?: string;
   deportista?: {
     nombre: string;
-    documento: string;
-    estado_calculado: string;
+    documento?: string;
+    /** Contrato 2.1: enum consolidado del deportista. */
+    estado?: string;
+    /**
+     * El WebSocket del backend aún publica el estado con este nombre (y `cortesia` para invitados).
+     * Se lee solo como respaldo mientras se alinea con el contrato 2.1.
+     */
+    estado_calculado?: string;
     dias_restantes_o_vencido?: number;
   };
   configuracion?: PantallaConfig;

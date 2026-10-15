@@ -18,6 +18,7 @@ import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
+import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
 import {
   CheckinResponseDto,
   CheckinItemHistorialDto,
@@ -265,9 +266,13 @@ export const ControlIngresoPage: React.FC = () => {
                   <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
                     {lastCheckin.deportista.nombre}
                   </div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.775rem' }}>
-                    Doc: {lastCheckin.deportista.documento} · {lastCheckin.deportista.estado_calculado}
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.775rem', marginBottom: 6 }}>
+                    Doc: {lastCheckin.deportista.documento}
                   </div>
+                  <EstadoDeportistaBadge
+                    estado={lastCheckin.deportista.estado}
+                    detalle={{ dias: lastCheckin.deportista.dias_restantes_o_vencido }}
+                  />
                 </div>
               )}
             </div>

@@ -1,3 +1,5 @@
+import type { EstadoDeportista } from '../utils/estadoDeportista';
+
 export interface PlanResponse {
   id: string;
   gimnasio_id: string;
@@ -62,7 +64,8 @@ export interface MembresiaResponse {
   fecha_inicio: string;
   fecha_vencimiento: string;
   cancelada: boolean;
-  estado_calculado: 'activo' | 'por_vencer' | 'mora' | 'vencido' | 'congelado' | 'cancelada';
+  /** El backend de membresías aún llama así al campo; los valores ya son el enum consolidado (§A4). */
+  estado_calculado: EstadoDeportista;
   dias_restantes_o_vencido: number;
   congelamiento_activo: boolean;
   congelamiento_id?: string | null;
@@ -82,7 +85,8 @@ export interface MembresiaListItemResponse {
   fecha_inicio: string;
   fecha_vencimiento: string;
   cancelada: boolean;
-  estado_calculado: string;
+  /** El backend de membresías aún llama así al campo; los valores ya son el enum consolidado (§A4). */
+  estado_calculado: EstadoDeportista;
   dias_restantes_o_vencido: number;
   congelamiento_activo: boolean;
   congelamiento_id?: string | null;

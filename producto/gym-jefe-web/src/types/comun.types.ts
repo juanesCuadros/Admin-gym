@@ -7,7 +7,7 @@ export type Monto = number | string;
 
 /**
  * Fila de `GET /deportistas/buscar` (autocompletado).
- * El backend aún devuelve `estado_membresia` con el enum viejo; no se usa en la UI (§A4, contrato 2.1).
+ * Contrato 2.1: `estado` usa el enum consolidado del deportista.
  */
 export interface DeportistaBusquedaItem {
   id: string;
@@ -16,4 +16,6 @@ export interface DeportistaBusquedaItem {
   correo?: string | null;
   telefono?: string | null;
   activo: boolean;
+  tipo_documento?: string;
+  estado?: string;
 }

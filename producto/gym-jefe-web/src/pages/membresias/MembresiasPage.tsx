@@ -21,6 +21,7 @@ import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
+import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
 import {
   PlanResponse,
   MembresiaListItemResponse,
@@ -310,9 +311,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
               {
                 header: 'Estado',
                 render: (m) => (
-                  <Badge variant={m.congelamiento_activo ? 'info' : m.cancelada ? 'danger' : 'success'}>
-                    {m.congelamiento_activo ? 'Congelada' : m.cancelada ? 'Cancelada' : m.estado_calculado}
-                  </Badge>
+                  <EstadoDeportistaBadge estado={m.estado_calculado} detalle={{ dias: m.dias_restantes_o_vencido }} />
                 ),
               },
               {

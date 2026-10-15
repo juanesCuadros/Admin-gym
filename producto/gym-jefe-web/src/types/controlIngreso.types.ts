@@ -1,3 +1,5 @@
+import type { EstadoDeportista } from '../utils/estadoDeportista';
+
 export interface CheckinManualRequest {
   deportista_id?: string;
   documento?: string;
@@ -15,7 +17,8 @@ export interface DeportistaCheckinDto {
   id: string;
   documento: string;
   nombre: string;
-  estado_calculado: 'activo' | 'por_vencer' | 'mora' | 'vencido' | 'congelado' | 'cancelada' | 'inactivo' | 'sin_membresia';
+  /** Contrato 2.1: enum consolidado del deportista. */
+  estado: EstadoDeportista;
   dias_restantes_o_vencido: number;
 }
 
@@ -23,6 +26,7 @@ export interface CheckinResponseDto {
   checkin_id?: number | null;
   tipo: 'ingreso' | 'cortesia';
   metodo: 'manual' | 'huella';
+  /** Resultado del acceso. `alerta_mora` = pasó, pero con alerta de pago (nombre del backend). */
   resultado: 'abrio' | 'alerta_mora' | 'negado';
   comando_torniquete: boolean;
   mensaje: string;

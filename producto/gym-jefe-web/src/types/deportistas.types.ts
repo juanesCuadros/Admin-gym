@@ -1,3 +1,5 @@
+import type { EstadoDeportista } from '../utils/estadoDeportista';
+
 export interface CrearDeportistaRequest {
   documento: string;
   nombre: string;
@@ -29,7 +31,8 @@ export interface DeportistaResumenResponse {
   correo?: string | null;
   telefono?: string | null;
   activo: boolean;
-  estado_membresia: string; // al_dia, por_vencer, en_mora, vencido, congelado, sin_membresia
+  /** Contrato 2.1: enum consolidado del deportista. */
+  estado: EstadoDeportista;
   plan_nombre?: string | null;
   fecha_vencimiento?: string | null;
   version: number;
@@ -57,6 +60,8 @@ export interface DeportistaResponse {
   consentimiento_fecha?: string | null;
   acudiente_nombre?: string | null;
   activo: boolean;
+  /** Contrato 2.1: viene en la ficha (`GET /deportistas/{id}`); `null` en las respuestas de crear y editar. */
+  estado?: EstadoDeportista | null;
   version: number;
   created_at: string;
   updated_at: string;
@@ -71,7 +76,7 @@ export interface MembresiaFichaResponse {
   cancelada: boolean;
   dias_restantes: number;
   congelado: boolean;
-  estado: string;
+  estado: EstadoDeportista;
 }
 
 export interface PagoFichaResponse {

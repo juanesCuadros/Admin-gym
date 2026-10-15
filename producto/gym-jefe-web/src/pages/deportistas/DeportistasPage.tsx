@@ -21,6 +21,9 @@ import { Input, Select, SearchInput } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
+import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
+import { formatVencimiento } from '../../utils/formato';
+import { formatFechaNegocio, hoyBogota } from '../../utils/fechasBogota';
 import {
   DeportistaResumenResponse,
   FichaDeportistaResponse,
@@ -28,6 +31,15 @@ import {
   RegistrarMedicionRequest,
   DeportistaResponse,
 } from '../../types/deportistas.types';
+
+/** Días de `desde` a `hasta` (fechas de negocio `YYYY-MM-DD`), sin pasar por la zona del navegador. */
+function diasEntre(desde: string, hasta: string): number {
+  const utc = (f: string) => {
+    const [a, m, d] = f.slice(0, 10).split('-').map(Number);
+    return Date.UTC(a, m - 1, d);
+  };
+  return Math.round((utc(hasta) - utc(desde)) / 86400000);
+}
 
 export const DeportistasPage: React.FC = () => {
   const { showToast } = useToast();
@@ -37,7 +49,6 @@ export const DeportistasPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
   const [searchQuery, setSearchQuery] = useState('');
-  const [estadoFilter, setEstadoFilter] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   // New Athlete Modal
@@ -92,25 +103,20 @@ export const DeportistasPage: React.FC = () => {
   const loadDeportistas = useCallback(async () => {
     setIsLoading(true);
     try {
-      if (searchQuery.trim().length >= 2) {
-        const items = await deportistasService.buscar(searchQuery.trim());
-        setDeportistas(items);
-        setTotal(items.length);
-      } else {
-        const res = await deportistasService.getDeportistas({
-          skip: (page - 1) * limit,
-          limit,
-          estado_membresia: estadoFilter || undefined,
-        });
-        setDeportistas(res.items);
-        setTotal(res.total);
-      }
+      const q = searchQuery.trim();
+      const res = await deportistasService.getDeportistas({
+        skip: (page - 1) * limit,
+        limit,
+        q: q.length >= 2 ? q : undefined,
+      });
+      setDeportistas(res.items);
+      setTotal(res.total);
     } catch (e) {
       console.error('Error loading deportistas', e);
     } finally {
       setIsLoading(false);
     }
-  }, [page, limit, searchQuery, estadoFilter]);
+  }, [page, limit, searchQuery]);
 
   useEffect(() => {
     loadDeportistas();
@@ -241,21 +247,11 @@ export const DeportistasPage: React.FC = () => {
     }
   };
 
-  const getStatusBadge = (estado: string) => {
-    switch (estado) {
-      case 'al_dia':
-        return <Badge variant="success">Al Día</Badge>;
-      case 'por_vencer':
-        return <Badge variant="warning">Por Vencer</Badge>;
-      case 'en_mora':
-        return <Badge variant="danger">En Mora</Badge>;
-      case 'vencido':
-        return <Badge variant="danger">Vencido</Badge>;
-      case 'congelado':
-        return <Badge variant="info">Congelado</Badge>;
-      default:
-        return <Badge variant="neutral">Sin Membresía</Badge>;
-    }
+  /** Detalle del badge (§A4): días hasta (o desde) el vencimiento, contados en Bogotá. */
+  const detalleEstado = (d: DeportistaResumenResponse) => {
+    if (!d.fecha_vencimiento) return {};
+    const dias = diasEntre(hoyBogota(), d.fecha_vencimiento);
+    return { dias };
   };
 
   return (
@@ -286,21 +282,6 @@ export const DeportistasPage: React.FC = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
 
-          <div style={{ width: 220 }}>
-            <Select
-              options={[
-                { value: '', label: 'Todos los estados' },
-                { value: 'al_dia', label: 'Al Día' },
-                { value: 'por_vencer', label: 'Por Vencer' },
-                { value: 'en_mora', label: 'En Mora' },
-                { value: 'vencido', label: 'Vencido' },
-                { value: 'congelado', label: 'Congelado' },
-                { value: 'sin_membresia', label: 'Sin Membresía' },
-              ]}
-              value={estadoFilter}
-              onChange={(e) => setEstadoFilter(e.target.value)}
-            />
-          </div>
         </div>
       </Card>
 
@@ -331,13 +312,13 @@ export const DeportistasPage: React.FC = () => {
             accessor: (d) => d.plan_nombre || 'Ninguno',
           },
           {
-            header: 'Estado Membresía',
-            render: (d) => getStatusBadge(d.estado_membresia),
+            header: 'Estado',
+            render: (d) => <EstadoDeportistaBadge estado={d.estado} detalle={detalleEstado(d)} />,
             width: '140px',
           },
           {
             header: 'Vencimiento',
-            accessor: (d) => d.fecha_vencimiento || '-',
+            accessor: (d) => formatFechaNegocio(d.fecha_vencimiento),
             width: '130px',
           },
           {
@@ -504,7 +485,13 @@ export const DeportistasPage: React.FC = () => {
               }}
             >
               <div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>{ficha.deportista.nombre}</h3>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, display: 'flex', gap: 10, alignItems: 'center' }}>
+                  {ficha.deportista.nombre}
+                  <EstadoDeportistaBadge
+                    estado={ficha.deportista.estado}
+                    detalle={ficha.membresia_actual ? { dias: ficha.membresia_actual.dias_restantes } : {}}
+                  />
+                </h3>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                   Documento: {ficha.deportista.documento} · Correo: {ficha.deportista.correo || 'No registrado'}
                 </div>
@@ -554,12 +541,13 @@ export const DeportistasPage: React.FC = () => {
                   <div>
                     <div style={{ fontWeight: 700 }}>{ficha.membresia_actual.plan_nombre}</div>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      Vence el {ficha.membresia_actual.fecha_vencimiento} ({ficha.membresia_actual.dias_restantes} días restantes)
+                      {formatVencimiento(ficha.membresia_actual.fecha_vencimiento + 'T12:00:00-05:00', ficha.membresia_actual.dias_restantes)}
                     </div>
                   </div>
-                  <Badge variant={ficha.membresia_actual.congelado ? 'info' : 'success'}>
-                    {ficha.membresia_actual.congelado ? 'Congelada' : 'Activa'}
-                  </Badge>
+                  <EstadoDeportistaBadge
+                    estado={ficha.membresia_actual.estado}
+                    detalle={{ dias: ficha.membresia_actual.dias_restantes }}
+                  />
                 </div>
               ) : (
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
