@@ -120,3 +120,43 @@ export interface FichaMembresiaResponse {
   congelamientos: CongelamientoItemResponse[];
   pagos: any[];
 }
+
+// ---------------------------------------------------------------------------
+// Planes grupales (contrato 1.3, GW-RF-52)
+// ---------------------------------------------------------------------------
+
+/** `POST /membresias/paquetes`. El titular va incluido en `beneficiarios`. */
+export interface CrearPaqueteRequest {
+  plan_id: string;
+  titular_id: string;
+  beneficiarios: string[];
+  fecha_inicio?: string;
+}
+
+export interface PaqueteMembresiaItemDto {
+  id: string;
+  deportista_id: string;
+  deportista_nombre: string;
+  fecha_inicio: string;
+  fecha_vencimiento: string;
+  precio_asignado: number | string;
+}
+
+export interface CrearPaqueteResponse {
+  paquete_id: string;
+  membresias: PaqueteMembresiaItemDto[];
+}
+
+/** `GET /membresias/paquetes/{id}`. */
+export interface DetallePaqueteResponse {
+  id: string;
+  plan_nombre: string;
+  titular: { id: string; nombre: string; telefono?: string | null };
+  membresias: PaqueteMembresiaItemDto[];
+}
+
+/** `422 BENEFICIARIOS_INCOMPLETOS`. */
+export interface DetallesBeneficiariosIncompletos {
+  requeridos: number;
+  recibidos: number;
+}

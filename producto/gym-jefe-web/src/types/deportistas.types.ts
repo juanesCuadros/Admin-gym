@@ -118,6 +118,9 @@ export interface MembresiaFichaResponse {
   dias_restantes: number;
   congelado: boolean;
   estado: EstadoDeportista;
+  /** Contrato 1.3: la membresía pertenece a un plan grupal. */
+  paquete_id?: string | null;
+  titular_nombre?: string | null;
 }
 
 export interface PagoFichaResponse {

@@ -436,6 +436,11 @@ export const DeportistasPage: React.FC = () => {
                 >
                   <div>
                     <div style={{ fontWeight: 700 }}>{ficha.membresia_actual.plan_nombre}</div>
+                    {ficha.membresia_actual.paquete_id && (
+                      <div style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600 }}>
+                        Plan grupal{ficha.membresia_actual.titular_nombre ? ` · titular ${ficha.membresia_actual.titular_nombre}` : ''}
+                      </div>
+                    )}
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                       {formatVencimiento(
                         `${ficha.membresia_actual.fecha_vencimiento}T12:00:00-05:00`,

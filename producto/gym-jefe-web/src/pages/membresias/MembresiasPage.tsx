@@ -10,6 +10,7 @@ import {
   Clock,
   DollarSign,
   UserCheck,
+  Users,
 } from 'lucide-react';
 import { membresiasService } from '../../api/membresias.service';
 import { deportistasService } from '../../api/deportistas.service';
@@ -25,6 +26,7 @@ import { formatFechaNegocio } from '../../utils/fechasBogota';
 import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
 import { useAuth } from '../../contexts/AuthContext';
 import { CobroMembresiaModal, DestinoCobro } from './CobroMembresiaModal';
+import { CrearPaqueteModal } from './CrearPaqueteModal';
 import {
   PlanResponse,
   MembresiaListItemResponse,
@@ -83,6 +85,9 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
 
   // Cobro (contrato 1.2)
   const [cobro, setCobro] = useState<DestinoCobro | null>(null);
+  // Plan grupal (contrato 1.3)
+  const [showPaqueteModal, setShowPaqueteModal] = useState(false);
+  const puedeCrearMembresia = hasPermission('membresias', 'crear');
 
   /** Precio de lista de una membresía: la copia del plan vendido (contrato 1.4) o, si no la hay, el precio del plan. */
   const precioListaDe = (m: Pick<MembresiaResponse, 'plan_id' | 'plan_precio_vendido'>): number | null => {
@@ -264,7 +269,12 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {puedeCrearMembresia && (
+            <Button variant="outline" leftIcon={<Users size={16} />} onClick={() => setShowPaqueteModal(true)}>
+              Plan grupal
+            </Button>
+          )}
           <Button
             variant="outline"
             leftIcon={<UserCheck size={16} />}
@@ -625,6 +635,27 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
           onChange={(e) => setNuevoPlanId(e.target.value)}
         />
       </Modal>
+
+      <CrearPaqueteModal
+        isOpen={showPaqueteModal}
+        planes={planes}
+        onCerrar={() => setShowPaqueteModal(false)}
+        onCreado={(res, plan, titular) => {
+          setShowPaqueteModal(false);
+          showToast('success', 'Plan grupal creado', `${plan.nombre} · ${res.membresias.length} membresías`);
+          loadMembresias();
+          // Un solo pago cubre todas las membresías del paquete.
+          if (puedeCobrar) {
+            setCobro({
+              tipo: 'paquete',
+              paqueteId: res.paquete_id,
+              titulo: `${plan.nombre} · titular ${titular.nombre}`,
+              detalle: res.membresias.map((m) => m.deportista_nombre).join(', '),
+              precioLista: Math.round(Number(plan.precio)),
+            });
+          }
+        }}
+      />
 
       <CobroMembresiaModal
         destino={cobro}

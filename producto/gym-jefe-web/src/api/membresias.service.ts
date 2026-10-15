@@ -11,6 +11,9 @@ import {
   MembresiaResponse,
   MembresiasPaginadasResponse,
   FichaMembresiaResponse,
+  CrearPaqueteRequest,
+  CrearPaqueteResponse,
+  DetallePaqueteResponse,
 } from '../types/membresias.types';
 
 export const membresiasService = {
@@ -72,6 +75,17 @@ export const membresiasService = {
 
   async descongelarMembresia(membresiaId: string): Promise<any> {
     const response = await apiClient.post(`/membresias/${membresiaId}/descongelar`);
+    return response.data;
+  },
+
+  // Planes grupales (contrato 1.3)
+  async crearPaquete(data: CrearPaqueteRequest): Promise<CrearPaqueteResponse> {
+    const response = await apiClient.post<CrearPaqueteResponse>('/membresias/paquetes', data);
+    return response.data;
+  },
+
+  async getPaquete(id: string): Promise<DetallePaqueteResponse> {
+    const response = await apiClient.get<DetallePaqueteResponse>(`/membresias/paquetes/${id}`);
     return response.data;
   },
 };
