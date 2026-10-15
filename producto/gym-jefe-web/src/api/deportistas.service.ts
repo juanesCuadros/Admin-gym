@@ -9,30 +9,28 @@ import {
   MedicionCorporalResponse,
   EnrolarHuellaRequest,
 } from '../types/deportistas.types';
+import type { DeportistaBusquedaItem } from '../types/comun.types';
 
 export const deportistasService = {
   async getDeportistas(params?: {
     skip?: number;
     limit?: number;
     activo?: boolean;
-    estado_membresia?: string;
+    /** Búsqueda por prefijo de documento o coincidencia de nombre. */
+    q?: string;
   }): Promise<DeportistasPaginadosResponse> {
     const response = await apiClient.get<DeportistasPaginadosResponse>('/deportistas', { params });
     return response.data;
   },
 
-  async buscar(q: string): Promise<any[]> {
-    const response = await apiClient.get('/deportistas/buscar', { params: { q } });
+  async buscar(q: string): Promise<DeportistaBusquedaItem[]> {
+    const response = await apiClient.get<DeportistaBusquedaItem[]>('/deportistas/buscar', { params: { q } });
     return response.data;
   },
 
-  async getById(id: string): Promise<DeportistaResponse> {
-    const response = await apiClient.get<DeportistaResponse>(`/deportistas/${id}`);
-    return response.data;
-  },
-
+  /** Ficha 360° (`GET /deportistas/{id}`): el backend no expone `/ficha`. */
   async getFicha(id: string): Promise<FichaDeportistaResponse> {
-    const response = await apiClient.get<FichaDeportistaResponse>(`/deportistas/${id}/ficha`);
+    const response = await apiClient.get<FichaDeportistaResponse>(`/deportistas/${id}`);
     return response.data;
   },
 

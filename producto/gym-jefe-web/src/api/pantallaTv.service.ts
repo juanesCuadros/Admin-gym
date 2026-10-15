@@ -27,8 +27,14 @@ export interface PantallaTvWsEvent {
   subdominio?: string;
   deportista?: {
     nombre: string;
-    documento: string;
-    estado_calculado: string;
+    documento?: string;
+    /** Contrato 2.1: enum consolidado del deportista. */
+    estado?: string;
+    /**
+     * El WebSocket del backend aún publica el estado con este nombre (y `cortesia` para invitados).
+     * Se lee solo como respaldo mientras se alinea con el contrato 2.1.
+     */
+    estado_calculado?: string;
     dias_restantes_o_vencido?: number;
   };
   configuracion?: PantallaConfig;
@@ -47,6 +53,19 @@ export interface PantallaTvWsOptions {
   deviceToken: string;
   onMessage?: (event: PantallaTvWsEvent) => void;
   onStatusChange?: (status: PantallaTvWsStatus, detail?: { attempt: number; delayMs: number }) => void;
+}
+
+/**
+ * URL del WebSocket a partir de `VITE_API_URL`, que puede ser absoluta (`http://host/api/v1`)
+ * o relativa (`/api/v1`, detrás del mismo nginx). Si es relativa se usa el host de la página.
+ * Si la página está en https se usa wss (el navegador bloquea ws desde https).
+ */
+export function urlWebSocket(ruta: string): string {
+  const base = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+  const url = new URL(base, window.location.origin);
+  const seguro = window.location.protocol === 'https:' || url.protocol === 'https:';
+  const prefijo = url.pathname.replace(/\/$/, '');
+  return `${seguro ? 'wss' : 'ws'}://${url.host}${prefijo}${ruta}`;
 }
 
 export class PantallaTvWebSocketClient {
@@ -72,13 +91,9 @@ export class PantallaTvWebSocketClient {
     this.isClosedManually = false;
     this.clearTimers();
 
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-    // Convert http/https to ws/wss
-    const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
-    const cleanHostPath = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
-    const wsUrl = `${wsProtocol}://${cleanHostPath}/pantalla-tv/ws/${encodeURIComponent(
-      this.subdominio
-    )}?device_token=${encodeURIComponent(this.deviceToken)}`;
+    const wsUrl = urlWebSocket(
+      `/pantalla-tv/ws/${encodeURIComponent(this.subdominio)}?device_token=${encodeURIComponent(this.deviceToken)}`
+    );
 
     this.onStatusChange?.('conectando');
 

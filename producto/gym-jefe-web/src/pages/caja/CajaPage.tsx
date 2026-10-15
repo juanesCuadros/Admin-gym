@@ -1,643 +1,623 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
-import {
-  CreditCard,
-  Plus,
-  Lock,
-  Unlock,
-  DollarSign,
-  ShoppingCart,
-  MinusCircle,
-  TrendingUp,
-  Receipt,
-  Trash2,
-} from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { CreditCard, Lock, Unlock, DollarSign, ShoppingCart, MinusCircle, TrendingUp, UserX } from 'lucide-react';
 import { cajaService } from '../../api/caja.service';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCajaTurno } from '../../contexts/CajaTurnoContext';
-import { MensajeFijo } from '../../components/estados/Estados';
+import { Cargando, ErrorCarga, MensajeFijo } from '../../components/estados/Estados';
 import { useToast } from '../../contexts/ToastContext';
-import { parseApiError } from '../../api/client';
+import { ApiError, toApiError } from '../../api/client';
 import { Card, KpiCard } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { Input, Select } from '../../components/ui/Input';
+import { Input, Textarea } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { Modal } from '../../components/ui/Modal';
+import { Modal, ConfirmDialog } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
-import {
-  TurnoResumenDto,
-  MovimientoCajaItemDto,
-  VentaItemRequest,
-} from '../../types/caja.types';
+import { formatCOP, formatFechaHora, formatHora } from '../../utils/formato';
+import type { DetallesTurnoAjeno, MovimientoCajaItemDto, TurnoResumenDto } from '../../types/caja.types';
 
+function entero(valor: string): number | null {
+  if (valor.trim() === '') return null;
+  const n = Number(valor);
+  return Number.isFinite(n) ? Math.round(n) : null;
+}
+
+/** Turno ajeno que se va a cerrar: viene del turno actual del gimnasio o del 409 al intentar abrir. */
+interface TurnoAjeno {
+  turno_id: string;
+  abierto_por_nombre: string;
+  abierto_en: string;
+  total_esperado_efectivo?: number;
+}
+
+const ETIQUETA_MOVIMIENTO: Record<string, string> = {
+  venta: 'Venta',
+  pago_membresia: 'Membresía',
+  egreso: 'Egreso',
+  devolucion: 'Devolución',
+};
+
+/**
+ * Caja · turno actual (GW-RF-08 a 10, contratos 1.1 y 2.8). Un solo turno abierto por gimnasio:
+ * si lo abrió otra persona se muestra quién y desde cuándo, y se ofrece cerrarlo con el conteo.
+ */
 export const CajaPage: React.FC = () => {
-  const { isJefe, isRecepcionista } = useAuth();
+  const { isRecepcionista, hasPermission, refrescarUsuario } = useAuth();
   const { showToast } = useToast();
   const location = useLocation();
-  const cajaGlobal = useCajaTurno();
-  // Recepcionista sin turno: llega aquí redirigido y debe abrir caja antes de continuar (§C1).
-  const debeAbrirTurno = !!(location.state as { abrirTurno?: boolean } | null)?.abrirTurno;
+  const { turno, turnoAbierto, turnoPropio, cargando, error, refrescar } = useCajaTurno();
+  const puedeOperar = hasPermission('caja', 'crear');
+  // Recepcionista sin turno: llega aquí redirigida y debe abrir caja antes de continuar (§C1, contrato 2.8).
+  const llegoRedirigida = !!(location.state as { abrirTurno?: boolean } | null)?.abrirTurno;
 
-  const [turno, setTurno] = useState<TurnoResumenDto | null>(null);
   const [movimientos, setMovimientos] = useState<MovimientoCajaItemDto[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [cargandoMovs, setCargandoMovs] = useState(false);
+  const [errorMovs, setErrorMovs] = useState<unknown>(null);
 
-  // Modals
-  const [showAbrirModal, setShowAbrirModal] = useState(debeAbrirTurno);
+  // Abrir turno
+  const [showAbrirModal, setShowAbrirModal] = useState(false);
   const [baseInicial, setBaseInicial] = useState('');
+  const [errorAbrir, setErrorAbrir] = useState<ApiError | null>(null);
+  const [ajenoDelError, setAjenoDelError] = useState<TurnoAjeno | null>(null);
 
+  // Cerrar turno propio
   const [showCerrarModal, setShowCerrarModal] = useState(false);
   const [efectivoContado, setEfectivoContado] = useState('');
+  const [errorCerrar, setErrorCerrar] = useState<string | null>(null);
 
-  const [showVentaModal, setShowVentaModal] = useState(false);
-  const [ventaIdempotencyKey, setVentaIdempotencyKey] = useState<string>('');
-  const [ventaItems, setVentaItems] = useState<VentaItemRequest[]>([
-    { tipo: 'pase_dia', descripcion: 'Pase de Día Gimnasio', cantidad: 1, precio_unitario: 15000 },
-  ]);
-  const [ventaMetodo, setVentaMetodo] = useState('efectivo');
-  const [ventaTipoMedio, setVentaTipoMedio] = useState<'efectivo' | 'otro'>('efectivo');
-  const [valorRecibido, setValorRecibido] = useState('');
+  // Cerrar turno ajeno
+  const [ajenoACerrar, setAjenoACerrar] = useState<TurnoAjeno | null>(null);
+  const [conteoAjeno, setConteoAjeno] = useState('');
+  const [notaAjeno, setNotaAjeno] = useState('');
+  const [confirmarAjeno, setConfirmarAjeno] = useState(false);
+  const [errorAjeno, setErrorAjeno] = useState<string | null>(null);
+  const [cierreAjeno, setCierreAjeno] = useState<TurnoResumenDto | null>(null);
 
+  // Egreso
   const [showEgresoModal, setShowEgresoModal] = useState(false);
   const [egresoMonto, setEgresoMonto] = useState('');
   const [egresoMotivo, setEgresoMotivo] = useState('');
+  const [errorEgreso, setErrorEgreso] = useState<string | null>(null);
 
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const loadCaja = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const turnoRes = await cajaService.getTurnoActual();
-      setTurno(turnoRes);
-
-      if (turnoRes && turnoRes.id) {
-        const movs = await cajaService.getMovimientos(turnoRes.id);
-        setMovimientos(movs.items);
-      } else {
-        setMovimientos([]);
-      }
-    } catch (e) {
-      console.error('Error fetching cash shift', e);
-    } finally {
-      setIsLoading(false);
+  const cargarMovimientos = useCallback(async () => {
+    if (!turno || !turnoPropio) {
+      setMovimientos([]);
+      return;
     }
-  }, []);
+    setCargandoMovs(true);
+    try {
+      const movs = await cajaService.getMovimientos(turno.id);
+      setMovimientos(movs.items);
+      setErrorMovs(null);
+    } catch (e) {
+      setErrorMovs(e);
+    } finally {
+      setCargandoMovs(false);
+    }
+  }, [turno, turnoPropio]);
 
   useEffect(() => {
-    loadCaja();
-  }, [loadCaja]);
+    cargarMovimientos();
+  }, [cargarMovimientos]);
 
-  // Handlers
+  // Si llegó redirigida y no hay turno en el gimnasio, se le abre directo el formulario de apertura.
+  useEffect(() => {
+    if (llegoRedirigida && !cargando && !turnoAbierto && puedeOperar) setShowAbrirModal(true);
+  }, [llegoRedirigida, cargando, turnoAbierto, puedeOperar]);
+
+  const trasCambioDeTurno = async () => {
+    await refrescar();
+    // Contrato 2.8: el indicador requiere_abrir_caja de /auth/me cambia con el turno.
+    refrescarUsuario();
+  };
+
+  // ---- Abrir ----
+  const base = entero(baseInicial);
   const handleAbrirTurno = async () => {
+    if (isProcessing || base === null || base < 0) return;
     setIsProcessing(true);
+    setErrorAbrir(null);
     try {
-      const res = await cajaService.abrirTurno({ base_inicial: Number(baseInicial) || 0 });
-      setTurno(res);
+      await cajaService.abrirTurno({ base_inicial: base });
       setShowAbrirModal(false);
-      showToast('success', 'Turno abierto', 'Caja lista para procesar ventas y pagos');
-      loadCaja();
-      cajaGlobal.refrescar();
+      setBaseInicial('');
+      setAjenoDelError(null);
+      showToast('success', 'Turno abierto', 'La caja quedó lista para vender y cobrar.');
+      await trasCambioDeTurno();
     } catch (err) {
-      showToast('error', 'Error al abrir turno', parseApiError(err));
+      const e = toApiError(err);
+      if (e.codigo === 'TURNO_AJENO_ABIERTO' && e.detalles) {
+        const d = e.detalles as DetallesTurnoAjeno;
+        setAjenoDelError({ turno_id: d.turno_id, abierto_por_nombre: d.abierto_por_nombre, abierto_en: d.abierto_en });
+        setShowAbrirModal(false);
+        refrescar();
+      } else {
+        setErrorAbrir(e);
+      }
     } finally {
       setIsProcessing(false);
     }
   };
 
+  // ---- Cerrar propio ----
+  const contado = entero(efectivoContado);
+  const diferencia = turno && contado !== null ? contado - Number(turno.total_esperado_efectivo) : null;
   const handleCerrarTurno = async () => {
-    if (!efectivoContado) return;
+    if (isProcessing || contado === null || contado < 0) return;
     setIsProcessing(true);
+    setErrorCerrar(null);
     try {
-      await cajaService.cerrarTurno({ efectivo_contado: Number(efectivoContado) });
+      const res = await cajaService.cerrarTurno({ efectivo_contado: contado });
       setShowCerrarModal(false);
-      showToast('success', 'Turno cerrado', 'Arqueo completado exitosamente');
-      loadCaja();
-      cajaGlobal.refrescar();
+      setEfectivoContado('');
+      const dif = Number(res.diferencia ?? 0);
+      showToast('success', 'Turno cerrado', dif === 0 ? 'Caja cuadrada.' : `Diferencia: ${formatCOP(dif)}`);
+      await trasCambioDeTurno();
     } catch (err) {
-      showToast('error', 'Error al cerrar turno', parseApiError(err));
+      setErrorCerrar(toApiError(err).message);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleOpenVentaModal = () => {
-    // Generated ONCE per checkout attempt before the first submit
-    setVentaIdempotencyKey(crypto.randomUUID());
-    setShowVentaModal(true);
+  // ---- Cerrar ajeno ----
+  const abrirCierreAjeno = (t: TurnoAjeno) => {
+    setAjenoACerrar(t);
+    setConteoAjeno('');
+    setNotaAjeno('');
+    setErrorAjeno(null);
   };
+  const conteoAjenoNum = entero(conteoAjeno);
+  const errorConteoAjeno =
+    conteoAjeno.trim() !== '' && (conteoAjenoNum === null || conteoAjenoNum < 0) ? 'Escribe un valor válido.' : null;
 
-  const handleCloseVentaModal = () => {
-    setShowVentaModal(false);
-    setVentaIdempotencyKey('');
-  };
-
-  const handleRegistrarVenta = async () => {
-    if (ventaItems.length === 0) return;
+  const handleCerrarAjeno = async () => {
+    if (!ajenoACerrar || isProcessing || conteoAjenoNum === null || conteoAjenoNum < 0) return;
     setIsProcessing(true);
-
-    // Reuse existing key from component state so that retries or double submits
-    // never regenerate a new key, preserving backend idempotency guarantees.
-    const keyToUse = ventaIdempotencyKey || crypto.randomUUID();
-    if (!ventaIdempotencyKey) {
-      setVentaIdempotencyKey(keyToUse);
-    }
-
+    setErrorAjeno(null);
     try {
-      await cajaService.registrarVenta(
-        {
-          metodo: ventaMetodo,
-          tipo_medio: ventaTipoMedio,
-          valor_recibido: valorRecibido ? Number(valorRecibido) : undefined,
-          items: ventaItems,
-        },
-        keyToUse
-      );
-
-      setShowVentaModal(false);
-      setVentaIdempotencyKey(''); // Only reset on success
-      showToast('success', 'Venta Registrada', 'Cobro asentado en el turno actual');
-      loadCaja();
-    } catch (err) {
-      // Keep ventaIdempotencyKey in state on error so a retry reuses the exact same key
-      showToast('error', 'Error al cobrar venta', parseApiError(err));
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleRegistrarEgreso = async () => {
-    if (!egresoMonto || !egresoMotivo) return;
-    setIsProcessing(true);
-    try {
-      await cajaService.registrarEgreso({
-        monto: Number(egresoMonto),
-        motivo: egresoMotivo,
+      const res = await cajaService.cerrarTurnoAjeno(ajenoACerrar.turno_id, {
+        conteo_efectivo: conteoAjenoNum,
+        nota: notaAjeno.trim() || undefined,
       });
+      setConfirmarAjeno(false);
+      setAjenoACerrar(null);
+      setAjenoDelError(null);
+      setCierreAjeno(res);
+      showToast('success', 'Turno cerrado', `Ya puedes abrir tu turno.`);
+      await trasCambioDeTurno();
+    } catch (err) {
+      setConfirmarAjeno(false);
+      const e = toApiError(err);
+      setErrorAjeno(e.codigo === 'TURNO_YA_CERRADO' ? 'Ese turno ya fue cerrado por otra persona. Recarga la caja.' : e.message);
+      if (e.codigo === 'TURNO_YA_CERRADO') refrescar();
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
+  // ---- Egreso ----
+  const montoEgreso = entero(egresoMonto);
+  const handleRegistrarEgreso = async () => {
+    if (isProcessing) return;
+    if (montoEgreso === null || montoEgreso <= 0) {
+      setErrorEgreso('Escribe el monto del egreso.');
+      return;
+    }
+    if (egresoMotivo.trim().length < 4) {
+      setErrorEgreso('Escribe el motivo (mínimo 4 caracteres).');
+      return;
+    }
+    setIsProcessing(true);
+    setErrorEgreso(null);
+    try {
+      await cajaService.registrarEgreso({ monto: montoEgreso, motivo: egresoMotivo.trim() });
       setShowEgresoModal(false);
       setEgresoMonto('');
       setEgresoMotivo('');
-      showToast('success', 'Egreso Registrado', 'Monto deducido de caja');
-      loadCaja();
+      showToast('success', 'Egreso registrado', formatCOP(montoEgreso));
+      refrescar();
+      cargarMovimientos();
     } catch (err) {
-      showToast('error', 'Error al registrar egreso', parseApiError(err));
+      setErrorEgreso(toApiError(err).message);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const totalVenta = ventaItems.reduce(
-    (acc, item) => acc + (item.precio_unitario || 0) * item.cantidad,
-    0
-  );
+  // Turno ajeno visible: el actual del gimnasio (si no es propio) o el que reportó el 409.
+  const turnoAjeno: TurnoAjeno | null =
+    turno && turnoAbierto && !turnoPropio
+      ? {
+          turno_id: turno.id,
+          abierto_por_nombre: turno.abierto_por_nombre ?? turno.staff_nombre ?? 'otra persona',
+          abierto_en: turno.abierto_en,
+          total_esperado_efectivo: Number(turno.total_esperado_efectivo),
+        }
+      : ajenoDelError;
+
+  if (cargando) return <Cargando />;
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Caja y Punto de Venta (POS)</h1>
-          <p className="page-subtitle">
-            Apertura de turno, ventas multi-ítem, cobro de membresías, egresos y arqueo
-          </p>
+          <h1 className="page-title">Caja</h1>
+          <p className="page-subtitle">Turno único del gimnasio: apertura, egresos y arqueo</p>
         </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
-          {turno?.estado === 'abierto' ? (
-            <>
-              <Button
-                variant="primary"
-                leftIcon={<ShoppingCart size={16} />}
-                onClick={handleOpenVentaModal}
-              >
-                Nueva Venta
-              </Button>
-              <Button
-                variant="outline"
-                leftIcon={<MinusCircle size={16} />}
-                onClick={() => setShowEgresoModal(true)}
-              >
-                Registrar Egreso
-              </Button>
-              <Button
-                variant="secondary"
-                leftIcon={<Lock size={16} color="var(--warning)" />}
-                onClick={() => setShowCerrarModal(true)}
-              >
-                Cerrar Turno
-              </Button>
-            </>
-          ) : (
+        {turnoPropio && puedeOperar && (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <Link to="/caja/punto-de-venta" className="btn btn-primary">
+              <ShoppingCart size={16} /> Punto de venta
+            </Link>
             <Button
-              variant="primary"
-              leftIcon={<Unlock size={16} />}
-              onClick={() => setShowAbrirModal(true)}
+              variant="outline"
+              leftIcon={<MinusCircle size={16} />}
+              onClick={() => {
+                setErrorEgreso(null);
+                setShowEgresoModal(true);
+              }}
             >
-              Abrir Turno de Caja
+              Registrar egreso
             </Button>
-          )}
-        </div>
+            <Button
+              variant="secondary"
+              leftIcon={<Lock size={16} color="var(--warning)" />}
+              onClick={() => {
+                setErrorCerrar(null);
+                setShowCerrarModal(true);
+              }}
+            >
+              Cerrar turno
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* Cash Status Overview */}
-      {turno?.estado === 'abierto' ? (
-        <div className="kpi-grid">
-          <KpiCard
-            label="Base Inicial"
-            value={`$${Number(turno.base_inicial).toLocaleString()}`}
-            icon={<DollarSign size={20} />}
-            subtext="Efectivo de arranque"
-          />
-          <KpiCard
-            label="Ventas en Efectivo"
-            value={`$${Number(turno.ventas_efectivo).toLocaleString()}`}
-            icon={<TrendingUp size={20} />}
-            subtext={`+$${Number(turno.pagos_membresia_efectivo).toLocaleString()} membresías`}
-            color="var(--success)"
-          />
-          <KpiCard
-            label="Egresos y Vales"
-            value={`$${Number(turno.egresos_efectivo).toLocaleString()}`}
-            icon={<MinusCircle size={20} />}
-            subtext="Gastos autorizados"
-            color="var(--danger)"
-          />
-          <KpiCard
-            label="Total Esperado en Efectivo"
-            value={`$${Number(turno.total_esperado_efectivo).toLocaleString()}`}
-            icon={<CreditCard size={20} />}
-            subtext="Monto para arqueo"
-            color="var(--primary)"
-          />
-        </div>
+      {error && <ErrorCarga error={error} onReintentar={refrescar} />}
+
+      {cierreAjeno && (
+        <MensajeFijo
+          tono="info"
+          titulo="Turno ajeno cerrado"
+          style={{ marginBottom: 20 }}
+          accion={
+            <Button variant="ghost" size="sm" onClick={() => setCierreAjeno(null)}>
+              Cerrar
+            </Button>
+          }
+        >
+          Cerraste el turno de {cierreAjeno.abierto_por_nombre ?? cierreAjeno.staff_nombre}. Esperado{' '}
+          {formatCOP(cierreAjeno.total_esperado_efectivo)} · contado {formatCOP(cierreAjeno.efectivo_contado)} · diferencia{' '}
+          <strong>{formatCOP(cierreAjeno.diferencia)}</strong>
+          {cierreAjeno.descuadre_atribuido_a_nombre && Number(cierreAjeno.diferencia ?? 0) !== 0
+            ? `, atribuida a ${cierreAjeno.descuadre_atribuido_a_nombre}.`
+            : '.'}
+        </MensajeFijo>
+      )}
+
+      {!error && turnoAjeno && (
+        <MensajeFijo
+          tono="advertencia"
+          titulo={`La caja está abierta por ${turnoAjeno.abierto_por_nombre}`}
+          style={{ marginBottom: 20 }}
+          accion={
+            puedeOperar && (
+              <Button variant="primary" size="sm" leftIcon={<UserX size={14} />} onClick={() => abrirCierreAjeno(turnoAjeno)}>
+                Cerrar ese turno
+              </Button>
+            )
+          }
+        >
+          Turno abierto el {formatFechaHora(turnoAjeno.abierto_en)}. En el gimnasio solo puede haber un turno abierto: para
+          vender o cobrar con tu usuario, ciérralo con el conteo del efectivo y abre el tuyo. El descuadre, si lo hay, queda a
+          nombre de {turnoAjeno.abierto_por_nombre}.
+        </MensajeFijo>
+      )}
+
+      {!error && turnoPropio && turno ? (
+        <>
+          <div className="kpi-grid">
+            <KpiCard
+              label="Base inicial"
+              value={formatCOP(turno.base_inicial)}
+              icon={<DollarSign size={20} />}
+              subtext={`Abierto el ${formatFechaHora(turno.abierto_en)}`}
+            />
+            <KpiCard
+              label="Ventas en efectivo"
+              value={formatCOP(turno.ventas_efectivo)}
+              icon={<TrendingUp size={20} />}
+              subtext={`+${formatCOP(turno.pagos_membresia_efectivo)} en membresías`}
+              color="var(--success)"
+            />
+            <KpiCard
+              label="Egresos"
+              value={formatCOP(turno.egresos_efectivo)}
+              icon={<MinusCircle size={20} />}
+              subtext={`Devoluciones: ${formatCOP(turno.devoluciones_efectivo)}`}
+              color="var(--danger)"
+            />
+            <KpiCard
+              label="Efectivo esperado"
+              value={formatCOP(turno.total_esperado_efectivo)}
+              icon={<CreditCard size={20} />}
+              subtext="Para el arqueo"
+              color="var(--primary)"
+            />
+          </div>
+
+          <Card title="Movimientos del turno">
+            {errorMovs ? (
+              <ErrorCarga error={errorMovs} onReintentar={cargarMovimientos} />
+            ) : (
+              <Table<MovimientoCajaItemDto>
+                columns={[
+                  { header: 'Hora', accessor: (m) => formatHora(m.ts), width: '80px' },
+                  {
+                    header: 'Tipo',
+                    render: (m) => (
+                      <Badge variant={m.tipo_movimiento === 'venta' || m.tipo_movimiento === 'pago_membresia' ? 'success' : 'danger'}>
+                        {ETIQUETA_MOVIMIENTO[m.tipo_movimiento] ?? m.tipo_movimiento}
+                      </Badge>
+                    ),
+                    width: '130px',
+                  },
+                  {
+                    header: 'Concepto',
+                    render: (m) => (
+                      <span style={{ textDecoration: m.anulado ? 'line-through' : undefined }}>
+                        {m.concepto}
+                        {m.anulado ? ' (anulado)' : ''}
+                      </span>
+                    ),
+                  },
+                  { header: 'Método', accessor: (m) => m.metodo ?? '—' },
+                  {
+                    header: 'Monto',
+                    align: 'right',
+                    render: (m) => {
+                      const salida = m.tipo_movimiento === 'egreso' || m.tipo_movimiento === 'devolucion';
+                      return (
+                        <span style={{ fontWeight: 700, color: salida ? 'var(--danger)' : 'var(--text-primary)' }}>
+                          {salida ? '−' : '+'}
+                          {formatCOP(m.monto)}
+                        </span>
+                      );
+                    },
+                  },
+                ]}
+                data={movimientos}
+                isLoading={cargandoMovs}
+                keyExtractor={(m) => `${m.tipo_movimiento}-${m.id}`}
+                emptyMessage="Aún no hay movimientos en este turno."
+              />
+            )}
+          </Card>
+        </>
       ) : (
-        <Card style={{ textAlign: 'center', padding: '40px 20px', marginBottom: 28 }}>
-          {isRecepcionista && (
-            <MensajeFijo tono="info" style={{ marginBottom: 20, textAlign: 'left' }}>
-              Debes abrir el turno de caja para usar el resto del sistema.
-            </MensajeFijo>
-          )}
-          <Lock size={48} color="var(--text-muted)" style={{ marginBottom: 12 }} />
-          <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-            No hay turno de caja abierto en este momento
-          </h3>
-          <p style={{ color: 'var(--text-secondary)', maxWidth: 450, margin: '8px auto 20px auto' }}>
-            Para registrar ventas de productos, pases de día o recibir pagos de membresías en efectivo, abre un nuevo turno con la base inicial de monedas y billetes.
-          </p>
-          <Button variant="primary" onClick={() => setShowAbrirModal(true)} leftIcon={<Unlock size={16} />}>
-            Abrir Turno Ahora
-          </Button>
-        </Card>
+        !error &&
+        !turnoAjeno && (
+          <Card style={{ textAlign: 'center', padding: '40px 20px', marginBottom: 28 }}>
+            {(isRecepcionista || llegoRedirigida) && (
+              <MensajeFijo tono="info" titulo="Primero abre la caja" style={{ marginBottom: 20, textAlign: 'left' }}>
+                No hay un turno de caja abierto en el gimnasio. Ábrelo con la base de efectivo para empezar la jornada; mientras
+                tanto el resto del sistema queda bloqueado.
+              </MensajeFijo>
+            )}
+            <Lock size={48} color="var(--text-muted)" style={{ marginBottom: 12 }} />
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>No hay turno de caja abierto</h3>
+            <p style={{ color: 'var(--text-secondary)', maxWidth: 450, margin: '8px auto 20px auto' }}>
+              Para vender, cobrar membresías o registrar egresos, abre el turno con la base de efectivo para dar cambio.
+            </p>
+            {puedeOperar ? (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setErrorAbrir(null);
+                  setShowAbrirModal(true);
+                }}
+                leftIcon={<Unlock size={16} />}
+              >
+                Abrir turno
+              </Button>
+            ) : (
+              <p style={{ color: 'var(--text-muted)' }}>No tienes permiso para abrir la caja.</p>
+            )}
+          </Card>
+        )
       )}
 
-      {/* Movements Table */}
-      {turno?.estado === 'abierto' && (
-        <Card title="Movimientos del Turno Actual">
-          <Table<MovimientoCajaItemDto>
-            columns={[
-              {
-                header: 'Hora',
-                accessor: (item) =>
-                  new Date(item.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                width: '100px',
-              },
-              {
-                header: 'Tipo',
-                render: (item) => (
-                  <Badge
-                    variant={
-                      item.tipo_movimiento === 'venta' || item.tipo_movimiento === 'pago_membresia'
-                        ? 'success'
-                        : 'danger'
-                    }
-                  >
-                    {item.tipo_movimiento === 'venta'
-                      ? 'Venta'
-                      : item.tipo_movimiento === 'pago_membresia'
-                      ? 'Membresía'
-                      : 'Egreso'}
-                  </Badge>
-                ),
-                width: '130px',
-              },
-              {
-                header: 'Concepto',
-                accessor: 'concepto',
-              },
-              {
-                header: 'Método',
-                render: (item) => (
-                  <span style={{ textTransform: 'capitalize', fontSize: '0.85rem' }}>
-                    {item.metodo || 'Efectivo'} ({item.tipo_medio || 'efectivo'})
-                  </span>
-                ),
-              },
-              {
-                header: 'Monto',
-                align: 'right',
-                render: (item) => (
-                  <span
-                    style={{
-                      fontWeight: 700,
-                      color:
-                        item.tipo_movimiento === 'egreso' ? 'var(--danger)' : 'var(--text-primary)',
-                    }}
-                  >
-                    {item.tipo_movimiento === 'egreso' ? '-' : '+'}$
-                    {Number(item.monto).toLocaleString()}
-                  </span>
-                ),
-              },
-            ]}
-            data={movimientos}
-            isLoading={isLoading}
-            keyExtractor={(item) => item.id}
-            emptyMessage="No se han realizado cobros ni movimientos en este turno"
-          />
-        </Card>
-      )}
-
-      {/* Modal: Abrir Turno */}
+      {/* Abrir turno */}
       <Modal
         isOpen={showAbrirModal}
-        onClose={() => setShowAbrirModal(false)}
-        title="Abrir Turno de Caja"
+        onClose={() => !isProcessing && setShowAbrirModal(false)}
+        title="Abrir turno de caja"
         footer={
           <>
-            <Button variant="outline" onClick={() => setShowAbrirModal(false)}>
+            <Button variant="outline" onClick={() => setShowAbrirModal(false)} disabled={isProcessing}>
               Cancelar
             </Button>
-            <Button variant="primary" onClick={handleAbrirTurno} isLoading={isProcessing}>
-              Confirmar Apertura
+            <Button
+              variant="primary"
+              onClick={handleAbrirTurno}
+              isLoading={isProcessing}
+              disabled={base === null || base < 0}
+            >
+              Abrir turno
             </Button>
           </>
         }
       >
         <Input
-          label="Base Inicial en Efectivo ($ COP)"
+          id="caja-base-inicial"
+          label="Base inicial en efectivo (COP)"
           type="number"
+          min={0}
+          step={100}
           value={baseInicial}
           onChange={(e) => setBaseInicial(e.target.value)}
-          placeholder="50000"
           leftIcon={<DollarSign size={16} />}
+          error={base !== null && base < 0 ? 'La base no puede ser negativa.' : undefined}
         />
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-          Indica el monto físico de dinero en efectivo con el que se inicia la jornada para cambio y vueltas.
+          El efectivo con el que empieza el turno para dar cambio. Si no hay base, escribe 0.
         </p>
+        {errorAbrir && <MensajeFijo tono="error">{errorAbrir.message}</MensajeFijo>}
       </Modal>
 
-      {/* Modal: Cerrar Turno */}
+      {/* Cerrar turno propio */}
       <Modal
         isOpen={showCerrarModal}
-        onClose={() => setShowCerrarModal(false)}
-        title="Arqueo y Cierre de Turno"
+        onClose={() => !isProcessing && setShowCerrarModal(false)}
+        title="Arqueo y cierre del turno"
         footer={
           <>
-            <Button variant="outline" onClick={() => setShowCerrarModal(false)}>
+            <Button variant="outline" onClick={() => setShowCerrarModal(false)} disabled={isProcessing}>
               Cancelar
             </Button>
-            <Button variant="danger" onClick={handleCerrarTurno} isLoading={isProcessing}>
-              Confirmar Cierre de Caja
+            <Button
+              variant="danger"
+              onClick={handleCerrarTurno}
+              isLoading={isProcessing}
+              disabled={contado === null || contado < 0}
+            >
+              Cerrar turno
             </Button>
           </>
         }
       >
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ color: 'var(--text-secondary)' }}>Total esperado en efectivo:</span>
-            <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>
-              ${Number(turno?.total_esperado_efectivo || 0).toLocaleString()}
-            </span>
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+          <span style={{ color: 'var(--text-secondary)' }}>Efectivo esperado</span>
+          <strong>{formatCOP(turno?.total_esperado_efectivo)}</strong>
         </div>
         <Input
-          label="Efectivo Físico Contado en Caja ($ COP)"
+          id="caja-efectivo-contado"
+          label="Efectivo contado (COP)"
           type="number"
+          min={0}
+          step={100}
           value={efectivoContado}
           onChange={(e) => setEfectivoContado(e.target.value)}
-          placeholder="Monto contado..."
           autoFocus
           leftIcon={<DollarSign size={16} />}
-          required
         />
-        {efectivoContado && turno && (
+        {diferencia !== null && (
           <div
             style={{
               padding: '10px 14px',
               borderRadius: 'var(--radius-sm)',
               backgroundColor: 'var(--bg-surface-elevated)',
-              fontSize: '0.875rem',
               display: 'flex',
               justifyContent: 'space-between',
             }}
           >
-            <span>Diferencia:</span>
-            <span
-              style={{
-                fontWeight: 800,
-                color:
-                  Number(efectivoContado) - Number(turno.total_esperado_efectivo) === 0
-                    ? 'var(--success)'
-                    : Number(efectivoContado) - Number(turno.total_esperado_efectivo) > 0
-                    ? 'var(--warning)'
-                    : 'var(--danger)',
-              }}
-            >
-              ${(Number(efectivoContado) - Number(turno.total_esperado_efectivo)).toLocaleString()}
-            </span>
+            <span>Diferencia</span>
+            <strong style={{ color: diferencia === 0 ? 'var(--success)' : 'var(--danger)' }}>{formatCOP(diferencia)}</strong>
           </div>
         )}
+        {errorCerrar && <MensajeFijo tono="error" style={{ marginTop: 12 }}>{errorCerrar}</MensajeFijo>}
       </Modal>
 
-      {/* Modal: Nueva Venta */}
+      {/* Cerrar turno ajeno: conteo y nota, luego confirmación */}
       <Modal
-        isOpen={showVentaModal}
-        onClose={handleCloseVentaModal}
-        title="Registrar Venta en Mostrador"
-        maxWidth="640px"
+        isOpen={!!ajenoACerrar && !confirmarAjeno}
+        onClose={() => !isProcessing && setAjenoACerrar(null)}
+        title={`Cerrar el turno de ${ajenoACerrar?.abierto_por_nombre ?? ''}`}
         footer={
           <>
-            <Button variant="outline" onClick={handleCloseVentaModal}>
+            <Button variant="outline" onClick={() => setAjenoACerrar(null)} disabled={isProcessing}>
               Cancelar
             </Button>
-            <Button variant="primary" onClick={handleRegistrarVenta} isLoading={isProcessing}>
-              Cobrar ${totalVenta.toLocaleString()}
+            <Button
+              variant="danger"
+              onClick={() => setConfirmarAjeno(true)}
+              disabled={conteoAjenoNum === null || conteoAjenoNum < 0}
+            >
+              Continuar
             </Button>
           </>
         }
       >
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontWeight: 700, marginBottom: 8, fontSize: '0.9rem' }}>Ítems a Cobrar</div>
-          {ventaItems.map((item, idx) => (
-            <div
-              key={idx}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '130px 1fr 70px 110px 30px',
-                gap: 8,
-                alignItems: 'center',
-                marginBottom: 8,
-              }}
-            >
-              <Select
-                options={[
-                  { value: 'pase_dia', label: 'Pase Día' },
-                  { value: 'pase_clase', label: 'Pase Clase' },
-                  { value: 'producto', label: 'Producto' },
-                ]}
-                value={item.tipo}
-                onChange={(e) => {
-                  const val = e.target.value as any;
-                  setVentaItems((prev) =>
-                    prev.map((it, i) =>
-                      i === idx
-                        ? {
-                            ...it,
-                            tipo: val,
-                            descripcion:
-                              val === 'pase_dia'
-                                ? 'Pase de Día Gimnasio'
-                                : val === 'pase_clase'
-                                ? 'Pase Individual de Clase'
-                                : 'Bebida Energizante',
-                            precio_unitario: val === 'pase_dia' ? 15000 : val === 'pase_clase' ? 20000 : 6000,
-                          }
-                        : it
-                    )
-                  );
-                }}
-              />
-              <Input
-                value={item.descripcion}
-                onChange={(e) => {
-                  const desc = e.target.value;
-                  setVentaItems((prev) =>
-                    prev.map((it, i) => (i === idx ? { ...it, descripcion: desc } : it))
-                  );
-                }}
-              />
-              <Input
-                type="number"
-                value={item.cantidad}
-                onChange={(e) => {
-                  const qty = Number(e.target.value) || 1;
-                  setVentaItems((prev) =>
-                    prev.map((it, i) => (i === idx ? { ...it, cantidad: qty } : it))
-                  );
-                }}
-              />
-              <Input
-                type="number"
-                value={item.precio_unitario || 0}
-                onChange={(e) => {
-                  const pr = Number(e.target.value) || 0;
-                  setVentaItems((prev) =>
-                    prev.map((it, i) => (i === idx ? { ...it, precio_unitario: pr } : it))
-                  );
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setVentaItems((prev) => prev.filter((_, i) => i !== idx))}
-                style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer' }}
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          ))}
-
-          <Button
-            variant="ghost"
-            size="sm"
-            leftIcon={<Plus size={14} />}
-            onClick={() =>
-              setVentaItems((prev) => [
-                ...prev,
-                { tipo: 'producto', descripcion: 'Bebida Hidratante', cantidad: 1, precio_unitario: 5000 },
-              ])
-            }
-          >
-            Agregar otro ítem
-          </Button>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Select
-            label="Método de Pago"
-            options={[
-              { value: 'efectivo', label: 'Efectivo' },
-              { value: 'nequi', label: 'Nequi' },
-              { value: 'daviplata', label: 'Daviplata' },
-              { value: 'datafono', label: 'Datáfono / Tarjeta' },
-            ]}
-            value={ventaMetodo}
-            onChange={(e) => {
-              setVentaMetodo(e.target.value);
-              setVentaTipoMedio(e.target.value === 'efectivo' ? 'efectivo' : 'otro');
-            }}
-          />
-
-          {ventaTipoMedio === 'efectivo' && (
-            <Input
-              label="Valor Recibido ($ COP)"
-              type="number"
-              value={valorRecibido}
-              onChange={(e) => setValorRecibido(e.target.value)}
-              placeholder="Ej. 20000"
-            />
-          )}
-        </div>
-
-        {ventaTipoMedio === 'efectivo' && valorRecibido && Number(valorRecibido) >= totalVenta && (
-          <div
-            style={{
-              padding: '10px 14px',
-              borderRadius: 'var(--radius-sm)',
-              backgroundColor: 'var(--success-light)',
-              border: '1px solid var(--success-border)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '0.9rem',
-              fontWeight: 700,
-              color: 'var(--success)',
-            }}
-          >
-            <span>Cambio a devolver al cliente:</span>
-            <span>${(Number(valorRecibido) - totalVenta).toLocaleString()}</span>
+        <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: 12 }}>
+          Abierto el {ajenoACerrar ? formatFechaHora(ajenoACerrar.abierto_en) : ''}. Cuenta el efectivo de la caja y escríbelo:
+          la diferencia con lo esperado queda a nombre de {ajenoACerrar?.abierto_por_nombre}.
+        </p>
+        {ajenoACerrar?.total_esperado_efectivo !== undefined && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Efectivo esperado</span>
+            <strong>{formatCOP(ajenoACerrar.total_esperado_efectivo)}</strong>
           </div>
         )}
+        <Input
+          id="caja-conteo-ajeno"
+          label="Efectivo contado (COP)"
+          type="number"
+          min={0}
+          step={100}
+          value={conteoAjeno}
+          onChange={(e) => setConteoAjeno(e.target.value)}
+          error={errorConteoAjeno ?? undefined}
+        />
+        <Textarea
+          id="caja-nota-ajeno"
+          label="Nota (opcional)"
+          maxLength={500}
+          value={notaAjeno}
+          onChange={(e) => setNotaAjeno(e.target.value)}
+          placeholder="Ej. Bruno se fue sin cerrar el turno de la mañana"
+        />
+        {errorAjeno && <MensajeFijo tono="error">{errorAjeno}</MensajeFijo>}
       </Modal>
 
-      {/* Modal: Registrar Egreso */}
+      <ConfirmDialog
+        isOpen={confirmarAjeno}
+        onClose={() => !isProcessing && setConfirmarAjeno(false)}
+        onConfirm={handleCerrarAjeno}
+        isLoading={isProcessing}
+        isDestructive
+        title="Confirmar cierre de turno ajeno"
+        message={`Vas a cerrar el turno de ${ajenoACerrar?.abierto_por_nombre ?? ''} con ${formatCOP(conteoAjenoNum ?? 0)} contados. Esta acción no se puede deshacer y queda en la auditoría.`}
+        confirmText="Cerrar turno"
+      />
+
+      {/* Egreso */}
       <Modal
         isOpen={showEgresoModal}
-        onClose={() => setShowEgresoModal(false)}
-        title="Registrar Egreso o Vale de Caja"
+        onClose={() => !isProcessing && setShowEgresoModal(false)}
+        title="Registrar egreso"
         footer={
           <>
-            <Button variant="outline" onClick={() => setShowEgresoModal(false)}>
+            <Button variant="outline" onClick={() => setShowEgresoModal(false)} disabled={isProcessing}>
               Cancelar
             </Button>
             <Button variant="danger" onClick={handleRegistrarEgreso} isLoading={isProcessing}>
-              Confirmar Egreso
+              Registrar egreso
             </Button>
           </>
         }
       >
         <Input
-          label="Monto Retirado ($ COP)"
+          id="caja-egreso-monto"
+          label="Monto (COP)"
           type="number"
+          min={1}
+          step={100}
           value={egresoMonto}
           onChange={(e) => setEgresoMonto(e.target.value)}
-          placeholder="Ej. 15000"
-          required
         />
         <Input
-          label="Justificación o Motivo Obligatorio"
-          placeholder="Ej. Compra de botellones de agua para dispensador..."
+          id="caja-egreso-motivo"
+          label="Motivo"
+          placeholder="Ej. Compra de botellones de agua"
+          maxLength={255}
           value={egresoMotivo}
           onChange={(e) => setEgresoMotivo(e.target.value)}
-          required
         />
+        {errorEgreso && <MensajeFijo tono="error">{errorEgreso}</MensajeFijo>}
       </Modal>
     </div>
   );

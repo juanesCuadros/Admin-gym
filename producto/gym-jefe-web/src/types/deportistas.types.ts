@@ -1,4 +1,31 @@
+import type { EstadoDeportista } from '../utils/estadoDeportista';
+
+/** Contrato 2.3: tipos de documento admitidos. */
+export const TIPOS_DOCUMENTO = ['CC', 'TI', 'CE', 'PAS', 'PPT', 'RC'] as const;
+export type TipoDocumento = (typeof TIPOS_DOCUMENTO)[number];
+
+export const NOMBRE_TIPO_DOCUMENTO: Record<TipoDocumento, string> = {
+  CC: 'Cédula de ciudadanía',
+  TI: 'Tarjeta de identidad',
+  CE: 'Cédula de extranjería',
+  PAS: 'Pasaporte',
+  PPT: 'Permiso por protección temporal',
+  RC: 'Registro civil',
+};
+
+/** Contrato 2.3: obligatorio si el deportista es menor de 18 años (hora Bogotá). */
+export interface AcudienteDto {
+  nombre: string;
+  tipo_documento: TipoDocumento;
+  documento: string;
+  telefono: string;
+  parentesco: string;
+  autoriza: boolean;
+}
+
 export interface CrearDeportistaRequest {
+  /** Contrato 2.3: obligatorio al crear. */
+  tipo_documento: TipoDocumento;
   documento: string;
   nombre: string;
   correo?: string;
@@ -7,11 +34,14 @@ export interface CrearDeportistaRequest {
   fecha_nacimiento?: string;
   altura_cm?: number;
   consentimiento_1581: boolean;
-  acudiente_nombre?: string;
+  /** Versión del texto de consentimiento aceptado (el backend asume "1.0"). */
+  consentimiento_version?: string;
+  acudiente?: AcudienteDto;
 }
 
 export interface EditarDeportistaRequest {
   version: number;
+  tipo_documento?: TipoDocumento;
   documento?: string;
   nombre?: string;
   correo?: string;
@@ -19,17 +49,26 @@ export interface EditarDeportistaRequest {
   sexo?: 'M' | 'F' | 'otro';
   fecha_nacimiento?: string;
   altura_cm?: number;
-  acudiente_nombre?: string;
+  acudiente?: AcudienteDto;
+}
+
+/** `409 LIMITE_PLAN_CLIENTES` (contrato 2.3). */
+export interface DetallesLimitePlanClientes {
+  limite: number;
+  actuales: number;
+  plan_nombre: string;
 }
 
 export interface DeportistaResumenResponse {
   id: string;
+  tipo_documento?: string;
   documento: string;
   nombre: string;
   correo?: string | null;
   telefono?: string | null;
   activo: boolean;
-  estado_membresia: string; // al_dia, por_vencer, en_mora, vencido, congelado, sin_membresia
+  /** Contrato 2.1: enum consolidado del deportista. */
+  estado: EstadoDeportista;
   plan_nombre?: string | null;
   fecha_vencimiento?: string | null;
   version: number;
@@ -46,6 +85,7 @@ export interface DeportistasPaginadosResponse {
 export interface DeportistaResponse {
   id: string;
   gimnasio_id: string;
+  tipo_documento: string;
   documento: string;
   nombre: string;
   correo?: string | null;
@@ -55,8 +95,14 @@ export interface DeportistaResponse {
   altura_cm?: number | null;
   consentimiento_1581: boolean;
   consentimiento_fecha?: string | null;
+  /** Contrato 2.3. */
+  consentimiento_version?: string | null;
+  consentimiento_registrado_por_nombre?: string | null;
+  acudiente?: AcudienteDto | null;
   acudiente_nombre?: string | null;
   activo: boolean;
+  /** Contrato 2.1: viene en la ficha (`GET /deportistas/{id}`); `null` en las respuestas de crear y editar. */
+  estado?: EstadoDeportista | null;
   version: number;
   created_at: string;
   updated_at: string;
@@ -71,7 +117,10 @@ export interface MembresiaFichaResponse {
   cancelada: boolean;
   dias_restantes: number;
   congelado: boolean;
-  estado: string;
+  estado: EstadoDeportista;
+  /** Contrato 1.3: la membresía pertenece a un plan grupal. */
+  paquete_id?: string | null;
+  titular_nombre?: string | null;
 }
 
 export interface PagoFichaResponse {

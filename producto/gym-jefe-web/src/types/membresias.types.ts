@@ -1,3 +1,5 @@
+import type { EstadoDeportista } from '../utils/estadoDeportista';
+
 export interface PlanResponse {
   id: string;
   gimnasio_id: string;
@@ -62,10 +64,14 @@ export interface MembresiaResponse {
   fecha_inicio: string;
   fecha_vencimiento: string;
   cancelada: boolean;
-  estado_calculado: 'activo' | 'por_vencer' | 'mora' | 'vencido' | 'congelado' | 'cancelada';
+  /** El backend de membresías aún llama así al campo; los valores ya son el enum consolidado (§A4). */
+  estado_calculado: EstadoDeportista;
   dias_restantes_o_vencido: number;
   congelamiento_activo: boolean;
   congelamiento_id?: string | null;
+  /** Copia del plan en la venta (contrato 1.4): precio de lista de esta membresía. */
+  plan_precio_vendido?: number | string | null;
+  plan_duracion_dias_vendida?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -82,10 +88,14 @@ export interface MembresiaListItemResponse {
   fecha_inicio: string;
   fecha_vencimiento: string;
   cancelada: boolean;
-  estado_calculado: string;
+  /** El backend de membresías aún llama así al campo; los valores ya son el enum consolidado (§A4). */
+  estado_calculado: EstadoDeportista;
   dias_restantes_o_vencido: number;
   congelamiento_activo: boolean;
   congelamiento_id?: string | null;
+  /** Copia del plan en la venta (contrato 1.4): precio de lista de esta membresía. */
+  plan_precio_vendido?: number | string | null;
+  plan_duracion_dias_vendida?: number | null;
 }
 
 export interface MembresiasPaginadasResponse {
@@ -109,4 +119,44 @@ export interface FichaMembresiaResponse {
   membresia: MembresiaResponse;
   congelamientos: CongelamientoItemResponse[];
   pagos: any[];
+}
+
+// ---------------------------------------------------------------------------
+// Planes grupales (contrato 1.3, GW-RF-52)
+// ---------------------------------------------------------------------------
+
+/** `POST /membresias/paquetes`. El titular va incluido en `beneficiarios`. */
+export interface CrearPaqueteRequest {
+  plan_id: string;
+  titular_id: string;
+  beneficiarios: string[];
+  fecha_inicio?: string;
+}
+
+export interface PaqueteMembresiaItemDto {
+  id: string;
+  deportista_id: string;
+  deportista_nombre: string;
+  fecha_inicio: string;
+  fecha_vencimiento: string;
+  precio_asignado: number | string;
+}
+
+export interface CrearPaqueteResponse {
+  paquete_id: string;
+  membresias: PaqueteMembresiaItemDto[];
+}
+
+/** `GET /membresias/paquetes/{id}`. */
+export interface DetallePaqueteResponse {
+  id: string;
+  plan_nombre: string;
+  titular: { id: string; nombre: string; telefono?: string | null };
+  membresias: PaqueteMembresiaItemDto[];
+}
+
+/** `422 BENEFICIARIOS_INCOMPLETOS`. */
+export interface DetallesBeneficiariosIncompletos {
+  requeridos: number;
+  recibidos: number;
 }

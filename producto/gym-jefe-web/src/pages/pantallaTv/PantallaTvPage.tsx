@@ -5,7 +5,6 @@ import {
   Calendar,
   Sparkles,
   ArrowLeft,
-  Volume2,
   Maximize2,
   Dumbbell,
   CheckCircle,
@@ -25,6 +24,8 @@ import {
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { esEstadoDeportista, presentarEstado } from '../../utils/estadoDeportista';
+import { formatDiaMes } from '../../utils/formato';
 
 export const PantallaTvPage: React.FC = () => {
   const navigate = useNavigate();
@@ -121,7 +122,7 @@ export const PantallaTvPage: React.FC = () => {
           setSaludoActivo({
             nombre: event.deportista?.nombre || 'Deportista',
             mensaje: event.mensaje || '¡Bienvenido a entrenar!',
-            estado: event.deportista?.estado_calculado,
+            estado: event.deportista?.estado ?? event.deportista?.estado_calculado,
             diasRestantes: event.deportista?.dias_restantes_o_vencido,
           });
 
@@ -179,22 +180,6 @@ export const PantallaTvPage: React.FC = () => {
 
     // Update query params if appropriate
     setSearchParams({ device_token: clean });
-  };
-
-  const triggerTestSaludo = async () => {
-    const nombre = 'Laura Gómez';
-    try {
-      await pantallaTvService.testSaludo(nombre);
-    } catch (err) {
-      // Fallback local visual explícitamente etiquetado como no verificado por el servidor
-      setSaludoActivo({
-        nombre,
-        mensaje: `¡Hola, ${nombre}! Bienvenido a entrenar 💪 [Prueba local — no verificada por el servidor]`,
-        estado: 'activo',
-        diasRestantes: 22,
-      });
-      setTimeout(() => setSaludoActivo(null), 7000);
-    }
   };
 
   const toggleFullScreen = () => {
@@ -428,16 +413,6 @@ export const PantallaTvPage: React.FC = () => {
           </Button>
 
           <Button
-            variant="secondary"
-            size="sm"
-            leftIcon={<Volume2 size={16} />}
-            onClick={triggerTestSaludo}
-            style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-          >
-            Probar Saludo
-          </Button>
-
-          <Button
             variant="outline"
             size="sm"
             leftIcon={<Maximize2 size={16} />}
@@ -510,7 +485,7 @@ export const PantallaTvPage: React.FC = () => {
                 }}
               >
                 <span>Control de Acceso</span>
-                {saludoActivo.estado && (
+                {saludoActivo.estado && esEstadoDeportista(saludoActivo.estado) && (
                   <span
                     style={{
                       background: 'rgba(255,255,255,0.2)',
@@ -520,12 +495,7 @@ export const PantallaTvPage: React.FC = () => {
                       fontWeight: 700,
                     }}
                   >
-                    {saludoActivo.estado.toUpperCase()}
-                  </span>
-                )}
-                {saludoActivo.diasRestantes !== undefined && (
-                  <span style={{ fontSize: '0.8rem', opacity: 0.9 }}>
-                    ({saludoActivo.diasRestantes} días restantes)
+                    {presentarEstado(saludoActivo.estado, { dias: saludoActivo.diasRestantes }, formatDiaMes).texto}
                   </span>
                 )}
               </div>
