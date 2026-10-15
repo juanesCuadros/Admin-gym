@@ -32,7 +32,7 @@ export const clasesService = {
   },
 
   async cancelarClase(id: string): Promise<any> {
-    const response = await apiClient.post(`/clases/${id}/cancelar`);
+    const response = await apiClient.patch(`/clases/${id}/cancelar`);
     return response.data;
   },
 
