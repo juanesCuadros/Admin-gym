@@ -19,6 +19,7 @@ import { PantallaTvPage } from './pages/pantallaTv/PantallaTvPage';
 // Operación
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { ControlIngresoPage } from './pages/controlIngreso/ControlIngresoPage';
+import { IngresosHoyPage } from './pages/controlIngreso/IngresosHoyPage';
 import { CajaPage } from './pages/caja/CajaPage';
 import { PuntoDeVentaPage } from './pages/caja/PuntoDeVentaPage';
 import { HistorialTurnosPage } from './pages/caja/HistorialTurnosPage';
@@ -45,12 +46,9 @@ import { MiSuscripcionPage } from './pages/configuracion/MiSuscripcionPage';
 import { CargaInicialPage } from './pages/configuracion/CargaInicialPage';
 import { AuditoriaPage } from './pages/auditoria/AuditoriaPage';
 
-import { enConstruccion, PantallaTvAccesoPage } from './pages/enConstruccion/EnConstruccionPage';
+import { PantallaTvAccesoPage } from './pages/enConstruccion/EnConstruccionPage';
 
 import './styles/components.css';
-
-// Rutas del menú (§B2) que aún no tienen pantalla: estado vacío honesto, sin datos falsos.
-const IngresosHoyPage = enConstruccion('Ingresos de hoy');
 
 /** Escucha eventos del interceptor que exigen cambiar de ruta. */
 const EventosGlobales: React.FC = () => {
