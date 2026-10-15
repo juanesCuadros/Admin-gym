@@ -1,4 +1,5 @@
 import type { EstadoDeportista } from '../utils/estadoDeportista';
+import type { PagoMembresiaResponseDto } from './caja.types';
 
 export interface PlanResponse {
   id: string;
@@ -36,15 +37,30 @@ export interface EditarPlanRequest {
   cupo_personas?: number;
 }
 
+/**
+ * Cobro que acompaña la venta de un plan (asignar, cambio de plan o plan grupal). Se registra en el
+ * turno propio en la misma operación y no suma días: la vigencia la da el plan. Exige `X-Idempotency-Key`.
+ */
+export interface PagoVenta {
+  monto: number;
+  metodo: string;
+  tipo_medio: 'efectivo' | 'otro';
+  precio_cobrado?: number;
+  motivo_descuento?: string;
+  valor_recibido?: number;
+}
+
 export interface AsignarMembresiaRequest {
   deportista_id: string;
   plan_id: string;
   fecha_inicio?: string;
+  pago: PagoVenta;
 }
 
 export interface CambiarPlanRequest {
   nuevo_plan_id: string;
   motivo?: string;
+  pago: PagoVenta;
 }
 
 export interface CancelarMembresiaRequest {
@@ -74,6 +90,8 @@ export interface MembresiaResponse {
   plan_duracion_dias_vendida?: number | null;
   created_at: string;
   updated_at: string;
+  /** Cobro de la venta: solo en las respuestas de asignar y cambiar de plan. */
+  pago?: PagoMembresiaResponseDto | null;
 }
 
 export interface MembresiaListItemResponse {
@@ -131,6 +149,7 @@ export interface CrearPaqueteRequest {
   titular_id: string;
   beneficiarios: string[];
   fecha_inicio?: string;
+  pago: PagoVenta;
 }
 
 export interface PaqueteMembresiaItemDto {
@@ -145,6 +164,7 @@ export interface PaqueteMembresiaItemDto {
 export interface CrearPaqueteResponse {
   paquete_id: string;
   membresias: PaqueteMembresiaItemDto[];
+  pago: PagoMembresiaResponseDto;
 }
 
 /** `GET /membresias/paquetes/{id}`. */

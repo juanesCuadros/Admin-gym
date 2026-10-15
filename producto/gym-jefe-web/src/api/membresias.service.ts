@@ -19,22 +19,22 @@ import {
 export const membresiasService = {
   // Planes
   async getPlanes(params?: { solo_activos?: boolean }): Promise<PlanesListResponse> {
-    const response = await apiClient.get<PlanesListResponse>('/membresias/planes', { params });
+    const response = await apiClient.get<PlanesListResponse>('/planes', { params });
     return response.data;
   },
 
   async crearPlan(data: CrearPlanRequest): Promise<PlanResponse> {
-    const response = await apiClient.post<PlanResponse>('/membresias/planes', data);
+    const response = await apiClient.post<PlanResponse>('/planes', data);
     return response.data;
   },
 
   async editarPlan(id: string, data: EditarPlanRequest): Promise<PlanResponse> {
-    const response = await apiClient.put<PlanResponse>(`/membresias/planes/${id}`, data);
+    const response = await apiClient.put<PlanResponse>(`/planes/${id}`, data);
     return response.data;
   },
 
   async cambiarEstadoPlan(id: string, activo: boolean): Promise<any> {
-    const response = await apiClient.patch(`/membresias/planes/${id}/estado`, { activo });
+    const response = await apiClient.patch(`/planes/${id}/estado`, { activo });
     return response.data;
   },
 
@@ -53,13 +53,19 @@ export const membresiasService = {
     return response.data;
   },
 
-  async asignarPlan(data: AsignarMembresiaRequest): Promise<MembresiaResponse> {
-    const response = await apiClient.post<MembresiaResponse>('/membresias/asignar', data);
+  /** Vende el plan: crea la membresía y su cobro en un solo paso. */
+  async asignarPlan(data: AsignarMembresiaRequest, idempotencyKey: string): Promise<MembresiaResponse> {
+    const response = await apiClient.post<MembresiaResponse>('/membresias/asignar', data, {
+      headers: { 'X-Idempotency-Key': idempotencyKey },
+    });
     return response.data;
   },
 
-  async cambiarPlan(membresiaId: string, data: CambiarPlanRequest): Promise<MembresiaResponse> {
-    const response = await apiClient.post<MembresiaResponse>(`/membresias/${membresiaId}/cambiar-plan`, data);
+  /** El plan nuevo empieza cuando termina el actual y se cobra en el mismo paso. */
+  async cambiarPlan(membresiaId: string, data: CambiarPlanRequest, idempotencyKey: string): Promise<MembresiaResponse> {
+    const response = await apiClient.post<MembresiaResponse>(`/membresias/${membresiaId}/cambiar-plan`, data, {
+      headers: { 'X-Idempotency-Key': idempotencyKey },
+    });
     return response.data;
   },
 
@@ -79,8 +85,11 @@ export const membresiasService = {
   },
 
   // Planes grupales (contrato 1.3)
-  async crearPaquete(data: CrearPaqueteRequest): Promise<CrearPaqueteResponse> {
-    const response = await apiClient.post<CrearPaqueteResponse>('/membresias/paquetes', data);
+  /** Vende el plan grupal: paquete, membresías y un solo cobro en un paso. */
+  async crearPaquete(data: CrearPaqueteRequest, idempotencyKey: string): Promise<CrearPaqueteResponse> {
+    const response = await apiClient.post<CrearPaqueteResponse>('/membresias/paquetes', data, {
+      headers: { 'X-Idempotency-Key': idempotencyKey },
+    });
     return response.data;
   },
 

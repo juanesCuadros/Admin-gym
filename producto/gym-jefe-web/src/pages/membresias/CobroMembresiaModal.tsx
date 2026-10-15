@@ -13,16 +13,31 @@ import { MensajeFijo } from '../../components/estados/Estados';
 import { formatCOP } from '../../utils/formato';
 import { formatFechaNegocio } from '../../utils/fechasBogota';
 import type { InfoGymResponse } from '../../types/myGym.types';
+import type { PagoVenta } from '../../types/membresias.types';
 import type {
   DetallesDescuentoSuperaTope,
   PagoMembresiaResponseDto,
   RegistrarPagoMembresiaRequest,
 } from '../../types/caja.types';
 
-/** Qué se cobra: una membresía individual o un paquete de plan grupal (contrato 1.3). */
+/**
+ * Qué se cobra:
+ * - `membresia` / `paquete`: renovación con `POST /caja/pagos-membresia` (suma días).
+ * - `venta`: vender un plan (asignar, cambio de plan o plan grupal). La membresía y su cobro se crean en un
+ *   solo envío con `registrar`; el cobro no suma días porque la vigencia ya la da el plan.
+ */
 export type DestinoCobro =
   | { tipo: 'membresia'; membresiaId: string; titulo: string; detalle?: string; precioLista: number }
-  | { tipo: 'paquete'; paqueteId: string; titulo: string; detalle?: string; precioLista: number };
+  | { tipo: 'paquete'; paqueteId: string; titulo: string; detalle?: string; precioLista: number }
+  | {
+      tipo: 'venta';
+      titulo: string;
+      detalle?: string;
+      precioLista: number;
+      registrar: (pago: PagoVenta, idempotencyKey: string) => Promise<PagoMembresiaResponseDto>;
+      /** Traduce los errores propios de la venta (p. ej. los del plan grupal); `null` usa los de cobro. */
+      traducirError?: (err: ApiError) => string | null;
+    };
 
 interface CobroMembresiaModalProps {
   destino: DestinoCobro | null;
@@ -63,7 +78,7 @@ function mensajeError(err: ApiError): string {
 }
 
 /**
- * Cobro de una membresía o de un paquete (GW-RF-15, contratos 1.2 y 1.3) con `POST /caja/pagos-membresia`.
+ * Cobro de una venta o de una renovación (GW-RF-15, contratos 1.2 y 1.3).
  * Precio editable: si se cobra menos que el de lista exige motivo. La `X-Idempotency-Key` se crea en el
  * primer intento y se conserva en los reintentos; cambiar lo que se cobra la renueva.
  */
@@ -152,22 +167,27 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
     setError(null);
     setErrorMotivo(null);
 
-    const data: RegistrarPagoMembresiaRequest = {
+    const pagoBase: PagoVenta = {
       monto: cobrado,
       metodo: metodo.trim(),
       tipo_medio: tipoMedio,
-      dias_agregados: 0,
       valor_recibido: tipoMedio === 'efectivo' && recibido !== null ? recibido : undefined,
     };
-    if (destino.tipo === 'membresia') data.membresia_id = destino.membresiaId;
-    else data.paquete_id = destino.paqueteId;
     if (hayDescuento) {
-      data.precio_cobrado = cobrado;
-      data.motivo_descuento = motivo.trim();
+      pagoBase.precio_cobrado = cobrado;
+      pagoBase.motivo_descuento = motivo.trim();
     }
 
     try {
-      const pago = await cajaService.registrarPagoMembresia(data, clave);
+      let pago: PagoMembresiaResponseDto;
+      if (destino.tipo === 'venta') {
+        pago = await destino.registrar(pagoBase, clave);
+      } else {
+        const data: RegistrarPagoMembresiaRequest = { ...pagoBase, dias_agregados: 0 };
+        if (destino.tipo === 'membresia') data.membresia_id = destino.membresiaId;
+        else data.paquete_id = destino.paqueteId;
+        pago = await cajaService.registrarPagoMembresia(data, clave);
+      }
       setRecibo(pago);
       setIdempotencyKey(null);
       refrescarTurno();
@@ -187,7 +207,7 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
     <Modal
       isOpen={!!destino}
       onClose={() => !enviando && onCerrar()}
-      title={destino.tipo === 'paquete' ? 'Cobrar plan grupal' : 'Cobrar membresía'}
+      title={destino.tipo === 'venta' ? 'Cobrar y registrar la venta' : destino.tipo === 'paquete' ? 'Renovar plan grupal' : 'Renovar membresía'}
       maxWidth="560px"
       footer={
         recibo ? (
@@ -349,8 +369,12 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
           )}
 
           {error && (
-            <MensajeFijo tono="error" titulo="No se registró el pago" style={{ marginTop: 12 }}>
-              {mensajeError(error)}
+            <MensajeFijo
+              tono="error"
+              titulo={destino.tipo === 'venta' ? 'No se registró la venta' : 'No se registró el pago'}
+              style={{ marginTop: 12 }}
+            >
+              {(destino.tipo === 'venta' && destino.traducirError?.(error)) || mensajeError(error)}
               {idempotencyKey && error.tipo === 'red' && (
                 <div style={{ marginTop: 4 }}>Puedes reintentar: si el pago sí quedó registrado, no se cobrará dos veces.</div>
               )}

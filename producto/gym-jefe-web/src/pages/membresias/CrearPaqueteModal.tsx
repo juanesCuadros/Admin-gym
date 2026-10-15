@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Crown, Trash2 } from 'lucide-react';
-import { membresiasService } from '../../api/membresias.service';
-import { ApiError, toApiError } from '../../api/client';
+import type { ApiError } from '../../api/client';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
@@ -10,22 +9,26 @@ import { MensajeFijo } from '../../components/estados/Estados';
 import { formatCOP } from '../../utils/formato';
 import { hoyBogota } from '../../utils/fechasBogota';
 import type { DeportistaBusquedaItem } from '../../types/comun.types';
-import type {
-  CrearPaqueteResponse,
-  DetallesBeneficiariosIncompletos,
-  PlanResponse,
-} from '../../types/membresias.types';
+import type { DetallesBeneficiariosIncompletos, PlanResponse } from '../../types/membresias.types';
+
+/** Lo elegido para el plan grupal; la venta se registra junto con su cobro en el siguiente paso. */
+export interface DatosPlanGrupal {
+  plan: PlanResponse;
+  titular: DeportistaBusquedaItem;
+  beneficiarios: DeportistaBusquedaItem[];
+  fechaInicio?: string;
+}
 
 interface CrearPaqueteModalProps {
   isOpen: boolean;
   /** Planes del gimnasio; aquí solo se ofrecen los grupales activos. */
   planes: PlanResponse[];
   onCerrar: () => void;
-  onCreado: (res: CrearPaqueteResponse, plan: PlanResponse, titular: DeportistaBusquedaItem) => void;
+  onContinuar: (datos: DatosPlanGrupal) => void;
 }
 
-/** Errores del contrato 1.3 en palabras de la recepción. */
-function mensajeError(err: ApiError): string {
+/** Errores del contrato 1.3 en palabras de la recepción; `null` si no es un error del plan grupal. */
+export function traducirErrorPaquete(err: ApiError): string | null {
   switch (err.codigo) {
     case 'BENEFICIARIOS_INCOMPLETOS': {
       const d = err.detalles as DetallesBeneficiariosIncompletos | null;
@@ -40,23 +43,21 @@ function mensajeError(err: ApiError): string {
     case 'BENEFICIARIO_DUPLICADO':
       return 'Hay un beneficiario repetido en la lista.';
     default:
-      return err.message;
+      return null;
   }
 }
 
 /**
- * Crear un plan grupal (pareja o familiar) con `POST /membresias/paquetes` (contrato 1.3, GW-RF-52):
- * plan, titular y beneficiarios (el titular cuenta como beneficiario).
+ * Primer paso para vender un plan grupal (pareja o familiar, contrato 1.3, GW-RF-52): plan, titular y
+ * beneficiarios (el titular cuenta como beneficiario). El cobro y `POST /membresias/paquetes` van juntos después.
  */
-export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, planes, onCerrar, onCreado }) => {
+export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, planes, onCerrar, onContinuar }) => {
   const grupales = planes.filter((p) => p.activo && p.cupo_personas > 1);
 
   const [planId, setPlanId] = useState('');
   const [titular, setTitular] = useState<DeportistaBusquedaItem | null>(null);
   const [otros, setOtros] = useState<DeportistaBusquedaItem[]>([]);
   const [fechaInicio, setFechaInicio] = useState('');
-  const [enviando, setEnviando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [avisoBuscador, setAvisoBuscador] = useState<string | null>(null);
 
   useEffect(() => {
@@ -65,7 +66,6 @@ export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, pl
     setTitular(null);
     setOtros([]);
     setFechaInicio(hoyBogota());
-    setError(null);
     setAvisoBuscador(null);
   }, [isOpen]);
 
@@ -89,41 +89,26 @@ export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, pl
     if (d) setOtros((prev) => prev.filter((o) => o.id !== d.id));
   };
 
-  const listo = !!plan && !!titular && faltan === 0 && !enviando;
+  const listo = !!plan && !!titular && faltan === 0;
 
-  const crear = async () => {
-    if (!plan || !titular || enviando) return;
-    setEnviando(true);
-    setError(null);
-    try {
-      const res = await membresiasService.crearPaquete({
-        plan_id: plan.id,
-        titular_id: titular.id,
-        beneficiarios: beneficiarios.map((b) => b.id),
-        fecha_inicio: fechaInicio || undefined,
-      });
-      onCreado(res, plan, titular);
-    } catch (e) {
-      // Lo elegido se conserva para corregir y reintentar (§A6).
-      setError(mensajeError(toApiError(e)));
-    } finally {
-      setEnviando(false);
-    }
+  const continuar = () => {
+    if (!plan || !titular) return;
+    onContinuar({ plan, titular, beneficiarios, fechaInicio: fechaInicio || undefined });
   };
 
   return (
     <Modal
       isOpen={isOpen}
-      onClose={() => !enviando && onCerrar()}
+      onClose={onCerrar}
       title="Nuevo plan grupal"
       maxWidth="620px"
       footer={
         <>
-          <Button variant="outline" onClick={onCerrar} disabled={enviando}>
+          <Button variant="outline" onClick={onCerrar}>
             Cancelar
           </Button>
-          <Button variant="primary" onClick={crear} isLoading={enviando} disabled={!listo}>
-            Crear plan grupal
+          <Button variant="primary" onClick={continuar} disabled={!listo}>
+            Continuar al cobro
           </Button>
         </>
       }
@@ -161,7 +146,6 @@ export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, pl
             label="Titular * (mayor de edad, responde por el pago)"
             seleccionado={titular}
             onSeleccionar={elegirTitular}
-            disabled={enviando}
           />
 
           <div style={{ marginBottom: 8, fontWeight: 600, fontSize: '0.9rem' }}>
@@ -200,7 +184,6 @@ export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, pl
                         variant="ghost"
                         size="sm"
                         aria-label={`Quitar a ${b.nombre}`}
-                        disabled={enviando}
                         onClick={() => setOtros((prev) => prev.filter((o) => o.id !== b.id))}
                       >
                         <Trash2 size={14} color="var(--danger)" />
@@ -217,19 +200,12 @@ export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, pl
               label={`Agregar beneficiario (faltan ${faltan})`}
               seleccionado={null}
               onSeleccionar={agregar}
-              disabled={enviando}
             />
           )}
           {plan && faltan < 0 && (
             <span className="form-error-msg">Sobran {Math.abs(faltan)}: el plan es para {plan.cupo_personas} personas.</span>
           )}
           {avisoBuscador && <span className="form-error-msg">{avisoBuscador}</span>}
-
-          {error && (
-            <MensajeFijo tono="error" titulo="No se creó el plan grupal" style={{ marginTop: 12 }}>
-              {error}
-            </MensajeFijo>
-          )}
         </>
       )}
     </Modal>

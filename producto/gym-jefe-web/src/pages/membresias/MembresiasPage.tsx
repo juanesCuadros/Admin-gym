@@ -26,7 +26,7 @@ import { formatFechaNegocio } from '../../utils/fechasBogota';
 import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
 import { useAuth } from '../../contexts/AuthContext';
 import { CobroMembresiaModal, DestinoCobro } from './CobroMembresiaModal';
-import { CrearPaqueteModal } from './CrearPaqueteModal';
+import { CrearPaqueteModal, traducirErrorPaquete } from './CrearPaqueteModal';
 import {
   PlanResponse,
   MembresiaListItemResponse,
@@ -173,27 +173,26 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     }
   };
 
-  const handleAsignarSubmit = async () => {
-    if (!asignarData.deportista_id || !asignarData.plan_id) return;
-    setIsProcessing(true);
-    try {
-      const nueva = await membresiasService.asignarPlan({
-        deportista_id: asignarData.deportista_id,
-        plan_id: asignarData.plan_id,
-      });
-      showToast('success', 'Membresía asignada', nueva.plan_nombre);
-      setShowAsignarModal(false);
-      loadMembresias();
-      // Siguiente paso natural: cobrarla.
-      if (puedeCobrar) {
-        const dep = deportistasList.find((d) => d.id === nueva.deportista_id);
-        abrirCobro(nueva, dep?.nombre ?? 'Membresía nueva');
-      }
-    } catch (err) {
-      showToast('error', 'Error al asignar plan', parseApiError(err));
-    } finally {
-      setIsProcessing(false);
-    }
+  /**
+   * Vender un plan es una sola operación: la membresía se crea junto con su cobro (decisión del 15-oct).
+   * Aquí se elige deportista y plan; el envío lo hace el modal de cobro.
+   */
+  const handleAsignarSubmit = () => {
+    const { deportista_id, plan_id } = asignarData;
+    const plan = planes.find((p) => p.id === plan_id);
+    if (!deportista_id || !plan) return;
+    const dep = deportistasList.find((d) => d.id === deportista_id);
+    setShowAsignarModal(false);
+    setCobro({
+      tipo: 'venta',
+      titulo: dep?.nombre ?? 'Venta de plan',
+      detalle: `${plan.nombre} · ${plan.duracion_dias} días desde hoy`,
+      precioLista: Math.round(Number(plan.precio)),
+      registrar: async (pago, clave) => {
+        const nueva = await membresiasService.asignarPlan({ deportista_id, plan_id, pago }, clave);
+        return nueva.pago!;
+      },
+    });
   };
 
   const handleCongelar = async () => {
@@ -226,20 +225,28 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     }
   };
 
-  const handleCambiarPlan = async () => {
-    if (!selectedMembresiaId || !nuevoPlanId) return;
-    setIsProcessing(true);
-    try {
-      await membresiasService.cambiarPlan(selectedMembresiaId, { nuevo_plan_id: nuevoPlanId });
-      showToast('success', 'Plan Cambiado', 'Membresía actualizada con nuevo plan');
-      setShowCambiarPlanModal(false);
-      setSelectedMembresiaId(null);
-      loadMembresias();
-    } catch (err) {
-      showToast('error', 'Error al cambiar plan', parseApiError(err));
-    } finally {
-      setIsProcessing(false);
-    }
+  /** GW-RF-25 CA3: el plan nuevo empieza cuando termina el actual y se cobra en el mismo paso. */
+  const handleCambiarPlan = () => {
+    const membresiaId = selectedMembresiaId;
+    const plan = planes.find((p) => p.id === nuevoPlanId);
+    if (!membresiaId || !plan) return;
+    const actual = membresias.find((m) => m.id === membresiaId);
+    setShowCambiarPlanModal(false);
+    setSelectedMembresiaId(null);
+    setCobro({
+      tipo: 'venta',
+      titulo: actual?.deportista_nombre ?? 'Cambio de plan',
+      detalle: actual
+        ? `${actual.plan_nombre} → ${plan.nombre} · empieza cuando termine el actual (${formatFechaNegocio(actual.fecha_vencimiento)})`
+        : plan.nombre,
+      precioLista: Math.round(Number(plan.precio)),
+      registrar: async (pago, clave) => {
+        const nueva = await membresiasService.cambiarPlan(membresiaId, { nuevo_plan_id: plan.id, pago }, clave);
+        return nueva.pago!;
+      },
+      traducirError: (err) =>
+        err.codigo === 'MEMBRESIA_CONGELADA' ? 'La membresía está congelada: descongélala antes de cambiar de plan.' : null,
+    });
   };
 
   const handleCancelarMembresia = async () => {
@@ -372,7 +379,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                         leftIcon={<DollarSign size={14} />}
                         onClick={() => abrirCobro(m, m.deportista_nombre)}
                       >
-                        Cobrar
+                        Renovar
                       </Button>
                     )}
                     {m.congelamiento_activo ? (
@@ -555,8 +562,8 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
             <Button variant="outline" onClick={() => setShowAsignarModal(false)}>
               Cancelar
             </Button>
-            <Button variant="primary" onClick={handleAsignarSubmit} isLoading={isProcessing}>
-              Confirmar Asignación
+            <Button variant="primary" onClick={handleAsignarSubmit}>
+              Continuar al cobro
             </Button>
           </>
         }
@@ -619,8 +626,8 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
             <Button variant="outline" onClick={() => setShowCambiarPlanModal(false)}>
               Cancelar
             </Button>
-            <Button variant="primary" onClick={handleCambiarPlan} isLoading={isProcessing}>
-              Aplicar Nuevo Plan
+            <Button variant="primary" onClick={handleCambiarPlan} disabled={!nuevoPlanId}>
+              Continuar al cobro
             </Button>
           </>
         }
@@ -640,20 +647,29 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
         isOpen={showPaqueteModal}
         planes={planes}
         onCerrar={() => setShowPaqueteModal(false)}
-        onCreado={(res, plan, titular) => {
+        onContinuar={({ plan, titular, beneficiarios, fechaInicio }) => {
           setShowPaqueteModal(false);
-          showToast('success', 'Plan grupal creado', `${plan.nombre} · ${res.membresias.length} membresías`);
-          loadMembresias();
-          // Un solo pago cubre todas las membresías del paquete.
-          if (puedeCobrar) {
-            setCobro({
-              tipo: 'paquete',
-              paqueteId: res.paquete_id,
-              titulo: `${plan.nombre} · titular ${titular.nombre}`,
-              detalle: res.membresias.map((m) => m.deportista_nombre).join(', '),
-              precioLista: Math.round(Number(plan.precio)),
-            });
-          }
+          // Un solo cobro por todo el paquete, registrado junto con las membresías.
+          setCobro({
+            tipo: 'venta',
+            titulo: `${plan.nombre} · titular ${titular.nombre}`,
+            detalle: beneficiarios.map((b) => b.nombre).join(', '),
+            precioLista: Math.round(Number(plan.precio)),
+            registrar: async (pago, clave) => {
+              const res = await membresiasService.crearPaquete(
+                {
+                  plan_id: plan.id,
+                  titular_id: titular.id,
+                  beneficiarios: beneficiarios.map((b) => b.id),
+                  fecha_inicio: fechaInicio,
+                  pago,
+                },
+                clave,
+              );
+              return res.pago;
+            },
+            traducirError: traducirErrorPaquete,
+          });
         }}
       />
 
@@ -661,7 +677,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
         destino={cobro}
         onCerrar={() => setCobro(null)}
         onCobrado={() => {
-          showToast('success', 'Pago registrado', cobro?.titulo ?? '');
+          showToast('success', cobro?.tipo === 'venta' ? 'Venta registrada' : 'Pago registrado', cobro?.titulo ?? '');
           loadMembresias();
         }}
       />
