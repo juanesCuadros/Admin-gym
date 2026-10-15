@@ -1,6 +1,8 @@
 """Lógica de negocio para el módulo personal (RF-39, RF-40)"""
 import math
+import secrets
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -18,6 +20,7 @@ from app.modules.personal.schemas import (
     CambiarEstadoStaffRequest,
     CambiarEstadoStaffResponse,
     CrearStaffRequest,
+    RegenerarCredencialResponse,
     StaffListResponse,
     StaffResponse,
     TransferirJefeRequest,
@@ -137,16 +140,55 @@ class PersonalService:
                 detail={"codigo": "CORREO_DUPLICADO", "mensaje": f"Ya existe un miembro del personal registrado con el correo {data.correo}"},
             )
 
+        # Contrato 2.7: Validación de límite del plan para staff
+        res_plan = await session.execute(
+            text("SELECT max_staff, nombre FROM platform.plan_actual(:gym_id)"),
+            {"gym_id": gym_id}
+        )
+        row_plan = res_plan.mappings().first()
+        if row_plan and row_plan["max_staff"] is not None:
+            res_count = await session.execute(
+                text("""
+                    SELECT count(*) FROM platform.staff
+                    WHERE gimnasio_id = :gym_id AND deleted_at IS NULL AND activo = true
+                """),
+                {"gym_id": gym_id}
+            )
+            actuales = res_count.scalar_one()
+            limite = row_plan["max_staff"]
+            if actuales >= limite:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "codigo": "LIMITE_PLAN_STAFF",
+                        "mensaje": f"Se ha alcanzado el límite de {limite} miembros de personal del plan '{row_plan['nombre']}'. Mejora tu plan para continuar registrando personal.",
+                        "detalles": {
+                            "limite": limite,
+                            "actuales": actuales,
+                            "plan_nombre": row_plan["nombre"]
+                        }
+                    }
+                )
+
         new_id = uuid.uuid4()
-        h_pwd = hash_password(data.password)
+        # GW-RF-39 / Contrato 2.7: Generar credencial temporal de 72 horas
+        pwd_temporal = secrets.token_urlsafe(12)
+        expira_en = datetime.now(timezone.utc) + timedelta(hours=72)
+        h_pwd = hash_password(pwd_temporal)
 
         insert_q = text("""
             INSERT INTO platform.staff (
-                id, gimnasio_id, nombre, correo, hash_password, rol, activo, version, created_at, updated_at
+                id, gimnasio_id, nombre, correo, hash_password, rol, activo,
+                debe_cambiar_password, password_temporal_expira_en,
+                version, created_at, updated_at
             ) VALUES (
-                :id, :gym_id, :nombre, :correo, :hash_password, :rol, true, 1, now(), now()
+                :id, :gym_id, :nombre, :correo, :hash_password, :rol, true,
+                true, :expira_en,
+                1, now(), now()
             )
-            RETURNING id, gimnasio_id, nombre, correo, rol, activo, ultimo_ingreso, version, created_at, updated_at
+            RETURNING id, gimnasio_id, nombre, correo, rol, activo, ultimo_ingreso,
+                      debe_cambiar_password, password_temporal_expira_en,
+                      version, created_at, updated_at
         """)
 
         try:
@@ -158,6 +200,7 @@ class PersonalService:
                     "correo": correo_limpio,
                     "hash_password": h_pwd,
                     "rol": data.rol,
+                    "expira_en": expira_en,
                 })
                 row = res.mappings().first()
         except IntegrityError:
@@ -182,7 +225,10 @@ class PersonalService:
             },
         )
 
-        return StaffResponse(**row)
+        row_dict = dict(row)
+        row_dict["password_temporal"] = pwd_temporal
+        row_dict["expira_en"] = expira_en
+        return StaffResponse(**row_dict)
 
     @classmethod
     async def actualizar_staff(
@@ -639,3 +685,76 @@ class PersonalService:
             nuevo_jefe_nombre=cand["nombre"],
             mensaje=f"Rol de Jefe transferido exitosamente a {cand['nombre']}. El Jefe anterior ahora tiene el rol {data.nuevo_rol_antiguo_jefe}.",
         )
+
+    @classmethod
+    async def regenerar_credencial(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        staff_id: UUID,
+        actor: AuthenticatedStaff,
+    ) -> RegenerarCredencialResponse:
+        """
+        Regenera la credencial temporal de 72 horas para un miembro del personal
+        y revoca todas sus sesiones activas (GW-RF-39, Contrato 2.7).
+        Solo accesible por el Jefe.
+        """
+        check_q = text("""
+            SELECT id, nombre, correo, rol, activo
+            FROM platform.staff
+            WHERE id = :id AND gimnasio_id = :gym_id AND deleted_at IS NULL
+        """)
+        res = await session.execute(check_q, {"id": staff_id, "gym_id": gym_id})
+        staff = res.mappings().first()
+        if not staff:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"codigo": "STAFF_NO_ENCONTRADO", "mensaje": "El miembro del personal especificado no existe."},
+            )
+
+        pwd_temporal = secrets.token_urlsafe(12)
+        expira_en = datetime.now(timezone.utc) + timedelta(hours=72)
+        h_pwd = hash_password(pwd_temporal)
+
+        upd_q = text("""
+            UPDATE platform.staff
+            SET hash_password = :hash_pwd,
+                debe_cambiar_password = true,
+                password_temporal_expira_en = :expira_en,
+                version = version + 1,
+                updated_at = now()
+            WHERE id = :id AND gimnasio_id = :gym_id
+        """)
+        await session.execute(upd_q, {
+            "id": staff_id,
+            "gym_id": gym_id,
+            "hash_pwd": h_pwd,
+            "expira_en": expira_en,
+        })
+
+        # Revocar sesiones activas del usuario
+        await session.execute(
+            text("""
+                UPDATE platform.sesiones_staff
+                SET revocado_en = now()
+                WHERE staff_id = :staff_id AND revocado_en IS NULL
+            """),
+            {"staff_id": staff_id}
+        )
+
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=gym_id,
+            actor_id=actor.id,
+            actor_nombre=actor.nombre,
+            accion="regenerar_credencial_staff",
+            entidad="staff",
+            entidad_id=str(staff_id),
+            detalle={"correo": staff["correo"], "rol": staff["rol"]}
+        )
+
+        return RegenerarCredencialResponse(
+            password_temporal=pwd_temporal,
+            expira_en=expira_en
+        )
+

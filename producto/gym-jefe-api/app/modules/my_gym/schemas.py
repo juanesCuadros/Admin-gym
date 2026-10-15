@@ -12,7 +12,7 @@ Incluye:
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 # ==============================================================================
@@ -21,20 +21,20 @@ from pydantic import BaseModel, EmailStr, Field
 
 class ActualizarParametrosRequest(BaseModel):
     version: int = Field(..., ge=1, description="Versión actual esperada para concurrencia optimista (OCC)")
-    dias_gracia_mora: int = Field(
-        ...,
+    dias_gracia_mora: Optional[int] = Field(
+        None,
         ge=0,
         le=30,
         description="Días tras vencimiento que el torniquete alerta pero permite paso [0..30]"
     )
-    tope_dias_congelamiento: int = Field(
-        ...,
+    tope_dias_congelamiento: Optional[int] = Field(
+        None,
         ge=0,
         le=365,
         description="Tope anual máximo de días acumulados de congelamiento por deportista [0..365]"
     )
-    dias_umbral_por_vencer: int = Field(
-        ...,
+    dias_umbral_por_vencer: Optional[int] = Field(
+        None,
         ge=1,
         le=60,
         description="Días de anticipación para alertar membresía próxima a expirar [1..60]"
@@ -45,6 +45,38 @@ class ActualizarParametrosRequest(BaseModel):
         le=480,
         description="Expiración de sesión por inactividad en minutos [15..480]. Si se omite, no cambia"
     )
+    minimo_dias_congelamiento: Optional[int] = Field(
+        None,
+        ge=1,
+        description="Mínimo de días por congelamiento [>=1]"
+    )
+    permitir_descuentos: Optional[bool] = Field(
+        None,
+        description="Habilitar la aplicación de descuentos"
+    )
+    tope_descuento_pct: Optional[int] = Field(
+        None,
+        ge=0,
+        le=100,
+        description="Tope máximo de descuento permitido [0..100%]"
+    )
+    ventana_reserva_dias: Optional[int] = Field(
+        None,
+        ge=0,
+        description="Días de anticipación con que se permite reservar clases [>=0]"
+    )
+    limite_cancelar_reserva_horas: Optional[int] = Field(
+        None,
+        ge=0,
+        description="Horas antes del inicio de la clase para cancelar la reserva [>=0]"
+    )
+
+    @model_validator(mode="after")
+    def validar_tope_y_minimo_congelamiento(self) -> "ActualizarParametrosRequest":
+        if self.minimo_dias_congelamiento is not None and self.tope_dias_congelamiento is not None:
+            if self.tope_dias_congelamiento < self.minimo_dias_congelamiento:
+                raise ValueError("El tope de días de congelamiento debe ser mayor o igual al mínimo de días de congelamiento.")
+        return self
 
 
 class ParametrosTenantResponse(BaseModel):
@@ -52,6 +84,11 @@ class ParametrosTenantResponse(BaseModel):
     tope_dias_congelamiento: int
     dias_umbral_por_vencer: int
     duracion_sesion_minutos: int
+    minimo_dias_congelamiento: int = 1
+    permitir_descuentos: bool = False
+    tope_descuento_pct: int = 0
+    ventana_reserva_dias: int = 7
+    limite_cancelar_reserva_horas: int = 2
     version: int
 
 
@@ -93,6 +130,11 @@ class InfoGymResponse(BaseModel):
     dias_umbral_por_vencer: int
     # GW-RF-48: expiración de sesión por inactividad (15 min – 8 h, por defecto 60)
     duracion_sesion_minutos: int
+    minimo_dias_congelamiento: int = 1
+    permitir_descuentos: bool = False
+    tope_descuento_pct: int = 0
+    ventana_reserva_dias: int = 7
+    limite_cancelar_reserva_horas: int = 2
     branding: Dict[str, Any] = Field(default_factory=dict)
     version: int
     activo: bool
@@ -198,3 +240,58 @@ class AuditoriaPaginadaResponse(BaseModel):
 class AuditoriaFiltrosDisponiblesResponse(BaseModel):
     acciones: List[str]
     entidades: List[str]
+
+
+# ==============================================================================
+# CONTRATO 2.6: MI SUSCRIPCIÓN (PLANES DEL SAAS)
+# ==============================================================================
+
+class PlanActualDetalle(BaseModel):
+    codigo: str
+    nombre: str
+    tipo: str
+    max_clientes_activos: Optional[int] = None
+    max_staff: Optional[int] = None
+
+
+class UsoTenantDetalle(BaseModel):
+    clientes_activos: int
+    staff: int
+
+
+class SolicitudPlanPendienteDetalle(BaseModel):
+    id: UUID
+    plan_nombre: str
+    solicitado_por: str
+    created_at: datetime
+
+
+class PlanSuscripcionResponse(BaseModel):
+    plan_actual: Optional[PlanActualDetalle] = None
+    uso: UsoTenantDetalle
+    solicitud_pendiente: Optional[SolicitudPlanPendienteDetalle] = None
+
+
+class PlanDisponibleItem(BaseModel):
+    id: UUID
+    codigo: str
+    nombre: str
+    descripcion: Optional[str] = None
+    precio: int
+    duracion_meses: int
+    max_clientes_activos: Optional[int] = None
+    max_staff: Optional[int] = None
+
+
+class CrearSolicitudPlanRequest(BaseModel):
+    plan_id: UUID
+    nota: Optional[str] = None
+
+
+class SolicitudPlanCreadaResponse(BaseModel):
+    id: UUID
+
+
+class MensajeAccionResponse(BaseModel):
+    mensaje: str
+

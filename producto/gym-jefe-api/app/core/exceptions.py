@@ -104,6 +104,33 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        for error in exc.errors():
+            msg = str(error.get("msg", ""))
+            if "ACUDIENTE_REQUERIDO" in msg or "acudiente es obligatorio" in msg.lower():
+                return JSONResponse(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    content={
+                        "success": False,
+                        "error": {
+                            "codigo": "ACUDIENTE_REQUERIDO",
+                            "mensaje": "Los datos del acudiente son obligatorios para deportistas menores de 18 años.",
+                            "detalles": None,
+                        },
+                    },
+                )
+            if "AUTORIZACION_ACUDIENTE_REQUERIDA" in msg or "autorización del acudiente" in msg.lower():
+                return JSONResponse(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    content={
+                        "success": False,
+                        "error": {
+                            "codigo": "AUTORIZACION_ACUDIENTE_REQUERIDA",
+                            "mensaje": "La autorización del acudiente es obligatoria para registrar a un menor de 18 años.",
+                            "detalles": None,
+                        },
+                    },
+                )
+
         errores = []
         for error in exc.errors():
             campo = " -> ".join(str(loc) for loc in error["loc"])

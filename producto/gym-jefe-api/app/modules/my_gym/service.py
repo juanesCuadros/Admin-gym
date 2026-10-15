@@ -19,6 +19,7 @@ import qrcode
 import qrcode.image.svg
 from fastapi import HTTPException, status
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditService
@@ -32,11 +33,19 @@ from app.modules.my_gym.schemas import (
     AuditoriaFiltrosDisponiblesResponse,
     AuditoriaGymItemResponse,
     AuditoriaPaginadaResponse,
+    CrearSolicitudPlanRequest,
     EstadoSuscripcionResponse,
     InfoGymResponse,
     LandingInfoResponse,
+    MensajeAccionResponse,
     ParametrosTenantResponse,
+    PlanActualDetalle,
+    PlanDisponibleItem,
+    PlanSuscripcionResponse,
     PublicBrandingResponse,
+    SolicitudPlanCreadaResponse,
+    SolicitudPlanPendienteDetalle,
+    UsoTenantDetalle,
 )
 
 
@@ -139,7 +148,9 @@ class MyGymService:
             SELECT id, nombre, subdominio, zona_horaria, direccion, ciudad,
                    telefono, correo, redes, horarios, metodos_pago,
                    dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer,
-                   duracion_sesion_minutos, branding, version, activo, updated_at
+                   duracion_sesion_minutos, minimo_dias_congelamiento, permitir_descuentos,
+                   tope_descuento_pct, ventana_reserva_dias, limite_cancelar_reserva_horas,
+                   branding, version, activo, updated_at
             FROM platform.tenant
             WHERE id = :gym_id
         """)
@@ -168,6 +179,11 @@ class MyGymService:
             tope_dias_congelamiento=row["tope_dias_congelamiento"],
             dias_umbral_por_vencer=row["dias_umbral_por_vencer"],
             duracion_sesion_minutos=row["duracion_sesion_minutos"],
+            minimo_dias_congelamiento=row.get("minimo_dias_congelamiento", 1),
+            permitir_descuentos=row.get("permitir_descuentos", False),
+            tope_descuento_pct=row.get("tope_descuento_pct", 0),
+            ventana_reserva_dias=row.get("ventana_reserva_dias", 7),
+            limite_cancelar_reserva_horas=row.get("limite_cancelar_reserva_horas", 2),
             branding=cls._parse_json_field(row["branding"], {}),
             version=row["version"],
             activo=row["activo"],
@@ -300,25 +316,50 @@ class MyGymService:
         """
         update_stmt = text("""
             UPDATE platform.tenant
-            SET dias_gracia_mora = :dias_gracia,
-                tope_dias_congelamiento = :tope_congelamiento,
-                dias_umbral_por_vencer = :dias_umbral,
+            SET dias_gracia_mora = COALESCE(:dias_gracia, dias_gracia_mora),
+                tope_dias_congelamiento = COALESCE(:tope_congelamiento, tope_dias_congelamiento),
+                dias_umbral_por_vencer = COALESCE(:dias_umbral, dias_umbral_por_vencer),
                 duracion_sesion_minutos = COALESCE(CAST(:duracion_sesion AS integer), duracion_sesion_minutos),
+                minimo_dias_congelamiento = COALESCE(:minimo_congelamiento, minimo_dias_congelamiento),
+                permitir_descuentos = COALESCE(:permitir_descuentos, permitir_descuentos),
+                tope_descuento_pct = COALESCE(:tope_descuento, tope_descuento_pct),
+                ventana_reserva_dias = COALESCE(:ventana_reserva, ventana_reserva_dias),
+                limite_cancelar_reserva_horas = COALESCE(:limite_cancelar, limite_cancelar_reserva_horas),
                 version = version + 1,
                 updated_at = now()
             WHERE id = :gym_id AND version = :version_esperada
-            RETURNING dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer, duracion_sesion_minutos, version
+            RETURNING dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer, duracion_sesion_minutos,
+                      minimo_dias_congelamiento, permitir_descuentos, tope_descuento_pct,
+                      ventana_reserva_dias, limite_cancelar_reserva_horas, version
         """)
 
-        res = await session.execute(update_stmt, {
-            "gym_id": gimnasio_id,
-            "version_esperada": data.version,
-            "dias_gracia": data.dias_gracia_mora,
-            "tope_congelamiento": data.tope_dias_congelamiento,
-            "dias_umbral": data.dias_umbral_por_vencer,
-            "duracion_sesion": data.duracion_sesion_minutos,
-        })
-        row = res.mappings().first()
+        try:
+            async with session.begin_nested():
+                res = await session.execute(update_stmt, {
+                    "gym_id": gimnasio_id,
+                    "version_esperada": data.version,
+                    "dias_gracia": data.dias_gracia_mora,
+                    "tope_congelamiento": data.tope_dias_congelamiento,
+                    "dias_umbral": data.dias_umbral_por_vencer,
+                    "duracion_sesion": data.duracion_sesion_minutos,
+                    "minimo_congelamiento": data.minimo_dias_congelamiento,
+                    "permitir_descuentos": data.permitir_descuentos,
+                    "tope_descuento": data.tope_descuento_pct,
+                    "ventana_reserva": data.ventana_reserva_dias,
+                    "limite_cancelar": data.limite_cancelar_reserva_horas,
+                })
+                row = res.mappings().first()
+        except IntegrityError as exc:
+            err_msg = str(exc.orig) if hasattr(exc, "orig") else str(exc)
+            if "tenant_parametros_rango" in err_msg or "chk_" in err_msg or "check constraint" in err_msg.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"codigo": "PARAMETRO_FUERA_DE_RANGO", "mensaje": "Uno o más parámetros se encuentran fuera del rango permitido."}
+                )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"codigo": "ERROR_INTEGRIDAD", "mensaje": "Violación de restricción de base de datos."}
+            )
 
         if not row:
             check = await session.execute(
@@ -352,9 +393,14 @@ class MyGymService:
             entidad="tenant",
             entidad_id=str(gimnasio_id),
             detalle={
-                "dias_gracia_mora": data.dias_gracia_mora,
-                "tope_dias_congelamiento": data.tope_dias_congelamiento,
-                "dias_umbral_por_vencer": data.dias_umbral_por_vencer,
+                "dias_gracia_mora": row["dias_gracia_mora"],
+                "tope_dias_congelamiento": row["tope_dias_congelamiento"],
+                "dias_umbral_por_vencer": row["dias_umbral_por_vencer"],
+                "minimo_dias_congelamiento": row["minimo_dias_congelamiento"],
+                "permitir_descuentos": row["permitir_descuentos"],
+                "tope_descuento_pct": row["tope_descuento_pct"],
+                "ventana_reserva_dias": row["ventana_reserva_dias"],
+                "limite_cancelar_reserva_horas": row["limite_cancelar_reserva_horas"],
                 "version_anterior": data.version,
                 "version_nueva": row["version"]
             }
@@ -365,6 +411,11 @@ class MyGymService:
             tope_dias_congelamiento=row["tope_dias_congelamiento"],
             dias_umbral_por_vencer=row["dias_umbral_por_vencer"],
             duracion_sesion_minutos=row["duracion_sesion_minutos"],
+            minimo_dias_congelamiento=row["minimo_dias_congelamiento"],
+            permitir_descuentos=row["permitir_descuentos"],
+            tope_descuento_pct=row["tope_descuento_pct"],
+            ventana_reserva_dias=row["ventana_reserva_dias"],
+            limite_cancelar_reserva_horas=row["limite_cancelar_reserva_horas"],
             version=row["version"]
         )
 
@@ -774,3 +825,218 @@ class MyGymService:
             acciones=acciones,
             entidades=entidades
         )
+
+    # --------------------------------------------------------------------------
+    # CONTRATO 2.6: MI SUSCRIPCIÓN (PLANES DEL SAAS)
+    # --------------------------------------------------------------------------
+
+    @classmethod
+    async def obtener_mi_plan(
+        cls,
+        session: AsyncSession,
+        gimnasio_id: UUID
+    ) -> PlanSuscripcionResponse:
+        """
+        Retorna el plan actual asignado al gimnasio, métricas de uso (clientes activos y staff)
+        y solicitud de cambio pendiente si la hubiere.
+        """
+        # 1. Plan actual
+        res_plan = await session.execute(
+            text("SELECT codigo, nombre, tipo, max_clientes_activos, max_staff FROM platform.plan_actual(:gym_id)"),
+            {"gym_id": gimnasio_id}
+        )
+        row_plan = res_plan.mappings().first()
+        plan_actual = (
+            PlanActualDetalle(
+                codigo=row_plan["codigo"],
+                nombre=row_plan["nombre"],
+                tipo=row_plan["tipo"],
+                max_clientes_activos=row_plan["max_clientes_activos"],
+                max_staff=row_plan["max_staff"],
+            )
+            if row_plan
+            else None
+        )
+
+        # 2. Solicitud pendiente
+        res_sol = await session.execute(
+            text("SELECT id, plan_nombre, solicitado_por, created_at FROM platform.solicitud_plan_pendiente(:gym_id)"),
+            {"gym_id": gimnasio_id}
+        )
+        row_sol = res_sol.mappings().first()
+        solicitud_pendiente = (
+            SolicitudPlanPendienteDetalle(
+                id=row_sol["id"],
+                plan_nombre=row_sol["plan_nombre"],
+                solicitado_por=row_sol["solicitado_por"],
+                created_at=row_sol["created_at"],
+            )
+            if row_sol
+            else None
+        )
+
+        # 3. Métricas de uso
+        res_uso = await session.execute(
+            text("""
+                SELECT 
+                    (SELECT count(*) FROM platform.deportistas WHERE gimnasio_id = :gym_id AND deleted_at IS NULL AND activo = true) as clientes_activos,
+                    (SELECT count(*) FROM platform.staff WHERE gimnasio_id = :gym_id AND deleted_at IS NULL AND activo = true) as staff
+            """),
+            {"gym_id": gimnasio_id}
+        )
+        row_uso = res_uso.mappings().first()
+        uso = UsoTenantDetalle(
+            clientes_activos=row_uso["clientes_activos"] if row_uso else 0,
+            staff=row_uso["staff"] if row_uso else 0,
+        )
+
+        return PlanSuscripcionResponse(
+            plan_actual=plan_actual,
+            uso=uso,
+            solicitud_pendiente=solicitud_pendiente
+        )
+
+    @classmethod
+    async def listar_planes_disponibles(
+        cls,
+        session: AsyncSession
+    ) -> List[PlanDisponibleItem]:
+        """
+        Retorna la lista de planes públicos, activos y de pago disponibles para suscripción.
+        """
+        res = await session.execute(
+            text("""
+                SELECT id, codigo, nombre, descripcion, precio, duracion_meses,
+                       max_clientes_activos, max_staff
+                FROM platform.planes_disponibles()
+            """)
+        )
+        rows = res.mappings().all()
+        return [
+            PlanDisponibleItem(
+                id=r["id"],
+                codigo=r["codigo"],
+                nombre=r["nombre"],
+                descripcion=r["descripcion"],
+                precio=int(r["precio"]),
+                duracion_meses=r["duracion_meses"],
+                max_clientes_activos=r["max_clientes_activos"],
+                max_staff=r["max_staff"],
+            )
+            for r in rows
+        ]
+
+    @classmethod
+    async def crear_solicitud_plan(
+        cls,
+        session: AsyncSession,
+        gimnasio_id: UUID,
+        data: CrearSolicitudPlanRequest,
+        current_staff: AuthenticatedStaff
+    ) -> SolicitudPlanCreadaResponse:
+        """
+        Registra una solicitud de cambio de plan para el gimnasio.
+        Valida que el plan esté disponible y que no exista otra solicitud pendiente.
+        Solo accesible por el Jefe.
+        """
+        solicitado_por = current_staff.nombre or current_staff.correo
+
+        try:
+            async with session.begin_nested():
+                res = await session.execute(
+                    text("""
+                        SELECT platform.solicitar_plan(
+                            :gym_id,
+                            :plan_id,
+                            :solicitado_por,
+                            :nota
+                        )
+                    """),
+                    {
+                        "gym_id": gimnasio_id,
+                        "plan_id": data.plan_id,
+                        "solicitado_por": solicitado_por,
+                        "nota": data.nota,
+                    }
+                )
+                solicitud_id = res.scalar_one()
+        except (IntegrityError, DBAPIError) as exc:
+            err_str = str(exc).lower()
+            orig_str = str(exc.orig).lower() if hasattr(exc, "orig") else ""
+            comb = f"{err_str} {orig_str}"
+
+            if "plan_no_disponible" in comb:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"codigo": "PLAN_NO_DISPONIBLE", "mensaje": "El plan seleccionado no está disponible para suscripción."}
+                )
+            if "ux_solicitud_pendiente_por_gym" in comb or "23505" in comb or "ya hay una pendiente" in comb:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"codigo": "SOLICITUD_PENDIENTE_EXISTE", "mensaje": "Ya existe una solicitud de cambio de plan pendiente para este gimnasio."}
+                )
+            if "gimnasio_no_disponible" in comb:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"codigo": "GIMNASIO_NO_DISPONIBLE", "mensaje": "El gimnasio no existe o se encuentra inactivo."}
+                )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"codigo": "ERROR_SOLICITUD_PLAN", "mensaje": "No se pudo procesar la solicitud de cambio de plan."}
+            )
+
+        # Auditoría inmutable
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=gimnasio_id,
+            actor_id=current_staff.id,
+            actor_nombre=current_staff.nombre,
+            accion="solicitar_plan",
+            entidad="solicitudes_plan",
+            entidad_id=str(solicitud_id),
+            detalle={
+                "plan_id": str(data.plan_id),
+                "nota": data.nota,
+                "solicitado_por": solicitado_por
+            }
+        )
+
+        return SolicitudPlanCreadaResponse(id=solicitud_id)
+
+    @classmethod
+    async def cancelar_solicitud_plan(
+        cls,
+        session: AsyncSession,
+        gimnasio_id: UUID,
+        current_staff: AuthenticatedStaff
+    ) -> MensajeAccionResponse:
+        """
+        Cancela la solicitud de cambio de plan pendiente del gimnasio.
+        Solo accesible por el Jefe.
+        """
+        res = await session.execute(
+            text("SELECT platform.cancelar_solicitud_plan(:gym_id)"),
+            {"gym_id": gimnasio_id}
+        )
+        cancelada = res.scalar_one()
+
+        if not cancelada:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"codigo": "SIN_SOLICITUD_PENDIENTE", "mensaje": "No hay una solicitud de cambio de plan pendiente para cancelar."}
+            )
+
+        # Auditoría inmutable
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=gimnasio_id,
+            actor_id=current_staff.id,
+            actor_nombre=current_staff.nombre,
+            accion="cancelar_solicitud_plan",
+            entidad="solicitudes_plan",
+            entidad_id=str(gimnasio_id),
+            detalle={"cancelado_por": current_staff.nombre}
+        )
+
+        return MensajeAccionResponse(mensaje="Solicitud de cambio de plan cancelada exitosamente.")
+

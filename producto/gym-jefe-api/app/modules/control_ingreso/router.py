@@ -13,8 +13,11 @@ from app.modules.control_ingreso.schemas import (
     CheckinManualRequest,
     CheckinResponseDto,
     DeportistaCheckinDto,
+    DeportistasAdentroResponse,
     IngresoCortesiaRequest,
     ListadoIngresosHoyResponse,
+    SalidaRequest,
+    SalidaResponseDto,
 )
 from app.modules.control_ingreso.service import ControlIngresoService
 
@@ -138,3 +141,49 @@ async def evaluar_acceso(
         gym_id=current_staff.gimnasio_id,
         deportista_id=deportista_id
     )
+
+
+@router.post(
+    "/salida",
+    response_model=SalidaResponseDto,
+    summary="Registrar salida de un deportista (GW-RF-54, contrato 2.2)"
+)
+async def registrar_salida(
+    data: SalidaRequest,
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("control_ingreso", "crear"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    Registra la salida de un deportista con ingreso abierto:
+    - Busca el ingreso abierto más reciente dentro de las últimas 24 horas.
+    - Calcula el tiempo de permanencia en minutos.
+    - Actualiza el check-in con salida_ts y staff que registra.
+    - Registra el evento en la auditoría inmutable (hash-chain).
+    """
+    return await ControlIngresoService.registrar_salida(
+        session=session,
+        gym_id=current_staff.gimnasio_id,
+        staff_id=current_staff.id,
+        staff_nombre=current_staff.nombre,
+        data=data
+    )
+
+
+@router.get(
+    "/adentro",
+    response_model=DeportistasAdentroResponse,
+    summary="Listar deportistas actualmente adentro del gimnasio (GW-RF-54, contrato 2.2)"
+)
+async def obtener_adentro(
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("control_ingreso", "leer"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    """
+    Lista los deportistas con ingreso permitido hoy que no han registrado salida:
+    - Retorna el conteo total y el listado de deportistas con sus minutos transcurridos.
+    """
+    return await ControlIngresoService.obtener_adentro(
+        session=session,
+        gym_id=current_staff.gimnasio_id
+    )
+

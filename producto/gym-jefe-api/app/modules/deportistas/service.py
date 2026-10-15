@@ -18,7 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditService
 from app.core.config import settings
+from app.core.email.plantillas import url_sistema_web
 from app.core.security import encrypt_biometric_template, hash_token
+from app.modules.membresias.domain import MembresiaDomainService
 from app.modules.deportistas.schemas import (
     AccesoFichaResponse,
     CambiarEstadoDeportistaRequest,
@@ -69,28 +71,62 @@ class DeportistasService:
         """
         now_utc = datetime.now(timezone.utc)
 
+        # GW-RF-17 / Contrato 2.3: Validación de límite del plan para clientes activos
+        res_plan = await session.execute(
+            text("SELECT max_clientes_activos, nombre FROM platform.plan_actual(:gym_id)"),
+            {"gym_id": gym_id}
+        )
+        row_plan = res_plan.mappings().first()
+        if row_plan and row_plan["max_clientes_activos"] is not None:
+            res_count = await session.execute(
+                text("""
+                    SELECT count(*) FROM platform.deportistas
+                    WHERE gimnasio_id = :gym_id AND deleted_at IS NULL AND activo = true
+                """),
+                {"gym_id": gym_id}
+            )
+            actuales = res_count.scalar_one()
+            limite = row_plan["max_clientes_activos"]
+            if actuales >= limite:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "codigo": "LIMITE_PLAN_CLIENTES",
+                        "mensaje": f"Se ha alcanzado el límite de {limite} clientes activos del plan '{row_plan['nombre']}'. Mejora tu plan para continuar registrando deportistas.",
+                        "detalles": {
+                            "limite": limite,
+                            "actuales": actuales,
+                            "plan_nombre": row_plan["nombre"]
+                        }
+                    }
+                )
+
         insert_query = text("""
             INSERT INTO platform.deportistas (
-                gimnasio_id, documento, nombre, correo, telefono,
+                gimnasio_id, tipo_documento, documento, nombre, correo, telefono,
                 sexo, fecha_nacimiento, altura_cm,
-                consentimiento_1581, consentimiento_fecha,
-                acudiente_nombre, activo, version,
-                created_at, updated_at
+                consentimiento_1581, consentimiento_fecha, consentimiento_version,
+                consentimiento_registrado_por, acudiente, acudiente_nombre,
+                activo, version, created_at, updated_at
             ) VALUES (
-                :gym_id, :documento, :nombre, :correo, :telefono,
+                :gym_id, :tipo_documento, :documento, :nombre, :correo, :telefono,
                 :sexo, :fecha_nacimiento, :altura_cm,
-                :consentimiento_1581, :consentimiento_fecha,
-                :acudiente_nombre, true, 1,
-                :now_utc, :now_utc
+                :consentimiento_1581, :consentimiento_fecha, :consentimiento_version,
+                :consentimiento_registrado_por, CAST(:acudiente AS jsonb), :acudiente_nombre,
+                true, 1, :now_utc, :now_utc
             )
-            RETURNING id, gimnasio_id, documento, nombre, correo, telefono,
+            RETURNING id, gimnasio_id, tipo_documento, documento, nombre, correo, telefono,
                       sexo, fecha_nacimiento, altura_cm,
-                      consentimiento_1581, consentimiento_fecha,
-                      acudiente_nombre, activo, version, created_at, updated_at;
+                      consentimiento_1581, consentimiento_fecha, consentimiento_version,
+                      consentimiento_registrado_por, acudiente, acudiente_nombre, activo, version,
+                      created_at, updated_at;
         """)
 
+        acudiente_json = req.acudiente.model_dump_json() if req.acudiente else None
+        acudiente_nom = req.acudiente.nombre if req.acudiente else req.acudiente_nombre
         params = {
             "gym_id": gym_id,
+            "tipo_documento": req.tipo_documento or "CC",
             "documento": req.documento,
             "nombre": req.nombre,
             "correo": str(req.correo) if req.correo else None,
@@ -100,7 +136,10 @@ class DeportistasService:
             "altura_cm": req.altura_cm,
             "consentimiento_1581": req.consentimiento_1581,
             "consentimiento_fecha": now_utc,
-            "acudiente_nombre": req.acudiente_nombre,
+            "consentimiento_version": req.consentimiento_version or "1.0",
+            "consentimiento_registrado_por": staff_id,
+            "acudiente": acudiente_json,
+            "acudiente_nombre": acudiente_nom,
             "now_utc": now_utc,
         }
 
@@ -115,7 +154,7 @@ class DeportistasService:
                     status_code=status.HTTP_409_CONFLICT,
                     detail={
                         "codigo": "DOCUMENTO_YA_REGISTRADO",
-                        "mensaje": f"Ya existe un deportista con el documento '{req.documento}' en este gimnasio.",
+                        "mensaje": f"Ya existe un deportista con el documento '{req.tipo_documento} {req.documento}' en este gimnasio.",
                     },
                 )
             raise HTTPException(
@@ -132,10 +171,12 @@ class DeportistasService:
             accion="CREAR",
             entidad="deportistas",
             entidad_id=str(row["id"]),
-            detalle={"documento": req.documento, "nombre": req.nombre},
+            detalle={"documento": req.documento, "nombre": req.nombre, "tipo_documento": req.tipo_documento},
         )
 
-        return DeportistaResponse(**row)
+        row_dict = dict(row)
+        row_dict["consentimiento_registrado_por_nombre"] = staff_nombre
+        return DeportistaResponse(**row_dict)
 
     # =====================================================================
     # 2. Listar Deportistas Paginado (RF-17, RNF-09)
@@ -198,6 +239,7 @@ class DeportistasService:
         items_query = text(f"""
             SELECT
                 d.id,
+                d.tipo_documento,
                 d.documento,
                 d.nombre,
                 d.correo,
@@ -207,20 +249,10 @@ class DeportistasService:
                 d.created_at,
                 m.plan_nombre,
                 m.fecha_vencimiento,
-                CASE
-                    WHEN m.id IS NULL THEN 'sin_membresia'
-                    WHEN m.esta_congelada THEN 'congelado'
-                    WHEN m.fecha_vencimiento >= :today THEN
-                        CASE
-                            WHEN (m.fecha_vencimiento - :today) <= t.dias_umbral_por_vencer THEN 'por_vencer'
-                            ELSE 'al_dia'
-                        END
-                    ELSE
-                        CASE
-                            WHEN (:today - m.fecha_vencimiento) <= t.dias_gracia_mora THEN 'en_mora'
-                            ELSE 'vencido'
-                        END
-                END AS estado_membresia
+                m.esta_congelada,
+                m.cancelada,
+                t.dias_gracia_mora,
+                t.dias_umbral_por_vencer
             FROM platform.deportistas d
             JOIN platform.tenant t ON t.id = d.gimnasio_id
             LEFT JOIN LATERAL (
@@ -229,6 +261,7 @@ class DeportistasService:
                     mb.plan_id,
                     p.nombre AS plan_nombre,
                     mb.fecha_vencimiento,
+                    mb.cancelada,
                     EXISTS (
                         SELECT 1 FROM platform.congelamientos c
                         WHERE c.membresia_id = mb.id
@@ -239,7 +272,6 @@ class DeportistasService:
                 JOIN platform.planes p ON p.id = mb.plan_id
                 WHERE mb.deportista_id = d.id
                   AND mb.gimnasio_id = :gym_id
-                  AND mb.cancelada = false
                 ORDER BY mb.fecha_vencimiento DESC, mb.created_at DESC
                 LIMIT 1
             ) m ON true
@@ -249,7 +281,21 @@ class DeportistasService:
         """)
 
         res_items = await session.execute(items_query, params)
-        items = [DeportistaResumenResponse(**row) for row in res_items.mappings().all()]
+        items = []
+        for row in res_items.mappings().all():
+            calc = MembresiaDomainService.evaluar_estado_puro(
+                hoy=today_bogota,
+                activo_deportista=row["activo"],
+                tiene_membresia=row["plan_nombre"] is not None and not bool(row.get("cancelada")),
+                ultima_cancelada=bool(row.get("cancelada", False)),
+                fecha_vencimiento=row["fecha_vencimiento"],
+                congelamiento_activo=bool(row.get("esta_congelada", False)),
+                dias_gracia_mora=row.get("dias_gracia_mora", 3),
+                dias_umbral_por_vencer=row.get("dias_umbral_por_vencer", 5),
+            )
+            item_data = dict(row)
+            item_data["estado"] = calc.estado
+            items.append(DeportistaResumenResponse(**item_data))
 
         return DeportistasPaginadosResponse(
             items=items,
@@ -270,7 +316,7 @@ class DeportistasService:
         limit: int = 10,
     ) -> List[DeportistaBuscarResponse]:
         """
-        Búsqueda rápida por cédula o nombre para cajas y recepción.
+        Búsqueda rápida por cédula o nombre para cajas y recepción con estado consolidado.
         """
         today_bogota = cls._obtener_fecha_hoy_bogota()
         q_clean = q.strip()
@@ -280,31 +326,26 @@ class DeportistasService:
         search_query = text("""
             SELECT
                 d.id,
+                d.tipo_documento,
                 d.documento,
                 d.nombre,
                 d.correo,
                 d.telefono,
                 d.activo,
-                CASE
-                    WHEN m.id IS NULL THEN 'sin_membresia'
-                    WHEN m.esta_congelada THEN 'congelado'
-                    WHEN m.fecha_vencimiento >= :today THEN
-                        CASE
-                            WHEN (m.fecha_vencimiento - :today) <= t.dias_umbral_por_vencer THEN 'por_vencer'
-                            ELSE 'al_dia'
-                        END
-                    ELSE
-                        CASE
-                            WHEN (:today - m.fecha_vencimiento) <= t.dias_gracia_mora THEN 'en_mora'
-                            ELSE 'vencido'
-                        END
-                END AS estado_membresia
+                m.plan_nombre,
+                m.fecha_vencimiento,
+                m.esta_congelada,
+                m.cancelada,
+                t.dias_gracia_mora,
+                t.dias_umbral_por_vencer
             FROM platform.deportistas d
             JOIN platform.tenant t ON t.id = d.gimnasio_id
             LEFT JOIN LATERAL (
                 SELECT
                     mb.id,
+                    p.nombre AS plan_nombre,
                     mb.fecha_vencimiento,
+                    mb.cancelada,
                     EXISTS (
                         SELECT 1 FROM platform.congelamientos c
                         WHERE c.membresia_id = mb.id
@@ -312,9 +353,9 @@ class DeportistasService:
                           AND (c.fecha_fin IS NULL OR c.fecha_fin >= :today)
                     ) AS esta_congelada
                 FROM platform.membresias mb
+                JOIN platform.planes p ON p.id = mb.plan_id
                 WHERE mb.deportista_id = d.id
                   AND mb.gimnasio_id = :gym_id
-                  AND mb.cancelada = false
                 ORDER BY mb.fecha_vencimiento DESC, mb.created_at DESC
                 LIMIT 1
             ) m ON true
@@ -334,7 +375,22 @@ class DeportistasService:
                 "limit": min(limit, 20),
             },
         )
-        return [DeportistaBuscarResponse(**row) for row in res.mappings().all()]
+        items = []
+        for row in res.mappings().all():
+            calc = MembresiaDomainService.evaluar_estado_puro(
+                hoy=today_bogota,
+                activo_deportista=row["activo"],
+                tiene_membresia=row["plan_nombre"] is not None and not bool(row.get("cancelada")),
+                ultima_cancelada=bool(row.get("cancelada", False)),
+                fecha_vencimiento=row["fecha_vencimiento"],
+                congelamiento_activo=bool(row.get("esta_congelada", False)),
+                dias_gracia_mora=row.get("dias_gracia_mora", 3),
+                dias_umbral_por_vencer=row.get("dias_umbral_por_vencer", 5),
+            )
+            item_data = dict(row)
+            item_data["estado"] = calc.estado
+            items.append(DeportistaBuscarResponse(**item_data))
+        return items
 
     # =====================================================================
     # 4. Ficha 360° del Deportista (RF-20)
@@ -354,12 +410,14 @@ class DeportistasService:
 
         # 1. Datos del deportista
         dep_query = text("""
-            SELECT id, gimnasio_id, documento, nombre, correo, telefono,
-                   sexo, fecha_nacimiento, altura_cm,
-                   consentimiento_1581, consentimiento_fecha,
-                   acudiente_nombre, activo, version, created_at, updated_at
-            FROM platform.deportistas
-            WHERE id = :id AND gimnasio_id = :gym_id AND deleted_at IS NULL;
+            SELECT d.id, d.gimnasio_id, d.tipo_documento, d.documento, d.nombre, d.correo, d.telefono,
+                   d.sexo, d.fecha_nacimiento, d.altura_cm,
+                   d.consentimiento_1581, d.consentimiento_fecha, d.consentimiento_version,
+                   d.consentimiento_registrado_por, sc.nombre as consentimiento_registrado_por_nombre,
+                   d.acudiente, d.acudiente_nombre, d.activo, d.version, d.created_at, d.updated_at
+            FROM platform.deportistas d
+            LEFT JOIN platform.staff sc ON sc.id = d.consentimiento_registrado_por
+            WHERE d.id = :id AND d.gimnasio_id = :gym_id AND d.deleted_at IS NULL;
         """)
         res_dep = await session.execute(dep_query, {"id": deportista_id, "gym_id": gym_id})
         row_dep = res_dep.mappings().one_or_none()
@@ -368,8 +426,6 @@ class DeportistasService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"codigo": "DEPORTISTA_NO_ENCONTRADO", "mensaje": "Deportista no encontrado."},
             )
-        deportista_dto = DeportistaResponse(**row_dep)
-
         # 2. Membresía vigente
         memb_query = text("""
             SELECT
@@ -399,17 +455,24 @@ class DeportistasService:
         """)
         res_memb = await session.execute(memb_query, {"id": deportista_id, "gym_id": gym_id, "today": today_bogota})
         row_memb = res_memb.mappings().one_or_none()
+
+        calc = MembresiaDomainService.evaluar_estado_puro(
+            hoy=today_bogota,
+            activo_deportista=row_dep["activo"],
+            tiene_membresia=row_memb is not None and not bool(row_memb["cancelada"]),
+            ultima_cancelada=bool(row_memb["cancelada"]) if row_memb else False,
+            fecha_vencimiento=row_memb["fecha_vencimiento"] if row_memb else None,
+            congelamiento_activo=bool(row_memb["congelado"]) if row_memb else False,
+            dias_gracia_mora=row_memb["dias_gracia_mora"] if row_memb else 3,
+            dias_umbral_por_vencer=row_memb["dias_umbral_por_vencer"] if row_memb else 5,
+        )
+
+        dep_dict = dict(row_dep)
+        dep_dict["estado"] = calc.estado
+        deportista_dto = DeportistaResponse(**dep_dict)
+
         membresia_dto: Optional[MembresiaFichaResponse] = None
         if row_memb:
-            if row_memb["congelado"]:
-                estado_m = "congelado"
-            elif row_memb["fecha_vencimiento"] >= today_bogota:
-                dias_rest = row_memb["dias_restantes"]
-                estado_m = "por_vencer" if dias_rest <= row_memb["dias_umbral_por_vencer"] else "al_dia"
-            else:
-                dias_vencido = (today_bogota - row_memb["fecha_vencimiento"]).days
-                estado_m = "en_mora" if dias_vencido <= row_memb["dias_gracia_mora"] else "vencido"
-
             membresia_dto = MembresiaFichaResponse(
                 id=row_memb["id"],
                 plan_id=row_memb["plan_id"],
@@ -419,7 +482,7 @@ class DeportistasService:
                 cancelada=row_memb["cancelada"],
                 dias_restantes=row_memb["dias_restantes"],
                 congelado=row_memb["congelado"],
-                estado=estado_m,
+                estado=calc.estado,
             )
 
         # 3. Historial de últimos 10 pagos
@@ -526,47 +589,55 @@ class DeportistasService:
         Compara `version = :version_esperada`. Si otra transacción lo modificó,
         responde 409 CONFLICT sin usar bloqueos pesimistas.
         """
-        # 1. Si se actualiza el documento, verificar que no colisione con otro deportista
-        if req.documento is not None:
+        # 1. Si se actualiza el documento o tipo_documento, verificar que no colisione con otro deportista
+        if req.documento is not None or req.tipo_documento is not None:
             check_doc = text("""
                 SELECT 1 FROM platform.deportistas
                 WHERE gimnasio_id = :gym_id
-                  AND documento = :doc
+                  AND tipo_documento = COALESCE(:tipo_doc, tipo_documento)
+                  AND documento = COALESCE(:doc, documento)
                   AND id != :id
                   AND deleted_at IS NULL;
             """)
-            res_doc = await session.execute(check_doc, {"gym_id": gym_id, "doc": req.documento, "id": deportista_id})
+            res_doc = await session.execute(
+                check_doc,
+                {"gym_id": gym_id, "tipo_doc": req.tipo_documento, "doc": req.documento, "id": deportista_id}
+            )
             if res_doc.scalar_one_or_none():
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail={
                         "codigo": "DOCUMENTO_YA_REGISTRADO",
-                        "mensaje": f"El documento '{req.documento}' ya está registrado en otro deportista de este gimnasio.",
+                        "mensaje": "Ya existe otro deportista con ese tipo y número de documento en este gimnasio.",
                     },
                 )
 
         now_utc = datetime.now(timezone.utc)
+        acudiente_json = req.acudiente.model_dump_json() if req.acudiente else None
+        acudiente_nom = req.acudiente.nombre if req.acudiente else req.acudiente_nombre
 
         update_query = text("""
             UPDATE platform.deportistas
-            SET documento = COALESCE(:documento, documento),
+            SET tipo_documento = COALESCE(:tipo_documento, tipo_documento),
+                documento = COALESCE(:documento, documento),
                 nombre = COALESCE(:nombre, nombre),
                 correo = CASE WHEN :correo_provided THEN :correo ELSE correo END,
                 telefono = CASE WHEN :telefono_provided THEN :telefono ELSE telefono END,
                 sexo = CASE WHEN :sexo_provided THEN :sexo ELSE sexo END,
                 fecha_nacimiento = CASE WHEN :fecha_nac_provided THEN :fecha_nacimiento ELSE fecha_nacimiento END,
                 altura_cm = CASE WHEN :altura_provided THEN :altura_cm ELSE altura_cm END,
-                acudiente_nombre = CASE WHEN :acudiente_provided THEN :acudiente_nombre ELSE acudiente_nombre END,
+                acudiente = CASE WHEN :acudiente_provided THEN CAST(:acudiente AS jsonb) ELSE acudiente END,
+                acudiente_nombre = CASE WHEN :acudiente_nom_provided THEN :acudiente_nombre ELSE acudiente_nombre END,
                 version = version + 1,
                 updated_at = :now_utc
             WHERE id = :id
               AND gimnasio_id = :gym_id
               AND version = :version_esperada
               AND deleted_at IS NULL
-            RETURNING id, gimnasio_id, documento, nombre, correo, telefono,
+            RETURNING id, gimnasio_id, tipo_documento, documento, nombre, correo, telefono,
                       sexo, fecha_nacimiento, altura_cm,
-                      consentimiento_1581, consentimiento_fecha,
-                      acudiente_nombre, activo, version, created_at, updated_at;
+                      consentimiento_1581, consentimiento_fecha, consentimiento_version,
+                      consentimiento_registrado_por, acudiente, acudiente_nombre, activo, version, created_at, updated_at;
         """)
 
         params = {
@@ -574,6 +645,7 @@ class DeportistasService:
             "gym_id": gym_id,
             "version_esperada": req.version,
             "now_utc": now_utc,
+            "tipo_documento": req.tipo_documento,
             "documento": req.documento,
             "nombre": req.nombre,
             "correo_provided": req.correo is not None,
@@ -586,8 +658,10 @@ class DeportistasService:
             "fecha_nacimiento": req.fecha_nacimiento,
             "altura_provided": req.altura_cm is not None,
             "altura_cm": req.altura_cm,
-            "acudiente_provided": req.acudiente_nombre is not None,
-            "acudiente_nombre": req.acudiente_nombre,
+            "acudiente_provided": req.acudiente is not None,
+            "acudiente": acudiente_json,
+            "acudiente_nom_provided": acudiente_nom is not None,
+            "acudiente_nombre": acudiente_nom,
         }
 
         try:
@@ -646,7 +720,17 @@ class DeportistasService:
             detalle={"version_previa": req.version, "nueva_version": row["version"]},
         )
 
-        return DeportistaResponse(**row)
+        staff_nombre_cons = None
+        if row["consentimiento_registrado_por"]:
+            res_s = await session.execute(
+                text("SELECT nombre FROM platform.staff WHERE id = :sid"),
+                {"sid": row["consentimiento_registrado_por"]}
+            )
+            staff_nombre_cons = res_s.scalar_one_or_none()
+
+        row_dict = dict(row)
+        row_dict["consentimiento_registrado_por_nombre"] = staff_nombre_cons
+        return DeportistaResponse(**row_dict)
 
     # =====================================================================
     # 6. Cambiar Estado Operativo (Activar / Desactivar)
@@ -782,7 +866,7 @@ class DeportistasService:
             },
         )
 
-        enlace = f"https://{subdominio}.gymos.co/activar-app?codigo={codigo_plano}"
+        enlace = url_sistema_web(subdominio, f"activar-app?codigo={codigo_plano}")
 
         await AuditService.registrar(
             session=session,

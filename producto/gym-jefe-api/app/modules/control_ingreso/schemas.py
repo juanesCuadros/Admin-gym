@@ -18,13 +18,20 @@ class IngresoCortesiaRequest(BaseModel):
     motivo: str = Field(..., min_length=4, max_length=255, description="Motivo obligatorio del ingreso de cortesía")
 
 
-# --- Responses ---
 class DeportistaCheckinDto(BaseModel):
     id: UUID
     documento: str
     nombre: str
-    estado_calculado: str  # activo, por_vencer, mora, vencido, congelado, cancelada, inactivo, sin_membresia
+    estado: str  # desactivado, cancelado, sin_membresia, congelado, vencido, en_gracia, por_vencer, activo
+    estado_calculado: Optional[str] = None
     dias_restantes_o_vencido: int
+
+    def __init__(self, **data):
+        if "estado" not in data and "estado_calculado" in data:
+            data["estado"] = data["estado_calculado"]
+        elif "estado_calculado" not in data and "estado" in data:
+            data["estado_calculado"] = data["estado"]
+        super().__init__(**data)
 
 
 class CheckinResponseDto(BaseModel):
@@ -39,6 +46,33 @@ class CheckinResponseDto(BaseModel):
     ts_local: datetime
 
 
+class SalidaRequest(BaseModel):
+    deportista_id: UUID = Field(..., description="UUID del deportista que registra su salida")
+
+
+class SalidaResponseDto(BaseModel):
+    checkin_id: int
+    deportista_id: UUID
+    deportista_nombre: str
+    ingreso_ts: datetime
+    salida_ts: datetime
+    permanencia_minutos: int
+
+
+class DeportistaAdentroItemDto(BaseModel):
+    checkin_id: int
+    deportista_id: UUID
+    nombre: str
+    documento: str
+    ingreso_ts: datetime
+    minutos_adentro: int
+
+
+class DeportistasAdentroResponse(BaseModel):
+    total: int
+    items: List[DeportistaAdentroItemDto]
+
+
 class CheckinItemHistorialDto(BaseModel):
     id: int
     tipo: str
@@ -50,6 +84,8 @@ class CheckinItemHistorialDto(BaseModel):
     deportista_documento: Optional[str] = None
     registrado_por_nombre: Optional[str] = None
     ts_local: datetime
+    salida_ts: Optional[datetime] = None
+    permanencia_minutos: Optional[int] = None
 
 
 class ResumenIngresosHoyDto(BaseModel):
@@ -59,6 +95,7 @@ class ResumenIngresosHoyDto(BaseModel):
     alertas_mora: int
     accesos_negados: int
     cortesias: int
+    adentro_ahora: int = 0
 
 
 class ListadoIngresosHoyResponse(BaseModel):

@@ -14,10 +14,14 @@ from app.modules.control_ingreso.schemas import (
     CheckinItemHistorialDto,
     CheckinManualRequest,
     CheckinResponseDto,
+    DeportistaAdentroItemDto,
     DeportistaCheckinDto,
+    DeportistasAdentroResponse,
     IngresoCortesiaRequest,
     ListadoIngresosHoyResponse,
     ResumenIngresosHoyDto,
+    SalidaRequest,
+    SalidaResponseDto,
 )
 from app.modules.membresias.domain import MembresiaDomainService
 
@@ -141,6 +145,7 @@ class ControlIngresoService:
             id=dep["id"],
             documento=dep["documento"],
             nombre=dep["nombre"],
+            estado=estado,
             estado_calculado=estado,
             dias_restantes_o_vencido=dias_diff
         )
@@ -281,7 +286,8 @@ class ControlIngresoService:
                 COUNT(*) FILTER (WHERE resultado = 'abrio') as abrio,
                 COUNT(*) FILTER (WHERE resultado = 'alerta_mora') as alerta,
                 COUNT(*) FILTER (WHERE resultado = 'negado') as negado,
-                COUNT(*) FILTER (WHERE tipo = 'cortesia') as cortesia
+                COUNT(*) FILTER (WHERE tipo = 'cortesia') as cortesia,
+                COUNT(*) FILTER (WHERE tipo = 'ingreso' AND resultado IN ('abrio', 'alerta_mora') AND salida_ts IS NULL) as adentro_ahora
             FROM platform.checkins
             WHERE gimnasio_id = :gym_id AND ts_utc BETWEEN :inicio_utc AND :fin_utc
         """)
@@ -298,13 +304,14 @@ class ControlIngresoService:
             accesos_abiertos=st["abrio"] or 0,
             alertas_mora=st["alerta"] or 0,
             accesos_negados=st["negado"] or 0,
-            cortesias=st["cortesia"] or 0
+            cortesias=st["cortesia"] or 0,
+            adentro_ahora=st["adentro_ahora"] or 0,
         )
 
         # 2. Listado cronológico de accesos
         items_query = text("""
             SELECT 
-                c.id, c.tipo, c.metodo, c.resultado, c.motivo_cortesia, c.ts_utc,
+                c.id, c.tipo, c.metodo, c.resultado, c.motivo_cortesia, c.ts_utc, c.salida_ts,
                 c.deportista_id, d.nombre as deportista_nombre, d.documento as deportista_documento,
                 s.nombre as registrado_por_nombre
             FROM platform.checkins c
@@ -326,6 +333,11 @@ class ControlIngresoService:
         items = []
         for r in res_items.mappings():
             dt_local = r["ts_utc"].astimezone(bogota_tz)
+            salida_dt_local = r["salida_ts"].astimezone(bogota_tz) if r["salida_ts"] else None
+            permanencia = None
+            if salida_dt_local:
+                permanencia = max(0, int((salida_dt_local - dt_local).total_seconds() // 60))
+
             items.append(CheckinItemHistorialDto(
                 id=r["id"],
                 tipo=r["tipo"],
@@ -336,10 +348,133 @@ class ControlIngresoService:
                 deportista_nombre=r["deportista_nombre"],
                 deportista_documento=r["deportista_documento"],
                 registrado_por_nombre=r["registrado_por_nombre"],
-                ts_local=dt_local
+                ts_local=dt_local,
+                salida_ts=salida_dt_local,
+                permanencia_minutos=permanencia,
             ))
 
         return ListadoIngresosHoyResponse(resumen=resumen, items=items)
+
+    @classmethod
+    async def registrar_salida(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        staff_id: Optional[UUID],
+        staff_nombre: Optional[str],
+        data: SalidaRequest,
+    ) -> SalidaResponseDto:
+        now_dt_local = now_local()
+        bogota_tz = ZoneInfo("America/Bogota")
+
+        # Buscar el checkin de ingreso abierto más reciente en las últimas 24 horas (GW-RF-54 CA4)
+        query_ingreso = text("""
+            SELECT c.id, c.ts_utc, c.deportista_id, d.nombre as deportista_nombre
+            FROM platform.checkins c
+            JOIN platform.deportistas d ON d.id = c.deportista_id
+            WHERE c.gimnasio_id = :gym_id
+              AND c.deportista_id = :deportista_id
+              AND c.tipo = 'ingreso'
+              AND c.resultado IN ('abrio', 'alerta_mora')
+              AND c.salida_ts IS NULL
+              AND c.ts_utc >= (now() - interval '24 hours')
+            ORDER BY c.ts_utc DESC
+            LIMIT 1
+        """)
+        res = await session.execute(query_ingreso, {"gym_id": gym_id, "deportista_id": data.deportista_id})
+        ingreso = res.mappings().first()
+        if not ingreso:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"codigo": "SIN_INGRESO_ABIERTO", "mensaje": "El deportista no tiene un ingreso abierto para registrar salida"}
+            )
+
+        checkin_id = ingreso["id"]
+        ingreso_ts_local = ingreso["ts_utc"].astimezone(bogota_tz)
+        salida_ts_local = now_dt_local
+        permanencia_minutos = max(0, int((salida_ts_local - ingreso_ts_local).total_seconds() // 60))
+
+        # Actualizar el checkin
+        update_query = text("""
+            UPDATE platform.checkins
+            SET salida_ts = :salida_ts,
+                salida_registrado_por = :staff_id
+            WHERE id = :checkin_id AND gimnasio_id = :gym_id
+        """)
+        await session.execute(update_query, {
+            "salida_ts": salida_ts_local,
+            "staff_id": staff_id,
+            "checkin_id": checkin_id,
+            "gym_id": gym_id,
+        })
+
+        # Auditoría inmutable (hash-chain)
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=gym_id,
+            actor_id=staff_id,
+            actor_nombre=staff_nombre or "Staff",
+            accion="REGISTRAR_SALIDA",
+            entidad="checkins",
+            entidad_id=str(checkin_id),
+            detalle={
+                "checkin_id": checkin_id,
+                "deportista_id": str(data.deportista_id),
+                "ingreso_ts": ingreso_ts_local.isoformat(),
+                "salida_ts": salida_ts_local.isoformat(),
+                "permanencia_minutos": permanencia_minutos,
+            }
+        )
+
+        return SalidaResponseDto(
+            checkin_id=checkin_id,
+            deportista_id=ingreso["deportista_id"],
+            deportista_nombre=ingreso["deportista_nombre"],
+            ingreso_ts=ingreso_ts_local,
+            salida_ts=salida_ts_local,
+            permanencia_minutos=permanencia_minutos,
+        )
+
+    @classmethod
+    async def obtener_adentro(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+    ) -> DeportistasAdentroResponse:
+        hoy = today_local()
+        inicio_utc, fin_utc = get_local_day_range_utc(hoy)
+        now_dt_local = now_local()
+        bogota_tz = ZoneInfo("America/Bogota")
+
+        query = text("""
+            SELECT c.id, c.deportista_id, c.ts_utc, d.nombre, d.documento
+            FROM platform.checkins c
+            JOIN platform.deportistas d ON d.id = c.deportista_id
+            WHERE c.gimnasio_id = :gym_id
+              AND c.tipo = 'ingreso'
+              AND c.resultado IN ('abrio', 'alerta_mora')
+              AND c.salida_ts IS NULL
+              AND c.ts_utc BETWEEN :inicio_utc AND :fin_utc
+            ORDER BY c.ts_utc ASC
+        """)
+        res = await session.execute(query, {
+            "gym_id": gym_id,
+            "inicio_utc": inicio_utc,
+            "fin_utc": fin_utc,
+        })
+        items = []
+        for r in res.mappings():
+            ingreso_local = r["ts_utc"].astimezone(bogota_tz)
+            minutos = max(0, int((now_dt_local - ingreso_local).total_seconds() // 60))
+            items.append(DeportistaAdentroItemDto(
+                checkin_id=r["id"],
+                deportista_id=r["deportista_id"],
+                nombre=r["nombre"],
+                documento=r["documento"],
+                ingreso_ts=ingreso_local,
+                minutos_adentro=minutos,
+            ))
+        return DeportistasAdentroResponse(total=len(items), items=items)
 
     @classmethod
     async def pre_evaluar_acceso(
@@ -375,6 +510,7 @@ class ControlIngresoService:
             id=dep["id"],
             documento=dep["documento"],
             nombre=dep["nombre"],
+            estado=estado,
             estado_calculado=estado,
             dias_restantes_o_vencido=dias_diff
         )

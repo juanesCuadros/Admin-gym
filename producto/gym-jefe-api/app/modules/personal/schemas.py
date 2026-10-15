@@ -13,8 +13,14 @@ class CrearStaffRequest(BaseModel):
     """Payload para registrar un nuevo miembro del staff (RF-39)."""
     nombre: str = Field(..., min_length=2, max_length=100, description="Nombre completo del miembro del personal")
     correo: EmailStr = Field(..., description="Correo electrónico único dentro del gimnasio")
-    password: str = Field(..., min_length=8, max_length=100, description="Contraseña inicial (mínimo 8 caracteres)")
+    password: Optional[str] = Field(None, min_length=8, max_length=100, description="Opcional. Se genera credencial temporal de 72 h")
     rol: RolStaff = Field(..., description="Rol operativo asignado: recepcionista o entrenador")
+
+
+class RegenerarCredencialResponse(BaseModel):
+    """Respuesta con la nueva credencial temporal (GW-RF-39, Contrato 2.7)."""
+    password_temporal: str = Field(..., description="Contraseña temporal generada (se muestra una sola vez)")
+    expira_en: datetime = Field(..., description="Fecha y hora de expiración de la credencial (72 horas)")
 
 
 class ActualizarStaffRequest(BaseModel):
@@ -56,9 +62,14 @@ class StaffResponse(BaseModel):
     rol: str
     activo: bool
     ultimo_ingreso: Optional[datetime] = None
+    debe_cambiar_password: bool = False
+    password_temporal_expira_en: Optional[datetime] = None
+    password_temporal: Optional[str] = None
+    expira_en: Optional[datetime] = None
     version: int
     created_at: datetime
     updated_at: datetime
+
 
 
 class StaffListResponse(BaseModel):
