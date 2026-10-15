@@ -82,6 +82,21 @@ Errores: `409 DOCUMENTO_YA_REGISTRADO`, `422 ACUDIENTE_REQUERIDO`, `422 AUTORIZA
 
 Columnas: `tipo_documento, documento, nombre, telefono, correo, fecha_nacimiento, plan_nombre, fecha_vencimiento`.
 
+Decisiones del 15-oct (Juan):
+- `aplicar` recibe además el campo de formulario `declara_consentimientos=true`: el Jefe declara que el gimnasio
+  conserva la autorización de datos (Ley 1581). Sin él → `422 DECLARACION_CONSENTIMIENTO_REQUERIDA`. Los clientes
+  quedan con `consentimiento_version = 'migracion'`.
+- Los menores de 18 años no se cargan: error de fila `MENOR_DE_EDAD` (se registran a mano con su acudiente).
+- Respeta el límite del plan SaaS: `409 LIMITE_PLAN_CLIENTES` con `detalles: {limite, actuales, a_cargar, plan_nombre}`
+  (también en `simular`).
+- Plan y vencimiento van juntos; si los dos están vacíos el cliente se crea sin membresía. Fechas `dd/mm/aaaa` o
+  `aaaa-mm-dd`. CSV separado por `;` o `,`. Máximo 5 MB (`413 ARCHIVO_DEMASIADO_GRANDE`) y 5.000 filas.
+- Errores de fila: `TIPO_DOCUMENTO_INVALIDO`, `DOCUMENTO_REQUERIDO`, `DOCUMENTO_INVALIDO`, `DOCUMENTO_REPETIDO`,
+  `DOCUMENTO_YA_REGISTRADO`, `NOMBRE_REQUERIDO`, `NOMBRE_INVALIDO`, `TELEFONO_INVALIDO`, `CORREO_INVALIDO`,
+  `FECHA_INVALIDA`, `MENOR_DE_EDAD`, `PLAN_NO_EXISTE`, `PLAN_REQUERIDO`, `VENCIMIENTO_REQUERIDO`. Errores del
+  archivo: `FORMATO_NO_SOPORTADO`, `ARCHIVO_INVALIDO`, `ARCHIVO_VACIO`, `PLANTILLA_INVALIDA` (`detalles.faltantes`),
+  `DEMASIADAS_FILAS`.
+
 ### 2.5 Parámetros del gimnasio (GW-RF-48)
 `GET /my-gym/info` y `PATCH /my-gym/parametros` agregan: `minimo_dias_congelamiento`, `permitir_descuentos`,
 `tope_descuento_pct`, `ventana_reserva_dias`, `limite_cancelar_reserva_horas`. Fuera de rango → `422`.
