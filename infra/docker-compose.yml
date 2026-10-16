@@ -1,29 +1,49 @@
 name: gymos-prod
+
+# Producción en el VPS compartido con resttodash.
+# - Ningún servicio publica puertos al host: el nginx de resttodash (dueño de 80/443) llega a los
+#   frontends por la red Docker externa `resttodash` (alias gymos-*). Ver infra/nginx/gymos.conf.
+# - La BD y las APIs solo viven en la red interna `gymos`; desde internet no se alcanzan.
+# - Variables en infra/.env (plantilla: infra/.env.example). Runbook: docs/DEPLOYMENT_VPS.md.
+
+x-logs: &logs
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    <<: *logs
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       GYMOS_SUPERADMIN_PASSWORD: ${GYMOS_SUPERADMIN_PASSWORD}
       GYMOS_PLATFORM_PASSWORD: ${GYMOS_PLATFORM_PASSWORD}
-    expose:
-      - "5432"
+      TZ: America/Bogota
     volumes:
       - ./db:/docker-entrypoint-initdb.d:ro
       - gymos_prod_pgdata:/var/lib/postgresql/data
+    networks: [gymos]
+    deploy:
+      resources:
+        limits:
+          memory: 1g
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ---------- plataforma (Super Admin) ----------
+  # ---------- plataforma (Super Admin y sitio público) ----------
   super-admin-api:
     build: ../plataforma/super-admin-api
     restart: unless-stopped
+    <<: *logs
     depends_on:
       db:
         condition: service_healthy
@@ -36,9 +56,23 @@ services:
       FIRST_SUPERADMIN_EMAIL: ${FIRST_SUPERADMIN_EMAIL}
       FIRST_SUPERADMIN_PASSWORD: ${FIRST_SUPERADMIN_PASSWORD}
       BASE_DOMAIN: ${BASE_DOMAIN}
+      URL_GIMNASIO: ${URL_GIMNASIO}
       CORS_ORIGINS: ${SUPERADMIN_CORS_ORIGINS}
-    expose:
-      - "8000"
+      CORREO_MODO: ${CORREO_MODO:-log}
+      CORREO_REMITENTE: ${CORREO_REMITENTE}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      URL_CONFIRMACION_REGISTRO: ${URL_CONFIRMACION_REGISTRO}
+      SIGNUP_TOKEN_HORAS: ${SIGNUP_TOKEN_HORAS:-24}
+      EXPORTS_DIR: /app/data/exports
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL}
+    volumes:
+      # Exportaciones al cancelar un gimnasio (SA-RF-30): deben sobrevivir a un rebuild.
+      - gymos_prod_exports:/app/data/exports
+    networks: [gymos]
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/health || exit 1"]
       interval: 10s
@@ -49,16 +83,45 @@ services:
   super-admin-vista:
     build: ../plataforma/super-admin-vista
     restart: unless-stopped
+    <<: *logs
     depends_on:
       super-admin-api:
         condition: service_healthy
-    expose:
-      - "80"
+    networks:
+      gymos: {}
+      borde:
+        aliases: [gymos-admin]
+    deploy:
+      resources:
+        limits:
+          memory: 128m
 
-  # ---------- producto (Gym Tenant) ----------
+  sitio-publico:
+    build:
+      context: ../plataforma/sitio-publico
+      args:
+        VITE_API_URL: /api/v1
+        VITE_DOMINIO_BASE: ${BASE_DOMAIN}
+        VITE_CONTACTO_WHATSAPP: ${CONTACTO_WHATSAPP:-}
+    restart: unless-stopped
+    <<: *logs
+    depends_on:
+      super-admin-api:
+        condition: service_healthy
+    networks:
+      gymos: {}
+      borde:
+        aliases: [gymos-sitio]
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  # ---------- producto (Sistema Web del gimnasio) ----------
   api:
     build: ../producto/gym-jefe-api
     restart: unless-stopped
+    <<: *logs
     depends_on:
       db:
         condition: service_healthy
@@ -70,10 +133,17 @@ services:
       TIMEZONE: ${TIMEZONE:-America/Bogota}
       CORS_ORIGINS: ${PLATFORM_CORS_ORIGINS}
       BIOMETRIC_ENCRYPTION_KEY: ${BIOMETRIC_ENCRYPTION_KEY}
-    expose:
-      - "8000"
+      EMAIL_MODO: ${EMAIL_MODO:-log}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_REMITENTE: ${EMAIL_REMITENTE}
+      APP_URL_BASE: ${APP_URL_BASE}
+    networks: [gymos]
+    deploy:
+      resources:
+        limits:
+          memory: 512m
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -84,12 +154,29 @@ services:
       context: ../producto/gym-jefe-web
       args:
         VITE_API_URL: /api/v1
+        VITE_MVC_CONTACTO: ${CONTACTO_MVC:-}
+        VITE_MODULOS_ACTIVOS: ${MODULOS_ACTIVOS:-}
     restart: unless-stopped
+    <<: *logs
     depends_on:
       api:
         condition: service_healthy
-    expose:
-      - "80"
+    networks:
+      gymos: {}
+      borde:
+        aliases: [gymos-web]
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+networks:
+  gymos: {}
+  # Red del nginx de resttodash (ya existe en el VPS; no la crea ni la borra este compose).
+  borde:
+    external: true
+    name: ${RED_BORDE:-resttodash}
 
 volumes:
   gymos_prod_pgdata:
+  gymos_prod_exports:
