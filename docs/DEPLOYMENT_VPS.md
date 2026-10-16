@@ -1,243 +1,267 @@
-# Guía de Despliegue en VPS — GymOS Super-Admin
+# Despliegue de GymOS en el VPS
 
-Esta guía detalla el procedimiento paso a paso para desplegar la solución completa de **GymOS Super Administrador** (Base de datos PostgreSQL, Backend FastAPI y Frontend React Nginx) en cualquier servidor VPS (DigitalOcean, Hetzner, AWS EC2, Linode, Google Cloud, Oracle Cloud, etc.) utilizando Docker y Docker Compose.
+Runbook del servidor de producción. Todo lo que se configura en el VPS sale de este repositorio (`infra/`);
+nada se cambia a mano por SSH sin dejarlo versionado.
 
----
+## 1. Cómo está armado
 
-## 1. Arquitectura de Contenedores en Producción
+| Dato | Valor |
+|---|---|
+| VPS | Hostinger, Ubuntu 26.04, IP `179.236.234.196`, 7.7 GB RAM |
+| Usuario de operación | `deploy` (grupo `docker`). Los comandos de esta guía se corren como `deploy` salvo que diga root |
+| Repo en el VPS | `/home/deploy/gymos` (clon de `juanesCuadros/Admin-gym`, rama `main`, deploy key de solo lectura) |
+| Variables y secretos | `/home/deploy/gymos/infra/.env` (`chmod 600`, nunca en git) |
+| Respaldos | `/home/deploy/gymos-respaldos` + copia en Google Drive (`drive:gymos-respaldos`) |
+| Proyecto compose | `gymos-prod` (`infra/docker-compose.yml`) |
 
-```text
-[ Internet / Navegador / Dueños de Gym ]
-                  │
-                  ▼ (Puerto 80 / 443 HTTPS)
-     ┌────────────────────────┐
-     │   super-admin-vista    │  <-- Nginx 1.27 Alpine
-     │   (React 19 + SPA)     │      (Gzip, Cache, Security Headers)
-     └───────────┬────────────┘
-                 │ Proxy interno: /api/ -> :8000
-                 ▼
-     ┌────────────────────────┐
-     │    super-admin-api     │  <-- FastAPI (Python 3.11)
-     │   (Lógica y Dominio)   │      (Uvicorn, Alembic, Argon2id)
-     └───────────┬────────────┘
-                 │ Conexión interna: :5432
-                 ▼
-     ┌────────────────────────┐
-     │        postgres        │  <-- PostgreSQL 16 Alpine
-     │ (superadmin + platform)│      (Volumen persistente: pgdata_prod)
-     └────────────────────────┘
+El VPS es **compartido con resttodash**. Su contenedor `resttodash-nginx` es el dueño de los puertos 80/443 y
+termina el HTTPS de los dos proyectos:
+
+```
+internet ──443──> resttodash-nginx ──red docker "resttodash"──> gymos-sitio  (sitio-publico)  ──> super-admin-api ─┐
+                  (incluye infra/nginx/gymos.conf)            ├─> gymos-admin  (super-admin-vista) ──> super-admin-api ─┼─> db
+                                                              └─> gymos-web    (web)               ──> api ─────────────┘
+                                                                  red interna "gymos-prod_gymos": db y APIs no salen de aquí
 ```
 
-> **Aislamiento de red:** PostgreSQL y FastAPI están en una red interna de Docker (`gymos_internal_net`). El puerto 5432 **NO** está expuesto a internet, protegiendo la base de datos de accesos externos no autorizados.
+| URL | Servicio |
+|---|---|
+| `https://gymdeskcolombia.com` (`www` redirige aquí) | `sitio-publico` (landing, planes, registro autónomo) |
+| `https://admin.gymdeskcolombia.com` | `super-admin-vista` |
+| `https://{subdominio}.gymdeskcolombia.com` | `web` (Sistema Web de cada gimnasio; hoy: `demo`) |
 
----
+- Ningún contenedor de GymOS publica puertos. La BD (5432) no es accesible desde internet.
+- `gymos.conf` usa `proxy_pass` con variable: si GymOS está caído, el nginx de resttodash sigue arrancando y solo
+  los hosts de GymOS responden 502.
+- Los certificados viven en la carpeta de certbot de resttodash
+  (`/home/deploy/resttodash/infra/nginx/certbot/conf`), con el nombre `gymdeskcolombia.com` (SAN, no comodín).
 
-## 2. Requisitos Mínimos del Servidor VPS
+### Reglas de convivencia con resttodash
 
-- **Sistema Operativo:** Ubuntu 22.04 LTS, Ubuntu 24.04 LTS o Debian 12.
-- **Hardware Mínimo:** 1 vCPU, 1 GB RAM (recomendado 2 GB o activar 2 GB de SWAP), 20 GB de disco SSD.
-- **Red:** Dirección IP pública estática y puertos 80 y 443 abiertos.
+- **No** se modifica, reinicia ni borra nada de resttodash sin acuerdo previo.
+- Su nginx se cambia **solo por commit** en su repo (`infra/nginx/nginx.conf`, `infra/docker-compose.yml`): su
+  workflow `infra.yml` hace `git reset --hard` en el VPS, valida con `nginx -t` y recrea el contenedor. Un cambio
+  a mano en el servidor se pierde en el siguiente despliegue de resttodash.
+- Antes de cualquier recarga del nginx de borde: `docker exec resttodash-nginx nginx -t`.
 
----
+## 2. Primera instalación
 
-## 3. Preparación Inicial del Servidor (Solo una vez)
+### 2.1 Deploy key (una vez)
 
-Conéctate por SSH a tu VPS:
 ```bash
-ssh root@IP_DE_TU_VPS
+ssh-keygen -t ed25519 -f ~/.ssh/gymos_deploy -N "" -C "vps-gymos-solo-lectura"
+printf '\nHost github-gymos\n    HostName github.com\n    User git\n    IdentityFile ~/.ssh/gymos_deploy\n    IdentitiesOnly yes\n' >> ~/.ssh/config
+chmod 600 ~/.ssh/config
+cat ~/.ssh/gymos_deploy.pub   # GitHub → Settings → Deploy keys → Add (SIN "Allow write access")
+ssh -T github-gymos           # debe saludar con el nombre del repo
 ```
 
-### 3.1 Actualizar paquetes del sistema
+### 2.2 DNS (Hostinger)
+
+Registros `A` a `179.236.234.196`: `@`, `www`, `admin`, `demo` (y uno por cada gimnasio nuevo). Sin `AAAA` en
+esos nombres. Verificar desde el VPS:
+
 ```bash
-sudo apt update && sudo apt upgrade -y
+for h in gymdeskcolombia.com www.gymdeskcolombia.com admin.gymdeskcolombia.com demo.gymdeskcolombia.com; do
+  echo "$h → $(getent ahostsv4 $h | head -1 | cut -d' ' -f1)"; done
 ```
 
-### 3.2 Configurar Firewall (UFW)
+### 2.3 Clonar y crear el `.env`
+
 ```bash
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow OpenSSH
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw --force enable
+git clone github-gymos:juanesCuadros/Admin-gym.git ~/gymos
+cd ~/gymos/infra
+cp .env.example .env && chmod 600 .env
+for v in POSTGRES_PASSWORD GYMOS_SUPERADMIN_PASSWORD GYMOS_PLATFORM_PASSWORD SUPERADMIN_JWT_SECRET_KEY \
+         PLATFORM_JWT_SECRET_KEY BIOMETRIC_ENCRYPTION_KEY; do
+  sed -i "s/^$v=$/$v=$(openssl rand -hex 32)/" .env
+done
+nano .env   # poner FIRST_SUPERADMIN_PASSWORD (la que usará el Super Admin) y RESEND_API_KEY
+grep -E '^[A-Z_]+=$' .env   # solo debe quedar MODULOS_ACTIVOS vacío
 ```
 
-### 3.3 Instalar Docker y Docker Compose
-Ejecuta el script oficial de Docker:
+- `BIOMETRIC_ENCRYPTION_KEY` **no se puede cambiar después** sin perder las huellas registradas. Está incluida en
+  el respaldo del `.env` (ver 4.4).
+- `PLATFORM_CORS_ORIGINS` lista un origen por gimnasio publicado.
+
+### 2.4 Levantar GymOS
+
 ```bash
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo systemctl enable docker
-sudo systemctl start docker
+cd ~/gymos/infra
+docker compose up -d --build
+docker compose ps          # los 6 servicios en "healthy" (la primera vez tarda unos minutos en compilar)
+docker compose logs db | grep -E 'running|ignoring'      # corre 01_schema.sql y 02_arranque.sh; ignora migrations/
+docker compose logs super-admin-api | grep "Super Admin inicial"
 ```
 
-Verifica la instalación:
+La BD nace de `infra/db/01_schema.sql` + `02_arranque.sh` (solo la primera vez, con el volumen vacío).
+Postgres ignora `migrations/` y `crear-bd-carril.ps1`.
+
+### 2.5 Certificado (antes de conectar el nginx)
+
+El primer `server` de puerto 80 de resttodash ya responde `/.well-known/acme-challenge/` para cualquier host, así
+que el certificado se emite **antes** de incluir `gymos.conf` (si se incluye sin certificado, `nginx -t` falla).
+
 ```bash
-docker --version
-docker compose version
+cd /home/deploy/resttodash/infra
+docker run --rm -v "$PWD/nginx/certbot/conf:/etc/letsencrypt" -v "$PWD/nginx/certbot/www:/var/www/certbot" \
+  certbot/certbot certonly --webroot -w /var/www/certbot --cert-name gymdeskcolombia.com \
+  -d gymdeskcolombia.com -d www.gymdeskcolombia.com -d admin.gymdeskcolombia.com -d demo.gymdeskcolombia.com \
+  --email mvc.tech.popayan@gmail.com --agree-tos --no-eff-email
 ```
 
----
+### 2.6 Conectar GymOS al nginx de resttodash
 
-## 4. Despliegue de la Aplicación
+Cambio en el repo de resttodash (PR a `main`; su workflow lo aplica y recrea `resttodash-nginx`, ~2 s de corte):
 
-### 4.1 Clonar o copiar el repositorio
-```bash
-cd /opt
-sudo git clone https://github.com/juandavidm23/GymBros-SMP.git gymos-superadmin
-cd gymos-superadmin/Super-admin
-```
-
-### 4.2 Configurar Variables de Entorno de Producción
-Copia la plantilla de producción:
-```bash
-cp .env.production.example .env.production
-```
-
-Edita `.env.production` con tus valores reales:
-```bash
-nano .env.production
-```
-
-#### Parámetros Críticos a Configurar:
-1. `POSTGRES_PASSWORD`: Contraseña robusta para la base de datos (puedes generarla con `openssl rand -base64 24`).
-2. `JWT_SECRET_KEY`: Llave criptográfica para los tokens de sesión (genera una con `openssl rand -hex 32`).
-3. `FIRST_SUPERADMIN_EMAIL`: Tu correo de Super Administrador (ej. `admin@tudominio.com`).
-4. `FIRST_SUPERADMIN_PASSWORD`: Tu contraseña de acceso a la plataforma.
-5. `BASE_DOMAIN`: El dominio base de tu plataforma SaaS (ej. `gymos.io` o `tudominio.com`).
-6. `CORS_ORIGINS`: Dominios autorizados (ej. `'["https://superadmin.tudominio.com", "https://tudominio.com"]'`).
-
-### 4.3 Ejecutar el Despliegue
-
-#### Opción A: Mediante el script automatizado (Recomendado)
-```bash
-chmod +x deploy-vps.sh
-./deploy-vps.sh
-```
-
-#### Opción B: Mediante comando directo de Docker
-```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
-```
-
----
-
-## 5. Configurar Dominio y Certificado SSL (HTTPS) con Let's Encrypt
-
-Para habilitar HTTPS gratuito y seguro en tu dominio (ej. `superadmin.tudominio.com`):
-
-### 5.1 Apuntar el registro DNS
-En tu panel de DNS (Cloudflare, Namecheap, GoDaddy, etc.):
-- Crea un registro de tipo **A**:
-  - **Nombre:** `superadmin` (o `@` si es dominio raíz)
-  - **Valor (IP):** `IP_DE_TU_VPS`
-  - **TTL:** Automático
-
-### 5.2 Configuración de Nginx en el Host para SSL (Terminación SSL)
-Si prefieres que Nginx del host gestione los certificados SSL:
-
-1. Modifica en `.env.production` el puerto del frontend para no competir con el puerto 80 del host:
-   ```env
-   HOST_HTTP_PORT=8080
-   ```
-   Reinicia los contenedores:
-   ```bash
-   docker compose -f docker-compose.prod.yml --env-file .env.production up -d
-   ```
-
-2. Instala Nginx y Certbot en el servidor host:
-   ```bash
-   sudo apt install -y nginx certbot python3-certbot-nginx
-   ```
-
-3. Crea la configuración de Nginx (`/etc/nginx/sites-available/gymos.conf`):
+1. `infra/nginx/nginx.conf`, dentro de `http {}`, justo antes del primer `server {`:
    ```nginx
-   server {
-       server_name superadmin.tudominio.com;
-
-       location / {
-           proxy_pass http://127.0.0.1:8080;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-           proxy_set_header X-Forwarded-Proto $scheme;
-       }
-   }
+       # GymOS (gymdeskcolombia.com): bloques versionados en el repo de GymOS, montados en /etc/nginx/gymos.
+       # Con comodín: si la carpeta está vacía, nginx arranca igual.
+       include /etc/nginx/gymos/*.conf;
    ```
+2. `infra/docker-compose.yml`, servicio `nginx`, en `volumes`:
+   ```yaml
+         # GymOS: carpeta (no archivo suelto), así un git pull de GymOS se ve con un reload.
+         - /home/deploy/gymos/infra/nginx:/etc/nginx/gymos:ro
+   ```
+3. `.github/workflows/infra.yml`, en el `nginx -t` de validación, agregar el mismo montaje
+   `-v /home/deploy/gymos/infra/nginx:/etc/nginx/gymos:ro` para que la validación incluya a GymOS.
 
-4. Habilita el sitio y emite el certificado SSL:
+**Revertir:** revertir ese PR (el workflow vuelve a recrear el nginx sin GymOS).
+
+### 2.7 Verificación
+
+```bash
+docker ps --format '{{.Names}} {{.Status}}' | grep resttodash      # resttodash igual que antes
+curl -sI https://resttodash.app | head -1                            # resttodash responde
+curl -s https://gymdeskcolombia.com/api/v1/public/plans | head -c 100 # planes del sitio público
+curl -s -o /dev/null -w '%{http_code}\n' https://admin.gymdeskcolombia.com/api/v1/docs   # 404
+curl -s -o /dev/null -w '%{http_code}\n' https://demo.gymdeskcolombia.com/api/v1/docs    # 404
+```
+
+En el navegador: login del Super Admin → crear el gimnasio `demo` con su Jefe → el enlace de acceso abre
+`https://demo.gymdeskcolombia.com` → flujo de recepción (cliente, membresía cobrada, ingreso, salida, "Ingresos de
+hoy") → Pantalla TV conecta por `wss://` sin errores en consola. Contraseña mala: mensaje en español.
+
+## 3. Operación
+
+### 3.1 Actualizar a una nueva versión
+
+```bash
+cd ~/gymos && git pull
+~/gymos/infra/backup/respaldo.sh                   # respaldo antes de tocar nada
+cd infra && docker compose up -d --build && docker compose ps
+# Si cambió infra/nginx/gymos.conf:
+docker exec resttodash-nginx nginx -t && docker exec resttodash-nginx nginx -s reload
+```
+
+### 3.2 Cambios de esquema
+
+No hay runner de migraciones. `01_schema.sql` es la fuente única del esquema (solo aplica en una BD nueva); en
+producción, cada cambio se aplica con su archivo de `infra/db/migrations/`:
+
+```bash
+~/gymos/infra/backup/respaldo.sh
+cd ~/gymos/infra
+docker compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < db/migrations/NNN_nombre.sql
+docker compose restart api super-admin-api
+```
+
+### 3.3 Agregar un gimnasio con subdominio propio
+
+1. DNS: registro `A` `<sub>` → `179.236.234.196`.
+2. Ampliar el certificado (repetir **todos** los `-d` actuales más el nuevo; ver los actuales con
+   `certbot certificates`):
    ```bash
-   sudo ln -s /etc/nginx/sites-available/gymos.conf /etc/nginx/sites-enabled/
-   sudo nginx -t
-   sudo systemctl restart nginx
-   sudo certbot --nginx -d superadmin.tudominio.com
+   cd /home/deploy/resttodash/infra
+   docker run --rm -v "$PWD/nginx/certbot/conf:/etc/letsencrypt" -v "$PWD/nginx/certbot/www:/var/www/certbot" \
+     certbot/certbot certonly --webroot -w /var/www/certbot --cert-name gymdeskcolombia.com --expand \
+     -d gymdeskcolombia.com -d www.gymdeskcolombia.com -d admin.gymdeskcolombia.com -d demo.gymdeskcolombia.com -d <sub>.gymdeskcolombia.com
+   docker exec resttodash-nginx nginx -t && docker exec resttodash-nginx nginx -s reload
    ```
+3. Agregar `https://<sub>.gymdeskcolombia.com` a `PLATFORM_CORS_ORIGINS` en `.env` y `docker compose up -d api`.
+4. Crear el gimnasio en el Super Admin con ese subdominio. `gymos.conf` no se toca: atiende cualquier subdominio.
 
-Certbot renovará el certificado automáticamente antes de su vencimiento.
+### 3.4 Logs
 
----
-
-## 6. Mantenimiento y Operación Continua
-
-### Ver el estado de los contenedores
 ```bash
-docker compose -f docker-compose.prod.yml ps
+cd ~/gymos/infra
+docker compose logs -f --tail 100 api              # o super-admin-api, web, db...
+docker logs --tail 100 resttodash-nginx 2>&1 | grep gymdesk
 ```
 
-### Inspeccionar logs en tiempo real
+Los logs rotan solos (10 MB × 3 por contenedor).
+
+### 3.5 Rollback de código
+
 ```bash
-# Ver todos los logs
-docker compose -f docker-compose.prod.yml logs -f
-
-# Ver únicamente logs del backend API
-docker compose -f docker-compose.prod.yml logs -f super-admin-api
-
-# Ver únicamente logs del frontend Nginx
-docker compose -f docker-compose.prod.yml logs -f super-admin-vista
+cd ~/gymos && git log --oneline -10
+git checkout <commit_bueno> && cd infra && docker compose up -d --build
+# Volver a la rama cuando esté corregido: git checkout main && git pull
 ```
 
-### Actualizar a una nueva versión de código
-Para desplegar actualizaciones sin perder datos de la base de datos:
+Si la versión mala alcanzó a migrar el esquema, el rollback de código no basta: restaurar el respaldo previo (4.3).
+
+## 4. Respaldos
+
+### 4.1 Qué se respalda
+
+- BD completa (`pg_dump -Fc`) cada día a las 3:00 a. m. (Bogotá): 7 diarios + 4 semanales (domingos).
+- Copia espejo en Google Drive (`drive:gymos-respaldos`) con rclone.
+- `infra/.env` **no** va en el respaldo automático: guardar una copia en un gestor de contraseñas (sin ella, las
+  huellas cifradas con `BIOMETRIC_ENCRYPTION_KEY` no se pueden leer).
+
+### 4.2 Instalación (una vez)
+
 ```bash
-git pull origin main
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+# como root
+apt install -y rclone
+# como deploy: configurar el remoto "drive" (Google Drive). En un VPS sin navegador, rclone pide correr
+# `rclone authorize "drive"` en un PC con navegador y pegar el token que devuelve.
+rclone config
+rclone mkdir drive:gymos-respaldos
+mkdir -p ~/gymos-respaldos
+timedatectl | grep "Time zone"   # la línea de cron de abajo asume que el VPS está en UTC
+crontab -e
+# agregar (08:00 UTC = 03:00 Bogotá):
+0 8 * * * RCLONE_DESTINO=drive:gymos-respaldos /home/deploy/gymos/infra/backup/respaldo.sh >> /home/deploy/gymos-respaldos/respaldo.log 2>&1
 ```
 
-### Respaldos de la Base de Datos (Backups)
+Probar a mano la primera vez: `RCLONE_DESTINO=drive:gymos-respaldos ~/gymos/infra/backup/respaldo.sh` y luego
+`~/gymos/infra/backup/probar-restauracion.sh` (restaura en `gymos_restore_prueba`, compara conteos y la borra).
+Repetir la prueba de restauración una vez al mes.
 
-#### Crear un respaldo manual:
+### 4.3 Restaurar en producción
+
+Destructivo: reemplaza la BD actual. Hacer primero un respaldo de lo que haya.
+
 ```bash
-docker exec -t gymos_postgres_prod pg_dump -U gymos_prod_admin gymos_production_db > backup_$(date +%Y%m%d_%H%M%S).sql
+cd ~/gymos/infra
+~/gymos/infra/backup/respaldo.sh
+docker compose stop api super-admin-api
+docker compose exec -T db sh -c 'dropdb -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+docker compose exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --exit-on-error' < ~/gymos-respaldos/diarios/gymos_AAAA-MM-DD_HHMM.dump
+docker compose start api super-admin-api
 ```
 
-#### Restaurar un respaldo:
-```bash
-cat backup_20260909_120000.sql | docker exec -i gymos_postgres_prod psql -U gymos_prod_admin -d gymos_production_db
-```
+Los roles `gymos_superadmin` y `gymos_platform` viven en el clúster (no en el dump): en un servidor nuevo, primero
+levantar el stack con el mismo `.env` (los crea `01_schema.sql`/`02_arranque.sh`) y después restaurar así.
 
-#### Configurar respaldo automático diario (Cron Job):
-Ejecuta `crontab -e` y agrega al final:
-```cron
-0 3 * * * docker exec -t gymos_postgres_prod pg_dump -U gymos_prod_admin gymos_production_db | gzip > /opt/backups/gymos_$(date +\%Y\%m\%d).sql.gz
-```
+## 5. Certificados: renovación
 
----
+Let's Encrypt emite por 90 días. `certbot renew` renueva todos los certificados de la carpeta compartida
+(`gymdeskcolombia.com` y `resttodash.app`) que venzan en menos de 30 días; después hay que recargar el nginx de
+borde (los certificados están en un montaje de carpeta, así que `reload` los toma).
 
-## 7. Verificación de Seguridad y Salud
-
-Puedes verificar en cualquier momento el estado de la API ejecutando:
-```bash
-curl -i http://localhost/api/v1/health
-# o desde tu navegador:
-https://superadmin.tudominio.com/api/v1/health
-```
-
-Respuesta esperada:
-```json
-{
-  "status": "online",
-  "database": "healthy",
-  "version": "1.0.0",
-  "app": "GymOS Super-Admin Backend"
-}
-```
+> Pendiente de acordar con el dueño de resttodash dónde se versiona la tarea de renovación (cron del VPS), porque
+> renueva también el certificado de resttodash. Comando:
+>
+> ```bash
+> cd /home/deploy/resttodash/infra && \
+> docker run --rm -v "$PWD/nginx/certbot/conf:/etc/letsencrypt" -v "$PWD/nginx/certbot/www:/var/www/certbot" \
+>   certbot/certbot renew --webroot -w /var/www/certbot --quiet && \
+> docker exec resttodash-nginx nginx -t && docker exec resttodash-nginx nginx -s reload
+> ```
+>
+> Prueba sin emitir nada: el mismo `docker run` con `renew --dry-run`.
