@@ -153,4 +153,4 @@ class SignupUseCases:
         except Exception:
             self.db.rollback()
             raise
-        return subdominio, f"https://{subdominio}.{settings.BASE_DOMAIN}/login"
+        return subdominio, f"{settings.url_gimnasio(subdominio)}/login"

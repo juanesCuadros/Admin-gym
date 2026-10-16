@@ -142,7 +142,7 @@ class GymUseCases:
             raise
         self.db.refresh(gym)
 
-        access_url = f"https://{subdomain}.{settings.BASE_DOMAIN}/login"
+        access_url = f"{settings.url_gimnasio(subdomain)}/login"
 
         whatsapp_text = (
             f"¡Hola {data.jefe.nombre}! Bienvenido a GymOS para {gym.nombre}.\n\n"

@@ -50,6 +50,8 @@ class Settings(BaseSettings):
 
     # Domain defaults
     BASE_DOMAIN: str = "gymos.io"
+    # Dirección de cada gimnasio. En local: "http://{subdominio}.localhost:3000".
+    URL_GIMNASIO: str = "https://{subdominio}.{dominio}"
     DEFAULT_TRIAL_DAYS: int = 5
     CREDENTIALS_EXPIRE_HOURS: int = 72
 
@@ -78,5 +80,10 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173"
     ]
     BACKEND_CORS_ORIGINS: List[str] = CORS_ORIGINS
+
+    def url_gimnasio(self, subdominio: str) -> str:
+        """Dirección pública del sistema de un gimnasio (sin ruta)."""
+        return self.URL_GIMNASIO.format(subdominio=subdominio, dominio=self.BASE_DOMAIN)
+
 
 settings = Settings()

@@ -226,7 +226,7 @@ def get_gym_detail(
         gimnasio_id=gym.gimnasio_id,
         nombre=gym.nombre,
         subdominio=gym.subdominio,
-        url_acceso=f"https://{gym.subdominio}.{settings.BASE_DOMAIN}",
+        url_acceso=settings.url_gimnasio(gym.subdominio),
         nit=gym.nit,
         direccion=gym.direccion,
         ciudad=gym.ciudad,

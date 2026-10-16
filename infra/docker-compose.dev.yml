@@ -31,6 +31,7 @@ services:
       FIRST_SUPERADMIN_EMAIL: admin@gymos.internal
       FIRST_SUPERADMIN_PASSWORD: ChangeMeToStrongPassword2026!
       BASE_DOMAIN: localhost
+      URL_GIMNASIO: http://{subdominio}.localhost:3000
       CORS_ORIGINS: '["http://localhost:3001"]'
       URL_CONFIRMACION_REGISTRO: http://localhost:3002/registro/confirmar
       CORREO_MODO: log

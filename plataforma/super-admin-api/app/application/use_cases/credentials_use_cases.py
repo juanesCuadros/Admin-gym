@@ -73,7 +73,7 @@ class CredentialsUseCases:
             detalle={"correo_jefe": jefe.correo, "tipo": "regenerada"}
         )
 
-        access_url = f"https://{gym.subdominio}.{settings.BASE_DOMAIN}/login"
+        access_url = f"{settings.url_gimnasio(gym.subdominio)}/login"
         whatsapp_text = (
             f"Hola {jefe.nombre}. Se han regenerado tus credenciales de acceso para {gym.nombre}:\n\n"
             f"👉 Enlace: {access_url}\n"
@@ -137,7 +137,7 @@ class CredentialsUseCases:
             detalle={"veces_reenviada": latest_emision.veces_reenviada}
         )
 
-        access_url = f"https://{gym.subdominio}.{settings.BASE_DOMAIN}/login"
+        access_url = f"{settings.url_gimnasio(gym.subdominio)}/login"
         whatsapp_text = (
             f"Recordatorio de credenciales para {jefe.nombre} ({gym.nombre}):\n"
             f"👉 Enlace: {access_url}\n"
