@@ -8,6 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditService
 from app.core.config import settings
+from app.core.contexto_gimnasio import (
+    fijar_gimnasio_por_refresh,
+    fijar_gimnasio_por_subdominio,
+    fijar_gimnasio_por_token_recuperacion,
+)
 from app.core.database import async_session_maker, on_commit
 from app.core.dependencies import gimnasio_suspendido_exception, verificar_suscripcion_operativa
 from app.core.email import correo_recuperacion_password, email_adaptador, url_sistema_web
@@ -254,13 +259,13 @@ class AuthService:
     # ------------------------------------------------------------------
     @classmethod
     async def login(cls, session: AsyncSession, data: LoginRequest, client_ip: Optional[str] = None) -> LoginResponseDto:
-        # 1. Chequeo de intentos fallidos por IP ejecutado ANTES de fijar contexto de tenant
+        # 1. Chequeo de intentos fallidos por IP ejecutado ANTES de fijar contexto de tenant.
+        #    Cuenta en todos los gimnasios: por eso va por la función SECURITY DEFINER (migración 040).
         if client_ip:
-            intentos_ip = await session.execute(text("""
-                SELECT COUNT(*) FROM platform.intentos_login_staff
-                WHERE ip = :ip AND exito = false
-                  AND created_at >= (now() - interval '15 minutes')
-            """), {"ip": client_ip})
+            intentos_ip = await session.execute(
+                text("SELECT platform.intentos_fallidos_ip(CAST(:ip AS inet), now() - interval '15 minutes')"),
+                {"ip": client_ip},
+            )
             if (intentos_ip.scalar() or 0) >= 15:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -268,6 +273,7 @@ class AuthService:
                 )
 
         # 2. Resolver tenant a partir del subdominio obligatorio
+        await fijar_gimnasio_por_subdominio(session, data.subdominio)
         res_tenant = await session.execute(
             text("SELECT id, subdominio, activo FROM platform.tenant WHERE subdominio = :subdominio"),
             {"subdominio": data.subdominio.lower()},
@@ -369,6 +375,7 @@ class AuthService:
     @classmethod
     async def refresh(cls, session: AsyncSession, data: RefreshTokenRequest) -> RefreshResponseDto:
         refresh_hash = hash_token(data.refresh_token)
+        await fijar_gimnasio_por_refresh(session, refresh_hash)
         res = await session.execute(text("""
             SELECT ss.id, ss.staff_id, ss.gimnasio_id, ss.familia_id, ss.expira_en, ss.rotado_en, ss.revocado_en,
                    s.nombre, s.correo, s.rol, s.activo, s.debe_cambiar_password, s.password_temporal_expira_en,
@@ -461,6 +468,7 @@ class AuthService:
         La respuesta es idéntica exista o no el correo, esté o no activo el usuario (CA1).
         Solo un gimnasio inexistente o bloqueado responde distinto: eso no revela nada del usuario.
         """
+        await fijar_gimnasio_por_subdominio(session, data.subdominio)
         tenant_res = await session.execute(
             text("SELECT id, nombre, subdominio, activo FROM platform.tenant WHERE subdominio = :subdominio"),
             {"subdominio": data.subdominio.lower()}
@@ -527,6 +535,7 @@ class AuthService:
     @staticmethod
     async def validar_token_recuperacion(session: AsyncSession, token: str) -> bool:
         """Dice si el token sirve, sin consumirlo. No revela a quién pertenece."""
+        await fijar_gimnasio_por_token_recuperacion(session, hash_token(token))
         res = await session.execute(text("""
             SELECT 1 FROM platform.tokens_recuperacion_staff t
             JOIN platform.staff s ON s.id = t.staff_id
@@ -538,6 +547,7 @@ class AuthService:
     @classmethod
     async def confirmar_recuperacion_password(cls, session: AsyncSession, data: ConfirmarRecuperacionRequest) -> None:
         t_hash = hash_token(data.token)
+        await fijar_gimnasio_por_token_recuperacion(session, t_hash)
         res = await session.execute(text("""
             SELECT t.id, t.gimnasio_id, t.staff_id, s.rol
             FROM platform.tokens_recuperacion_staff t

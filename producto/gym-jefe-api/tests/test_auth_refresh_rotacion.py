@@ -4,12 +4,14 @@ Escritas ANTES de tocar el flujo. Corren contra PostgreSQL real.
 """
 from sqlalchemy import text
 
+from app.core.contexto_gimnasio import fijar_gimnasio
 from app.core.database import async_session_maker
 from tests.conftest import login
 
 
-async def _sesiones(staff_id):
+async def _sesiones(gym, staff_id):
     async with async_session_maker() as s:
+        await fijar_gimnasio(s, gym.id)   # sin gimnasio fijado RLS no muestra nada (migración 040)
         res = await s.execute(
             text("""
                 SELECT familia_id, rotado_en, revocado_en, expira_en
@@ -36,7 +38,7 @@ async def test_refresh_devuelve_refresh_nuevo_y_rota_el_anterior(cliente, fabric
     refresh_2 = body["refresh_token"]
     assert refresh_2 != refresh_1
 
-    ses = await _sesiones(st["id"])
+    ses = await _sesiones(gym, st["id"])
     assert len(ses) == 2
     assert ses[0]["rotado_en"] is not None, "el refresh usado queda marcado como rotado"
     assert ses[1]["rotado_en"] is None
@@ -64,7 +66,7 @@ async def test_reusar_refresh_rotado_revoca_la_familia_completa(cliente, fabrica
     r2 = await cliente.post("/api/v1/auth/refresh", json={"refresh_token": refresh_2})
     assert r2.status_code == 401
 
-    ses = await _sesiones(st["id"])
+    ses = await _sesiones(gym, st["id"])
     assert all(s["revocado_en"] is not None for s in ses), "toda la familia revocada"
 
 
@@ -97,7 +99,7 @@ async def test_logout_revoca_la_familia(cliente, fabrica):
     assert r.status_code == 200, r.text
 
     assert (await cliente.post("/api/v1/auth/refresh", json={"refresh_token": refresh_2})).status_code == 401
-    ses = await _sesiones(st["id"])
+    ses = await _sesiones(gym, st["id"])
     assert all(s["revocado_en"] is not None for s in ses)
 
 

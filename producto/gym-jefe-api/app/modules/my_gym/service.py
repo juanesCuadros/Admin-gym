@@ -23,6 +23,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditService
+from app.core.contexto_gimnasio import fijar_gimnasio_por_subdominio
 from app.core.dependencies import AuthenticatedStaff, gimnasio_suspendido_exception
 from app.core.timezone import get_local_day_range_utc
 from app.modules.my_gym.schemas import (
@@ -79,6 +80,7 @@ class MyGymService:
         Obtiene la identidad visual pública del gimnasio por su subdominio (sin requerir JWT).
         Utilizado por la pantalla de login para renderizar logo, nombre y colores corporativos.
         """
+        await fijar_gimnasio_por_subdominio(session, subdominio)
         stmt = text("""
             SELECT id, nombre, subdominio, branding, activo
             FROM platform.tenant

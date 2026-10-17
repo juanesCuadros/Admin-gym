@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from zoneinfo import ZoneInfo
 
 from app.core.audit import AuditService
+from app.core.contexto_gimnasio import fijar_gimnasio_por_subdominio
 from app.core.database import on_commit
 from app.core.security import generate_secure_token, hash_token
 from app.core.timezone import get_local_day_range_utc, now_local, today_local
@@ -37,6 +38,7 @@ class PantallaTvService:
         con pantalla_device_token_hash en platform.tenant mediante comparación en tiempo constante (Ley 1581).
         """
         token_hash = hash_token(token.strip())
+        await fijar_gimnasio_por_subdominio(session, subdominio)
         query = text("""
             SELECT id, nombre, subdominio, activo, pantalla_device_token_hash, pantalla_config
             FROM platform.tenant
@@ -65,6 +67,7 @@ class PantallaTvService:
         3. Realiza las consultas de clases y configuración bajo contexto de tenant.
         """
         # 1. Resolver tenant
+        await fijar_gimnasio_por_subdominio(session, subdominio)
         t_res = await session.execute(text("""
             SELECT id, nombre, subdominio, activo, pantalla_config
             FROM platform.tenant

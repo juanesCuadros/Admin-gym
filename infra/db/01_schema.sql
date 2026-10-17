@@ -1058,10 +1058,7 @@ BEGIN
     EXECUTE format('ALTER TABLE platform.%I FORCE ROW LEVEL SECURITY;', t.relname);
     EXECUTE format($f$
       CREATE POLICY tenant_isolation ON platform.%I
-      USING (
-        gimnasio_id = platform.current_gimnasio_id()
-        OR platform.current_gimnasio_id() IS NULL   -- sesión sin tenant: sólo para jobs/admin
-      )
+      USING (gimnasio_id = platform.current_gimnasio_id())   -- sin tenant fijado no se ve nada (040)
       WITH CHECK (gimnasio_id = platform.current_gimnasio_id());
     $f$, t.relname);
   END LOOP;
@@ -1071,20 +1068,21 @@ END$$;
 ALTER TABLE platform.tenant ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform.tenant FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_self ON platform.tenant
-  USING (id = platform.current_gimnasio_id() OR platform.current_gimnasio_id() IS NULL);
+  USING (id = platform.current_gimnasio_id())
+  WITH CHECK (id = platform.current_gimnasio_id());
+-- El Super-Admin crea gimnasios y cambia su estado (activo) aquí.
+CREATE POLICY superadmin_tenant ON platform.tenant
+  FOR ALL TO gymos_superadmin USING (true) WITH CHECK (true);
 
--- 'ejercicios': el catálogo global (gimnasio_id NULL) es visible para todos
+-- 'ejercicios': el catálogo global (gimnasio_id NULL) es visible para todos;
+-- lo administra el Super-Admin con su política superadmin_catalogo.
 DROP POLICY IF EXISTS tenant_isolation ON platform.ejercicios;
 CREATE POLICY ejercicios_global_y_propios ON platform.ejercicios
   USING (
     gimnasio_id IS NULL                                   -- catálogo global
     OR gimnasio_id = platform.current_gimnasio_id()       -- propios del gimnasio
-    OR platform.current_gimnasio_id() IS NULL
   )
-  WITH CHECK (
-    gimnasio_id = platform.current_gimnasio_id()
-    OR (gimnasio_id IS NULL AND platform.current_gimnasio_id() IS NULL)
-  );
+  WITH CHECK (gimnasio_id = platform.current_gimnasio_id());
 
 
 -- =====================================================================
@@ -1493,10 +1491,7 @@ ALTER TABLE platform.paquetes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform.paquetes FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON platform.paquetes;
 CREATE POLICY tenant_isolation ON platform.paquetes
-  USING (
-    gimnasio_id = platform.current_gimnasio_id()
-    OR platform.current_gimnasio_id() IS NULL   -- igual que el resto mientras exista la puerta trasera
-  )
+  USING (gimnasio_id = platform.current_gimnasio_id())
   WITH CHECK (gimnasio_id = platform.current_gimnasio_id());
 
 
@@ -1814,6 +1809,54 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA superadmin
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO gymos_superadmin;
 ALTER DEFAULT PRIVILEGES IN SCHEMA platform
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO gymos_platform;
+
+
+-- =====================================================================
+-- RESOLUCIÓN DE GIMNASIO PARA RUTAS SIN SESIÓN (040)
+-- =====================================================================
+-- Sin app.gimnasio_id fijado, RLS no deja ver nada. Login, refresh, recuperación de contraseña,
+-- branding público y Pantalla TV solo conocen un dato del usuario (subdominio, hash de un token o IP):
+-- estas funciones devuelven SOLO el id del gimnasio (o un conteo), nunca filas de otros gimnasios.
+-- El GW fija el contexto con ese id (app/core/contexto_gimnasio.py).
+
+CREATE OR REPLACE FUNCTION platform.gimnasio_id_por_subdominio(p_subdominio text)
+RETURNS uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public
+AS $$
+  SELECT t.id FROM platform.tenant t WHERE t.subdominio = lower(p_subdominio);
+$$;
+
+CREATE OR REPLACE FUNCTION platform.gimnasio_id_por_refresh(p_refresh_hash text)
+RETURNS uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public
+AS $$
+  SELECT s.gimnasio_id FROM platform.sesiones_staff s WHERE s.refresh_hash = p_refresh_hash;
+$$;
+
+CREATE OR REPLACE FUNCTION platform.gimnasio_id_por_token_recuperacion(p_token_hash text)
+RETURNS uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public
+AS $$
+  SELECT t.gimnasio_id FROM platform.tokens_recuperacion_staff t WHERE t.token_hash = p_token_hash;
+$$;
+
+-- Bloqueo por IP del login: cuenta los fallos de esa IP en todos los gimnasios.
+CREATE OR REPLACE FUNCTION platform.intentos_fallidos_ip(p_ip inet, p_desde timestamptz)
+RETURNS bigint
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public
+AS $$
+  SELECT count(*) FROM platform.intentos_login_staff i
+  WHERE i.ip = p_ip AND i.exito = false AND i.created_at >= p_desde;
+$$;
+
+REVOKE ALL ON FUNCTION platform.gimnasio_id_por_subdominio(text)         FROM PUBLIC;
+REVOKE ALL ON FUNCTION platform.gimnasio_id_por_refresh(text)            FROM PUBLIC;
+REVOKE ALL ON FUNCTION platform.gimnasio_id_por_token_recuperacion(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION platform.intentos_fallidos_ip(inet, timestamptz)  FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION platform.gimnasio_id_por_subdominio(text)         TO gymos_platform;
+GRANT EXECUTE ON FUNCTION platform.gimnasio_id_por_refresh(text)            TO gymos_platform;
+GRANT EXECUTE ON FUNCTION platform.gimnasio_id_por_token_recuperacion(text) TO gymos_platform;
+GRANT EXECUTE ON FUNCTION platform.intentos_fallidos_ip(inet, timestamptz)  TO gymos_platform;
 
 
 -- =====================================================================

@@ -97,6 +97,8 @@ async def test_c1_turno_unico_y_cierre_ajeno():
 
         # 7. Verificar en base de datos que se persistió cerrado_por y nota_cierre
         async with async_session_maker() as session:
+            # sin gimnasio fijado RLS no muestra nada (migración 040)
+            await session.execute(text("SELECT set_config('app.gimnasio_id', :gym_id, true)"), {"gym_id": str(gym_id)})
             q = text("SELECT cerrado_por, nota_cierre FROM platform.turnos_caja WHERE id = :id")
             res_db = await session.execute(q, {"id": turno_id})
             row_db = res_db.mappings().one()

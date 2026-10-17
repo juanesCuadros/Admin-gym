@@ -7,6 +7,7 @@ import re
 
 from sqlalchemy import text
 
+from app.core.contexto_gimnasio import fijar_gimnasio
 from app.core.database import async_session_maker
 from tests.conftest import login
 
@@ -38,6 +39,7 @@ async def test_respuesta_identica_para_valido_inexistente_y_desactivado(cliente,
 
     # Solo el válido generó token; el desactivado no
     async with async_session_maker() as s:
+        await fijar_gimnasio(s, gym.id)   # sin gimnasio fijado RLS no muestra nada (migración 040)
         n = await s.execute(
             text("SELECT staff_id, COUNT(*) FROM platform.tokens_recuperacion_staff WHERE staff_id IN (:a, :b) GROUP BY staff_id"),
             {"a": valido["id"], "b": desactivado["id"]},
@@ -56,6 +58,7 @@ async def test_token_vence_en_una_hora_y_se_envia_por_correo(cliente, fabrica, c
     assert len(token) >= 32
 
     async with async_session_maker() as s:
+        await fijar_gimnasio(s, gym.id)
         res = await s.execute(
             text("SELECT EXTRACT(EPOCH FROM (expira_en - created_at)) FROM platform.tokens_recuperacion_staff WHERE staff_id = :id"),
             {"id": st["id"]},

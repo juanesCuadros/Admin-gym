@@ -48,6 +48,15 @@ def test_suspender_sin_motivo_responde_422(pg_client, pg_headers):
     assert r.status_code == 422
 
 
+def test_suspender_apaga_el_tenant_del_sistema_web(pg_session, gym_suspendido):
+    """Migración 040: sin la puerta trasera de RLS, el SA escribe en platform.tenant por su política
+    propia (superadmin_tenant). Si la perdiera, el UPDATE no encontraría la fila y el gimnasio
+    suspendido seguiría operando sin que nadie lo notara."""
+    gym = pg_session.get(Gimnasio, gym_suspendido)
+    pg_session.expire_all()
+    assert pg_session.get(Tenant, gym.gimnasio_id).activo is False
+
+
 def test_transicion_no_permitida_responde_422(pg_client, pg_headers, gym_suspendido):
     r = _estado(pg_client, pg_headers, gym_suspendido, "prueba")
     assert r.status_code == 422
