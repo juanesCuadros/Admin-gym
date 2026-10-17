@@ -6,6 +6,13 @@ name: gymos-prod
 # - La BD y las APIs solo viven en la red interna `gymos`; desde internet no se alcanzan.
 # - Variables en infra/.env (plantilla: infra/.env.example). Runbook: docs/DEPLOYMENT_VPS.md.
 
+# uvicorn solo cree el X-Forwarded-For de los proxies en los que confía. Las APIs están detrás de dos
+# nginx en redes privadas de Docker (el de resttodash y el de cada frontend): se confía en esas redes y
+# uvicorn toma la primera IP pública de la cadena, la del usuario. Sin esto, todo el mundo llega con la IP
+# del nginx: el bloqueo de login por IP se vuelve global y la auditoría guarda una IP que no sirve.
+# La BD y las APIs no son alcanzables desde internet, así que nadie fuera de esas redes puede hablarles.
+x-red-proxies: &red-proxies "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+
 x-logs: &logs
   logging:
     driver: json-file
@@ -65,6 +72,7 @@ services:
       SIGNUP_TOKEN_HORAS: ${SIGNUP_TOKEN_HORAS:-24}
       EXPORTS_DIR: /app/data/exports
       PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL}
+      FORWARDED_ALLOW_IPS: *red-proxies
     volumes:
       # Exportaciones al cancelar un gimnasio (SA-RF-30): deben sobrevivir a un rebuild.
       - gymos_prod_exports:/app/data/exports
@@ -137,6 +145,7 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_REMITENTE: ${EMAIL_REMITENTE}
       APP_URL_BASE: ${APP_URL_BASE}
+      FORWARDED_ALLOW_IPS: *red-proxies
     networks: [gymos]
     deploy:
       resources:
