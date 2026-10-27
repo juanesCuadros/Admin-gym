@@ -18,7 +18,12 @@ import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
+import { Drawer } from '../../components/ui/Drawer';
 import { Table } from '../../components/ui/Table';
+import { MenuAcciones } from '../../components/ui/MenuAcciones';
+import { formatDiaSemana, formatFechaHora, formatHora } from '../../utils/formato';
+
+const ESTADO_CLASE: Record<string, string> = { programada: 'Programada', cancelada: 'Cancelada', realizada: 'Realizada' };
 import {
   ClaseResponse,
   ProgramarClaseRequest,
@@ -79,7 +84,7 @@ export const ClasesPage: React.FC = () => {
     setIsProcessing(true);
     try {
       await clasesService.programarClase(formData);
-      showToast('success', 'Clase Programada', 'Sesión agendada en el calendario');
+      showToast('success', 'Clase programada', 'Sesión agendada en el calendario');
       setShowProgramarModal(false);
       loadClases();
     } catch (err) {
@@ -120,7 +125,7 @@ export const ClasesPage: React.FC = () => {
       await clasesService.crearReserva(selectedClase.id, {
         deportista_id: selectedDeportistaId,
       });
-      showToast('success', 'Cupo Reservado', 'Deportista registrado en la lista de la clase');
+      showToast('success', 'Cupo reservado', 'Deportista registrado en la lista de la clase');
       setShowReservarModal(false);
       handleOpenReservas(selectedClase);
       loadClases();
@@ -136,7 +141,7 @@ export const ClasesPage: React.FC = () => {
     setIsProcessing(true);
     try {
       await clasesService.registrarAsistencia(selectedClase.id, { deportista_id: deportistaId });
-      showToast('success', 'Asistencia Marcada', 'Check-in de clase validado');
+      showToast('success', 'Asistencia marcada', 'Check-in de clase validado');
       handleOpenReservas(selectedClase);
       loadClases();
     } catch (err) {
@@ -150,7 +155,7 @@ export const ClasesPage: React.FC = () => {
     setIsProcessing(true);
     try {
       await clasesService.cancelarClase(id);
-      showToast('info', 'Clase Cancelada', 'Cupos y pases pagados liberados');
+      showToast('info', 'Clase cancelada', 'Cupos y pases pagados liberados');
       loadClases();
       if (selectedClase?.id === id) setSelectedClase(null);
     } catch (err) {
@@ -164,9 +169,9 @@ export const ClasesPage: React.FC = () => {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Programación de Clases y Reservas</h1>
+          <h1 className="page-title">Clases</h1>
           <p className="page-subtitle">
-            Horarios grupales, gestión de aforo, omisión de festivos, reservas con pases y check-in de asistencia
+            Agenda, cupos, reservas y asistencia
           </p>
         </div>
 
@@ -175,7 +180,7 @@ export const ClasesPage: React.FC = () => {
           leftIcon={<Plus size={16} />}
           onClick={() => setShowProgramarModal(true)}
         >
-          Programar Clase
+          Programar clase
         </Button>
       </div>
 
@@ -184,87 +189,77 @@ export const ClasesPage: React.FC = () => {
         <Table<ClaseResponse>
           columns={[
             {
-              header: 'Fecha y Hora',
+              header: 'Fecha y hora',
               render: (c) => (
                 <div>
-                  <div style={{ fontWeight: 700 }}>
-                    {new Date(c.fecha_hora).toLocaleDateString([], {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                    })}
-                  </div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    {new Date(c.fecha_hora).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </div>
+                  <div style={{ fontWeight: 500 }}>{formatDiaSemana(c.fecha_hora)}</div>
+                  <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{formatHora(c.fecha_hora)}</div>
                 </div>
               ),
               width: '140px',
             },
             {
-              header: 'Clase / Disciplina',
+              header: 'Clase',
               render: (c) => (
                 <div>
-                  <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{c.nombre}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 600 }}>
+                  <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{c.nombre}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                     {c.tipo || 'General'}
                   </div>
                 </div>
               ),
             },
             {
-              header: 'Profesor / Instructor',
-              accessor: (c) => c.entrenador_nombre || c.profesor_externo || 'Staff',
+              header: 'Instructor',
+              accessor: (c) => c.entrenador_nombre || c.profesor_externo || 'Sin asignar',
             },
             {
-              header: 'Aforo y Cupos',
-              render: (c) => (
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}>
-                    <Users size={14} color="var(--text-muted)" />
-                    <span>
-                      {c.reservas_totales} / {c.cupo} reservados
-                    </span>
+              header: 'Cupos',
+              render: (c) =>
+                c.cupos_disponibles > 0 ? (
+                  <div>
+                    <div style={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {c.reservas_totales} / {c.cupo}
+                    </div>
+                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                      {c.cupos_disponibles} {c.cupos_disponibles === 1 ? 'libre' : 'libres'}
+                    </div>
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: c.cupos_disponibles > 0 ? 'var(--success)' : 'var(--danger)' }}>
-                    {c.cupos_disponibles} disponibles
-                  </div>
-                </div>
-              ),
-              width: '160px',
+                ) : (
+                  <Badge variant="danger">Lleno · {c.cupo}</Badge>
+                ),
+              width: '120px',
             },
             {
               header: 'Estado',
               render: (c) => (
-                <Badge variant={c.estado === 'programada' ? 'success' : 'danger'}>
-                  {c.estado}
+                <Badge variant={c.estado === 'programada' ? 'success' : c.estado === 'cancelada' ? 'danger' : 'neutral'}>
+                  {ESTADO_CLASE[c.estado] ?? c.estado}
                 </Badge>
               ),
               width: '120px',
             },
             {
-              header: 'Acciones',
+              header: '',
               align: 'right',
+              width: '170px',
               render: (c) => (
-                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    leftIcon={<Users size={14} />}
-                    onClick={() => handleOpenReservas(c)}
-                  >
-                    Ver Reservas ({c.reservas_totales})
+                <div className="acciones-fila">
+                  <Button variant="secondary" size="sm" leftIcon={<Users size={14} />} onClick={() => handleOpenReservas(c)}>
+                    Reservas ({c.reservas_totales})
                   </Button>
-                  {c.estado === 'programada' && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      leftIcon={<XCircle size={14} color="var(--danger)" />}
-                      onClick={() => handleCancelarClase(c.id)}
-                    >
-                      Cancelar
-                    </Button>
-                  )}
+                  <MenuAcciones
+                    etiqueta={`Acciones de ${c.nombre}`}
+                    acciones={[
+                      {
+                        etiqueta: 'Cancelar clase',
+                        icono: <XCircle size={15} />,
+                        peligro: true,
+                        oculto: c.estado !== 'programada',
+                        onClick: () => handleCancelarClase(c.id),
+                      },
+                    ]}
+                  />
                 </div>
               ),
             },
@@ -282,25 +277,25 @@ export const ClasesPage: React.FC = () => {
       </Card>
 
       {/* Modal: Programar Clase */}
-      <Modal
+      <Drawer
         isOpen={showProgramarModal}
         onClose={() => setShowProgramarModal(false)}
-        title="Programar Nueva Clase"
+        title="Programar clase"
         footer={
           <>
             <Button variant="outline" onClick={() => setShowProgramarModal(false)}>
               Cancelar
             </Button>
             <Button variant="primary" onClick={handleProgramar} isLoading={isProcessing}>
-              Guardar Clase
+              Guardar clase
             </Button>
           </>
         }
       >
         <form onSubmit={handleProgramar}>
           <Input
-            label="Nombre de la Clase *"
-            placeholder="Ej. Spinning Matutino 7:00 AM"
+            label="Nombre de la clase *"
+            placeholder="Ej. Spinning de la mañana"
             value={formData.nombre}
             onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
             required
@@ -321,7 +316,7 @@ export const ClasesPage: React.FC = () => {
               onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
             />
             <Input
-              label="Profesor / Instructor *"
+              label="Instructor *"
               placeholder="Nombre del instructor..."
               value={formData.profesor_externo || ''}
               onChange={(e) => setFormData({ ...formData, profesor_externo: e.target.value })}
@@ -331,14 +326,14 @@ export const ClasesPage: React.FC = () => {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Input
-              label="Fecha y Hora de Inicio *"
+              label="Fecha y hora de inicio *"
               type="datetime-local"
               value={formData.fecha_hora}
               onChange={(e) => setFormData({ ...formData, fecha_hora: e.target.value })}
               required
             />
             <Input
-              label="Cupo Máximo *"
+              label="Cupo máximo *"
               type="number"
               value={formData.cupo}
               onChange={(e) => setFormData({ ...formData, cupo: Number(e.target.value) })}
@@ -366,18 +361,18 @@ export const ClasesPage: React.FC = () => {
               style={{ cursor: 'pointer' }}
             />
             <label htmlFor="omitir_festivos" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>
-              <strong>Omisión Automática de Días Festivos:</strong> Si una sesión recurrente coincide con un festivo oficial de Colombia, se omite automáticamente (RF-32).
+              <strong>Omitir festivos:</strong> si una sesión recurrente cae en un festivo de Colombia, no se programa.
             </label>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Modal: Reservas de la Clase */}
-      <Modal
+      <Drawer
         isOpen={!!selectedClase}
         onClose={() => setSelectedClase(null)}
         title={selectedClase ? `Reservas: ${selectedClase.nombre}` : ''}
-        maxWidth="720px"
+        size="lg"
         footer={
           <Button
             variant="primary"
@@ -385,7 +380,7 @@ export const ClasesPage: React.FC = () => {
             onClick={handleOpenReservarModal}
             disabled={selectedClase?.cupos_disponibles === 0}
           >
-            Reservar Cupo a Deportista
+            Reservar cupo
           </Button>
         }
       >
@@ -403,7 +398,7 @@ export const ClasesPage: React.FC = () => {
               }}
             >
               <span>
-                Fecha: <strong>{new Date(selectedClase.fecha_hora).toLocaleString()}</strong>
+                Fecha: <strong>{formatFechaHora(selectedClase.fecha_hora)}</strong>
               </span>
               <span>
                 Cupos:{' '}
@@ -419,7 +414,7 @@ export const ClasesPage: React.FC = () => {
                   header: 'Deportista',
                   render: (r) => (
                     <div>
-                      <div style={{ fontWeight: 700 }}>{r.deportista_nombre}</div>
+                      <div style={{ fontWeight: 500 }}>{r.deportista_nombre}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                         Doc: {r.deportista_documento}
                       </div>
@@ -430,7 +425,7 @@ export const ClasesPage: React.FC = () => {
                   header: 'Modalidad',
                   render: (r) => (
                     <Badge variant={r.pase_pagado ? 'info' : 'success'}>
-                      {r.pase_pagado ? 'Pase de Clase' : 'Membresía Activa'}
+                      {r.pase_pagado ? 'Pase de clase' : 'Membresía activa'}
                     </Badge>
                   ),
                 },
@@ -459,11 +454,11 @@ export const ClasesPage: React.FC = () => {
                         <Button
                           variant="secondary"
                           size="sm"
-                          leftIcon={<CheckCircle2 size={14} color="var(--success)" />}
+                          leftIcon={<CheckCircle2 size={14} />}
                           onClick={() => handleRegistrarAsistencia(r.deportista_id)}
                           isLoading={isProcessing}
                         >
-                          Marcar Asistencia
+                          Marcar asistencia
                         </Button>
                       )}
                     </div>
@@ -477,26 +472,26 @@ export const ClasesPage: React.FC = () => {
             />
           </div>
         )}
-      </Modal>
+      </Drawer>
 
       {/* Modal: Reservar Cupo */}
       <Modal
         isOpen={showReservarModal}
         onClose={() => setShowReservarModal(false)}
-        title="Inscribir Deportista en la Clase"
+        title="Reservar cupo"
         footer={
           <>
             <Button variant="outline" onClick={() => setShowReservarModal(false)}>
               Cancelar
             </Button>
             <Button variant="primary" onClick={handleCrearReserva} isLoading={isProcessing}>
-              Confirmar Reserva
+              Confirmar reserva
             </Button>
           </>
         }
       >
         <Select
-          label="Seleccionar Deportista *"
+          label="Deportista *"
           options={deportistasList.map((d) => ({
             value: d.id,
             label: `${d.nombre} (${d.documento})`,

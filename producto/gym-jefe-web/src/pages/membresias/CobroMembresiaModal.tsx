@@ -6,7 +6,7 @@ import { myGymService } from '../../api/myGym.service';
 import { ApiError, toApiError } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCajaTurno } from '../../contexts/CajaTurnoContext';
-import { Modal } from '../../components/ui/Modal';
+import { Drawer } from '../../components/ui/Drawer';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { MensajeFijo } from '../../components/estados/Estados';
@@ -204,11 +204,11 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
   };
 
   return (
-    <Modal
+    <Drawer
       isOpen={!!destino}
       onClose={() => !enviando && onCerrar()}
       title={destino.tipo === 'venta' ? 'Cobrar y registrar la venta' : destino.tipo === 'paquete' ? 'Renovar plan grupal' : 'Renovar membresía'}
-      maxWidth="560px"
+
       footer={
         recibo ? (
           <Button variant="primary" onClick={onCerrar}>
@@ -227,7 +227,7 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
       }
     >
       <div style={{ marginBottom: 14 }}>
-        <div style={{ fontWeight: 700 }}>{destino.titulo}</div>
+        <div style={{ fontWeight: 500 }}>{destino.titulo}</div>
         {destino.detalle && <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{destino.detalle}</div>}
       </div>
 
@@ -382,6 +382,6 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
           )}
         </>
       )}
-    </Modal>
+    </Drawer>
   );
 };

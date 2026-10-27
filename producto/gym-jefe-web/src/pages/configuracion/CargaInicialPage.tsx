@@ -147,7 +147,7 @@ export const CargaInicialPage: React.FC = () => {
               isLoading={descargando === 'xlsx'}
               disabled={descargando !== null}
             >
-              Plantilla Excel
+              Descargar plantilla
             </Button>
             <Button
               variant="outline"
@@ -166,7 +166,7 @@ export const CargaInicialPage: React.FC = () => {
             La revisión no guarda nada: te muestra qué filas hay que corregir. Máximo 5.000 clientes y 5 MB por archivo.
           </p>
           <div className="form-group">
-            <label htmlFor="archivo-carga" style={{ fontWeight: 600 }}>
+            <label htmlFor="archivo-carga" style={{ fontWeight: 500 }}>
               Archivo diligenciado (.xlsx o .csv)
             </label>
             <input
@@ -232,7 +232,7 @@ export const CargaInicialPage: React.FC = () => {
         <Card title="3. Carga los clientes">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <CheckCircle2 size={18} color="var(--success)" />
-            <span style={{ fontWeight: 700 }}>
+            <span style={{ fontWeight: 500 }}>
               {plural(simulacion.filas_validas, 'cliente listo', 'clientes listos')} para cargar
             </span>
           </div>

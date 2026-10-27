@@ -8,7 +8,9 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input, Select, Textarea, SearchInput } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { Modal, ConfirmDialog } from '../../components/ui/Modal';
+import { ConfirmDialog } from '../../components/ui/Modal';
+import { Drawer } from '../../components/ui/Drawer';
+import { MenuAcciones } from '../../components/ui/MenuAcciones';
 import { Table } from '../../components/ui/Table';
 import { Cargando, Conflicto, ErrorCarga, MensajeFijo, VacioFiltro, VacioInicial } from '../../components/estados/Estados';
 import { FILAS_POR_PAGINA, formatCOP, formatFechaHora } from '../../utils/formato';
@@ -299,7 +301,7 @@ export const ProductosPage: React.FC = () => {
             onPageChange: setPagina,
           }}
           columns={[
-            { header: 'Producto', render: (p) => <span style={{ fontWeight: 600 }}>{p.nombre}</span> },
+            { header: 'Producto', render: (p) => <span style={{ fontWeight: 500 }}>{p.nombre}</span> },
             { header: 'Precio', align: 'right', render: (p) => formatCOP(p.precio) },
             {
               header: 'Stock',
@@ -320,45 +322,43 @@ export const ProductosPage: React.FC = () => {
               render: (p) => <Badge variant={p.activo ? 'success' : 'neutral'}>{p.activo ? 'Activo' : 'Desactivado'}</Badge>,
             },
             {
-              header: 'Acciones',
+              header: '',
               align: 'right',
+              width: '150px',
               render: (p) => (
-                <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                  <Button variant="ghost" size="sm" leftIcon={<History size={14} />} onClick={() => abrir({ tipo: 'kardex', p })}>
-                    Movimientos
-                  </Button>
+                <div className="acciones-fila">
+                  {puedeEditar ? (
+                    <Button variant="secondary" size="sm" leftIcon={<PackagePlus size={14} />} onClick={() => abrir({ tipo: 'entrada', p })}>
+                      Entrada
+                    </Button>
+                  ) : (
+                    <Button variant="secondary" size="sm" leftIcon={<History size={14} />} onClick={() => abrir({ tipo: 'kardex', p })}>
+                      Movimientos
+                    </Button>
+                  )}
                   {puedeEditar && (
-                    <>
-                      <Button variant="ghost" size="sm" leftIcon={<PackagePlus size={14} />} onClick={() => abrir({ tipo: 'entrada', p })}>
-                        Entrada
-                      </Button>
-                      <Button variant="ghost" size="sm" leftIcon={<SlidersHorizontal size={14} />} onClick={() => abrir({ tipo: 'ajuste', p })}>
-                        Ajuste
-                      </Button>
-                      <Button variant="ghost" size="sm" leftIcon={<Pencil size={14} />} onClick={() => abrir({ tipo: 'editar', p })}>
-                        Editar
-                      </Button>
-                      {p.activo ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          leftIcon={<Power size={14} color="var(--danger)" />}
-                          onClick={() => setADesactivar(p)}
-                        >
-                          Desactivar
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          leftIcon={<Power size={14} color="var(--success)" />}
-                          disabled={guardando}
-                          onClick={() => cambiarEstado(p, true)}
-                        >
-                          Activar
-                        </Button>
-                      )}
-                    </>
+                    <MenuAcciones
+                      etiqueta={`Acciones de ${p.nombre}`}
+                      acciones={[
+                        { etiqueta: 'Movimientos', icono: <History size={15} />, onClick: () => abrir({ tipo: 'kardex', p }) },
+                        { etiqueta: 'Ajuste de stock', icono: <SlidersHorizontal size={15} />, onClick: () => abrir({ tipo: 'ajuste', p }) },
+                        { etiqueta: 'Editar', icono: <Pencil size={15} />, onClick: () => abrir({ tipo: 'editar', p }) },
+                        {
+                          etiqueta: 'Activar',
+                          icono: <Power size={15} />,
+                          oculto: p.activo,
+                          disabled: guardando,
+                          onClick: () => cambiarEstado(p, true),
+                        },
+                        {
+                          etiqueta: 'Desactivar',
+                          icono: <Power size={15} />,
+                          peligro: true,
+                          oculto: !p.activo,
+                          onClick: () => setADesactivar(p),
+                        },
+                      ]}
+                    />
                   )}
                 </div>
               ),
@@ -442,7 +442,7 @@ export const ProductosPage: React.FC = () => {
       {contenido}
 
       {/* Crear / editar / entrada / ajuste */}
-      <Modal
+      <Drawer
         isOpen={!!dialogo && dialogo.tipo !== 'kardex'}
         onClose={cerrar}
         title={tituloDialogo}
@@ -601,12 +601,12 @@ export const ProductosPage: React.FC = () => {
             </>
           )}
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Kardex del producto */}
-      <Modal isOpen={dialogo?.tipo === 'kardex'} onClose={() => setDialogo(null)} title={tituloDialogo} maxWidth="860px">
+      <Drawer isOpen={dialogo?.tipo === 'kardex'} onClose={() => setDialogo(null)} title={tituloDialogo} size="lg">
         {dialogo?.tipo === 'kardex' && <KardexProducto producto={dialogo.p} />}
-      </Modal>
+      </Drawer>
 
       <ConfirmDialog
         isOpen={aDesactivar !== null}

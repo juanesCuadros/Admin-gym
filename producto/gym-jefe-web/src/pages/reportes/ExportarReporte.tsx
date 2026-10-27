@@ -53,7 +53,7 @@ export const ExportarReporte: React.FC<{
         isLoading={exportando === 'excel'}
         disabled={disabled || exportando !== null}
       >
-        Exportar Excel
+        Exportar a Excel
       </Button>
     </div>
   );

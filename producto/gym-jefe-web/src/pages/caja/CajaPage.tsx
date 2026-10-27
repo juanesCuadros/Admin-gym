@@ -245,7 +245,7 @@ export const CajaPage: React.FC = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">Caja</h1>
-          <p className="page-subtitle">Turno único del gimnasio: apertura, egresos y arqueo</p>
+          <p className="page-subtitle">Apertura, egresos y cierre del turno</p>
         </div>
 
         {turnoPropio && puedeOperar && (
@@ -265,7 +265,7 @@ export const CajaPage: React.FC = () => {
             </Button>
             <Button
               variant="secondary"
-              leftIcon={<Lock size={16} color="var(--warning)" />}
+              leftIcon={<Lock size={16} />}
               onClick={() => {
                 setErrorCerrar(null);
                 setShowCerrarModal(true);
@@ -332,21 +332,18 @@ export const CajaPage: React.FC = () => {
               value={formatCOP(turno.ventas_efectivo)}
               icon={<TrendingUp size={20} />}
               subtext={`+${formatCOP(turno.pagos_membresia_efectivo)} en membresías`}
-              color="var(--success)"
             />
             <KpiCard
               label="Egresos"
               value={formatCOP(turno.egresos_efectivo)}
               icon={<MinusCircle size={20} />}
               subtext={`Devoluciones: ${formatCOP(turno.devoluciones_efectivo)}`}
-              color="var(--danger)"
             />
             <KpiCard
               label="Efectivo esperado"
               value={formatCOP(turno.total_esperado_efectivo)}
               icon={<CreditCard size={20} />}
               subtext="Para el arqueo"
-              color="var(--primary)"
             />
           </div>
 
@@ -382,7 +379,7 @@ export const CajaPage: React.FC = () => {
                     render: (m) => {
                       const salida = m.tipo_movimiento === 'egreso' || m.tipo_movimiento === 'devolucion';
                       return (
-                        <span style={{ fontWeight: 700, color: salida ? 'var(--danger)' : 'var(--text-primary)' }}>
+                        <span style={{ fontWeight: 500, color: salida ? 'var(--danger)' : 'var(--text-primary)' }}>
                           {salida ? '−' : '+'}
                           {formatCOP(m.monto)}
                         </span>
@@ -409,7 +406,7 @@ export const CajaPage: React.FC = () => {
               </MensajeFijo>
             )}
             <Lock size={48} color="var(--text-muted)" style={{ marginBottom: 12 }} />
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>No hay turno de caja abierto</h3>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 500, color: 'var(--text-primary)' }}>No hay turno de caja abierto</h3>
             <p style={{ color: 'var(--text-secondary)', maxWidth: 450, margin: '8px auto 20px auto' }}>
               Para vender, cobrar membresías o registrar egresos, abre el turno con la base de efectivo para dar cambio.
             </p>

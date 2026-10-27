@@ -124,7 +124,7 @@ export const ReporteMembresiasPage: React.FC = () => {
                   header: 'Deportista',
                   render: (m) => (
                     <div>
-                      <div style={{ fontWeight: 600 }}>{m.nombre}</div>
+                      <div style={{ fontWeight: 500 }}>{m.nombre}</div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{m.documento}</div>
                     </div>
                   ),
@@ -152,7 +152,7 @@ export const ReporteMembresiasPage: React.FC = () => {
                   header: 'Vencimiento',
                   render: (m) => (
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{ color: m.dias_restantes <= 3 ? 'var(--warning)' : undefined, fontWeight: 600 }}>
+                      <span style={{ color: m.dias_restantes <= 3 ? 'var(--warning)' : undefined, fontWeight: 500 }}>
                         {textoVencimiento(m.fecha_vencimiento, m.dias_restantes)}
                       </span>
                       {m.congelamiento_activo && <Badge variant="info">Congelada</Badge>}

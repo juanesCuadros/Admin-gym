@@ -25,7 +25,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { esEstadoDeportista, presentarEstado } from '../../utils/estadoDeportista';
-import { formatDiaMes } from '../../utils/formato';
+import { formatDiaMes, ZONA_HORARIA } from '../../utils/formato';
 
 export const PantallaTvPage: React.FC = () => {
   const navigate = useNavigate();
@@ -273,7 +273,7 @@ export const PantallaTvPage: React.FC = () => {
           </form>
           <div style={{ marginTop: 24 }}>
             <Button variant="ghost" size="sm" onClick={() => navigate('/')} leftIcon={<ArrowLeft size={14} />}>
-              Volver al Panel Administrativo
+              Volver al sistema
             </Button>
           </div>
         </div>
@@ -313,7 +313,7 @@ export const PantallaTvPage: React.FC = () => {
             leftIcon={<ArrowLeft size={16} />}
             style={{ color: 'rgba(255,255,255,0.7)' }}
           >
-            Volver al Panel
+            Volver al sistema
           </Button>
 
           <div
@@ -374,12 +374,12 @@ export const PantallaTvPage: React.FC = () => {
               fontWeight: 700,
               cursor: 'pointer',
             }}
-            title="Haz clic para configurar el Token de Dispositivo"
+            title="Configurar el código de la pantalla"
           >
             {wsStatus === 'conectado' ? (
               <>
                 <Wifi size={14} />
-                <span>En Vivo (WS Conectado)</span>
+                <span>En vivo</span>
               </>
             ) : wsStatus === 'reconectando' ? (
               <>
@@ -392,7 +392,7 @@ export const PantallaTvPage: React.FC = () => {
             ) : wsStatus === 'error_token' ? (
               <>
                 <AlertCircle size={14} />
-                <span>Token Inválido (Configurar)</span>
+                <span>Código inválido · configurar</span>
               </>
             ) : (
               <>
@@ -409,7 +409,7 @@ export const PantallaTvPage: React.FC = () => {
             onClick={() => setShowTokenModal(true)}
             style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
           >
-            Token TV
+            Conectar
           </Button>
 
           <Button
@@ -419,7 +419,7 @@ export const PantallaTvPage: React.FC = () => {
             onClick={toggleFullScreen}
             style={{ borderColor: 'rgba(255,255,255,0.2)', color: '#ffffff' }}
           >
-            Pantalla Completa
+            Pantalla completa
           </Button>
 
           {/* Clock */}
@@ -436,7 +436,7 @@ export const PantallaTvPage: React.FC = () => {
           >
             <Clock size={22} color="var(--accent)" />
             <span style={{ fontSize: '1.75rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
-              {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              {currentTime.toLocaleTimeString('es-CO', { timeZone: ZONA_HORARIA, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
             </span>
           </div>
         </div>
@@ -484,7 +484,7 @@ export const PantallaTvPage: React.FC = () => {
                   alignItems: 'center',
                 }}
               >
-                <span>Control de Acceso</span>
+                <span>Control de acceso</span>
                 {saludoActivo.estado && esEstadoDeportista(saludoActivo.estado) && (
                   <span
                     style={{
@@ -529,7 +529,7 @@ export const PantallaTvPage: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
           <Calendar size={22} color="var(--primary)" />
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ffffff' }}>
-            Clases y Sesiones de Hoy
+            Clases de hoy
           </h2>
         </div>
 
@@ -600,7 +600,7 @@ export const PantallaTvPage: React.FC = () => {
                   </h3>
 
                   <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.6)' }}>
-                    Instructor: {clase.entrenador_nombre || 'Staff'}
+                    Instructor: {clase.entrenador_nombre || 'Por asignar'}
                   </div>
                 </div>
 
@@ -639,26 +639,26 @@ export const PantallaTvPage: React.FC = () => {
       <Modal
         isOpen={showTokenModal}
         onClose={() => setShowTokenModal(false)}
-        title="Configuración de Token de Dispositivo (Pantalla TV)"
+        title="Conectar pantalla"
         footer={
           <>
             <Button variant="outline" onClick={() => setShowTokenModal(false)}>
               Cerrar
             </Button>
             <Button variant="primary" onClick={handleSaveToken}>
-              Conectar Pantalla
+              Conectar pantalla
             </Button>
           </>
         }
       >
         <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 16 }}>
-          Para autorizar la recepción de eventos de check-in en vivo sin comprometer datos personales (Ley 1581), el televisor físico debe conectarse con el <strong>Token de Dispositivo</strong> generado por el Jefe en la pantalla de Configuración.
+          Para mostrar los ingresos en vivo sin exponer datos personales (Ley 1581), el televisor se conecta con el <strong>código de la pantalla</strong> que genera el Jefe en Configuración.
         </p>
 
         <form onSubmit={handleSaveToken}>
           <Input
-            label="Token de Dispositivo (device_token)"
-            placeholder="Introduce el token alfanumérico..."
+            label="Código de la pantalla"
+            placeholder="Pega aquí el código"
             value={inputToken}
             onChange={(e) => setInputToken(e.target.value)}
             required

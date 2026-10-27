@@ -6,7 +6,7 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input, SearchInput } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { Modal } from '../../components/ui/Modal';
+import { Drawer } from '../../components/ui/Drawer';
 import { Table } from '../../components/ui/Table';
 import { Cargando, ErrorCarga, VacioFiltro, VacioInicial } from '../../components/estados/Estados';
 import { FILAS_POR_PAGINA, formatFechaHora } from '../../utils/formato';
@@ -144,7 +144,7 @@ export const AuditoriaPage: React.FC = () => {
               header: 'Quién',
               render: (a) => (
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 600 }}>{a.actor_nombre}</span>
+                  <span style={{ fontWeight: 500 }}>{a.actor_nombre}</span>
                   {a.impersonando && (
                     <Badge variant="warning" title="Sesión de soporte iniciada desde el Super-Admin">
                       Entrar como (MVC)
@@ -186,7 +186,7 @@ export const AuditoriaPage: React.FC = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">Auditoría</h1>
-          <p className="page-subtitle">Registro inmutable de lo que pasa en el gimnasio. Solo lo ve el Jefe.</p>
+          <p className="page-subtitle">Todo lo que pasa en el sistema, quién lo hizo y cuándo. Solo lo ve el Jefe.</p>
         </div>
       </div>
 
@@ -251,7 +251,7 @@ export const AuditoriaPage: React.FC = () => {
 
       {contenido}
 
-      <Modal isOpen={detalle !== null} onClose={() => setDetalle(null)} title="Detalle del evento" maxWidth="720px">
+      <Drawer isOpen={detalle !== null} onClose={() => setDetalle(null)} title="Detalle del evento" size="lg">
         {detalle && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: '0.9rem' }}>
             <div>
@@ -297,7 +297,7 @@ export const AuditoriaPage: React.FC = () => {
             </div>
           </div>
         )}
-      </Modal>
+      </Drawer>
     </div>
   );
 };

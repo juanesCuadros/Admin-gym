@@ -146,7 +146,7 @@ export const NuevaClavePage: React.FC = () => {
         >
           <LinkIcon size={26} />
         </div>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Este enlace ya no sirve</h2>
+        <h2 style={{ fontSize: '1.1rem', fontWeight: 500, color: 'var(--text-primary)' }}>Este enlace ya no sirve</h2>
         <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.55, marginTop: 8 }}>
           El enlace ya fue usado, venció o se pidió otro más reciente.
         </p>
@@ -173,7 +173,7 @@ export const NuevaClavePage: React.FC = () => {
         >
           <Check size={26} />
         </div>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Contraseña actualizada</h2>
+        <h2 style={{ fontSize: '1.1rem', fontWeight: 500, color: 'var(--text-primary)' }}>Contraseña actualizada</h2>
         <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.55, marginTop: 8 }}>
           Se cerraron todas tus sesiones. Ingresa con tu nueva contraseña.
         </p>

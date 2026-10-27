@@ -8,7 +8,8 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { Modal, ConfirmDialog } from '../../components/ui/Modal';
+import { ConfirmDialog } from '../../components/ui/Modal';
+import { Drawer } from '../../components/ui/Drawer';
 import { BuscadorDeportista } from '../../components/ui/BuscadorDeportista';
 import { Cargando, ErrorCarga, MensajeFijo, VacioInicial } from '../../components/estados/Estados';
 import { formatFechaHora } from '../../utils/formato';
@@ -36,7 +37,7 @@ const DetalleRutina: React.FC<{ rutina: RutinaAsignadaResponse }> = ({ rutina })
             <tr key={it.id}>
               <td>{i + 1}</td>
               <td>
-                <div style={{ fontWeight: 600 }}>{it.ejercicio_nombre}</div>
+                <div style={{ fontWeight: 500 }}>{it.ejercicio_nombre}</div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   {[it.ejercicio_grupo_muscular, it.ejercicio_equipo].filter(Boolean).join(' · ')}
                   {!it.ejercicio_activo_en_gym && ' · Desactivado en el gimnasio (sin imagen)'}
@@ -162,7 +163,7 @@ export const RutinasAsignadasPage: React.FC = () => {
         <div>
           <h1 className="page-title">Rutinas asignadas</h1>
           <p className="page-subtitle">
-            Rutinas de cada deportista. Son una copia de la plantilla: editar la plantilla no las cambia.
+            Rutinas de cada deportista. Editar una plantilla no cambia las rutinas ya asignadas.
           </p>
         </div>
         {puedeAsignar && deportista && (
@@ -216,7 +217,7 @@ export const RutinasAsignadasPage: React.FC = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: 220 }}>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <span style={{ fontWeight: 700, fontSize: '1.05rem' }}>{r.nombre}</span>
+                      <span style={{ fontWeight: 500, fontSize: '1.05rem' }}>{r.nombre}</span>
                       <Badge variant={r.activa ? 'success' : 'neutral'}>{r.activa ? 'Activa' : 'Archivada'}</Badge>
                     </div>
                     <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 2 }}>
@@ -239,7 +240,7 @@ export const RutinasAsignadasPage: React.FC = () => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        leftIcon={<Archive size={14} color="var(--danger)" />}
+                        leftIcon={<Archive size={14} />}
                         onClick={() => setAArchivar(r)}
                       >
                         Archivar
@@ -274,7 +275,7 @@ export const RutinasAsignadasPage: React.FC = () => {
         isLoading={procesando}
       />
 
-      <Modal
+      <Drawer
         isOpen={asignarAbierto}
         onClose={() => !procesando && setAsignarAbierto(false)}
         title={`Asignar rutina a ${deportista?.nombre ?? ''}`}
@@ -331,7 +332,7 @@ export const RutinasAsignadasPage: React.FC = () => {
             </>
           )}
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

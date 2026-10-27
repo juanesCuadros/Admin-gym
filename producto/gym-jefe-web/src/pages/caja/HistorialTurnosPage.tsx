@@ -39,7 +39,7 @@ export const HistorialTurnosPage: React.FC = () => (
       }}
     >
       <History size={40} color="var(--text-muted)" style={{ marginBottom: 12 }} />
-      <div style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: 6 }}>El historial aún no está disponible</div>
+      <div style={{ fontSize: '1.05rem', fontWeight: 500, marginBottom: 6 }}>El historial aún no está disponible</div>
       <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: 520, margin: 0 }}>
         El servidor todavía no permite consultar la lista de turnos cerrados. Mientras tanto, el turno abierto y sus
         movimientos se ven en <Link to="/caja">Caja · Turno actual</Link>, y los ingresos por periodo en{' '}
@@ -47,9 +47,9 @@ export const HistorialTurnosPage: React.FC = () => (
       </p>
     </div>
 
-    <MensajeFijo tono="info" titulo="Pendiente de backend">
-      Falta el endpoint para listar turnos (por fechas, persona y descuadre). Cuando exista, esta pantalla mostrará cada
-      turno con su base, el efectivo esperado, el conteo, la diferencia y los movimientos.
+    <MensajeFijo tono="info" titulo="Disponible pronto">
+      Aquí vas a poder ver cada turno cerrado con su base, el efectivo esperado, el conteo, la diferencia y los
+      movimientos, y filtrarlos por fecha, persona y descuadre.
     </MensajeFijo>
   </div>
 );

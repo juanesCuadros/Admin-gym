@@ -10,6 +10,8 @@ import { Button } from '../../components/ui/Button';
 import { Input, Select, SearchInput } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal, ConfirmDialog } from '../../components/ui/Modal';
+import { Drawer } from '../../components/ui/Drawer';
+import { MenuAcciones } from '../../components/ui/MenuAcciones';
 import { Table } from '../../components/ui/Table';
 import { ConfirmarConMotivo } from '../../components/ui/ConfirmarConMotivo';
 import { Cargando, ErrorCarga, MensajeFijo, VacioFiltro, VacioInicial, Conflicto } from '../../components/estados/Estados';
@@ -87,7 +89,7 @@ const ModalCredencial: React.FC<{
         una nueva.
       </MensajeFijo>
       <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Usuario</div>
-      <div style={{ fontWeight: 600, marginBottom: 12 }}>{datos.correo}</div>
+      <div style={{ fontWeight: 500, marginBottom: 12 }}>{datos.correo}</div>
       <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Contraseña temporal</div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <code
@@ -387,7 +389,7 @@ export const StaffPage: React.FC = () => {
               header: 'Nombre',
               render: (s) => (
                 <div>
-                  <div style={{ fontWeight: 600 }}>
+                  <div style={{ fontWeight: 500 }}>
                     {s.nombre}
                     {s.id === user?.id && <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> (tú)</span>}
                   </div>
@@ -407,66 +409,58 @@ export const StaffPage: React.FC = () => {
             },
             { header: 'Último ingreso', render: (s) => (s.ultimo_ingreso ? formatFechaHora(s.ultimo_ingreso) : 'Nunca') },
             {
-              header: 'Acciones',
+              header: '',
               align: 'right',
+              width: '140px',
               render: (s) =>
                 esEditable(s) ? (
-                  <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  <div className="acciones-fila">
                     {puedeEditar && (
-                      <Button variant="ghost" size="sm" leftIcon={<Pencil size={14} />} onClick={() => abrirEditar(s)}>
+                      <Button variant="secondary" size="sm" leftIcon={<Pencil size={14} />} onClick={() => abrirEditar(s)}>
                         Editar
                       </Button>
                     )}
-                    {puedeEditar && s.activo && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        leftIcon={<KeyRound size={14} />}
-                        onClick={() => {
-                          setErrorAccion(null);
-                          setARegenerar(s);
-                        }}
-                      >
-                        Nueva credencial
-                      </Button>
-                    )}
-                    {puedeEditar &&
-                      (s.activo ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          leftIcon={<Power size={14} color="var(--danger)" />}
-                          onClick={() => {
+                    <MenuAcciones
+                      etiqueta={`Acciones de ${s.nombre}`}
+                      acciones={[
+                        {
+                          etiqueta: 'Nueva credencial',
+                          icono: <KeyRound size={15} />,
+                          oculto: !(puedeEditar && s.activo),
+                          onClick: () => {
+                            setErrorAccion(null);
+                            setARegenerar(s);
+                          },
+                        },
+                        {
+                          etiqueta: 'Activar',
+                          icono: <Power size={15} />,
+                          oculto: !(puedeEditar && !s.activo),
+                          disabled: procesando,
+                          onClick: () => cambiarEstado(s, true),
+                        },
+                        {
+                          etiqueta: 'Desactivar',
+                          icono: <Power size={15} />,
+                          peligro: true,
+                          oculto: !(puedeEditar && s.activo),
+                          onClick: () => {
                             setErrorAccion(null);
                             setADesactivar(s);
-                          }}
-                        >
-                          Desactivar
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          leftIcon={<Power size={14} color="var(--success)" />}
-                          disabled={procesando}
-                          onClick={() => cambiarEstado(s, true)}
-                        >
-                          Activar
-                        </Button>
-                      ))}
-                    {puedeEliminar && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        leftIcon={<Trash2 size={14} color="var(--danger)" />}
-                        onClick={() => {
-                          setErrorAccion(null);
-                          setAEliminar(s);
-                        }}
-                      >
-                        Eliminar
-                      </Button>
-                    )}
+                          },
+                        },
+                        {
+                          etiqueta: 'Eliminar',
+                          icono: <Trash2 size={15} />,
+                          peligro: true,
+                          oculto: !puedeEliminar,
+                          onClick: () => {
+                            setErrorAccion(null);
+                            setAEliminar(s);
+                          },
+                        },
+                      ]}
+                    />
                   </div>
                 ) : null,
             },
@@ -482,8 +476,8 @@ export const StaffPage: React.FC = () => {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Staff</h1>
-          <p className="page-subtitle">Cuentas del personal del gimnasio: recepcionistas y entrenadores</p>
+          <h1 className="page-title">Equipo</h1>
+          <p className="page-subtitle">Recepcionistas y entrenadores con acceso al sistema</p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {isJefe && (
@@ -545,10 +539,10 @@ export const StaffPage: React.FC = () => {
       {contenido}
 
       {/* Crear / editar */}
-      <Modal
+      <Drawer
         isOpen={formAbierto !== null}
         onClose={() => !guardando && setFormAbierto(null)}
-        title={enEdicion ? `Editar a ${enEdicion.nombre}` : 'Crear miembro del personal'}
+        title={enEdicion ? `Editar a ${enEdicion.nombre}` : 'Nuevo miembro del equipo'}
         footer={
           <>
             <Button variant="outline" onClick={() => setFormAbierto(null)} disabled={guardando}>
@@ -612,7 +606,7 @@ export const StaffPage: React.FC = () => {
             </p>
           )}
         </form>
-      </Modal>
+      </Drawer>
 
       <ModalCredencial datos={credencial} onClose={() => setCredencial(null)} />
 
@@ -692,7 +686,7 @@ export const StaffPage: React.FC = () => {
         ) : (
           <>
             <Select
-              label="Nuevo Jefe"
+              label="Nuevo jefe"
               value={transferencia.nuevo}
               onChange={(e) => setTransferencia({ ...transferencia, nuevo: e.target.value })}
               options={[

@@ -58,6 +58,21 @@ export function formatFechaHora(valor: string | Date | null | undefined): string
   return d ? `${formatoFecha.format(d)} ${formatoHora.format(d)}` : '—';
 }
 
+const formatoDiaSemana = new Intl.DateTimeFormat('es-CO', {
+  timeZone: ZONA_HORARIA,
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+});
+
+/** `mié, 21 oct` en America/Bogota (para agendas y listas de clases). */
+export function formatDiaSemana(valor: string | Date | null | undefined): string {
+  const d = aDate(valor);
+  if (!d) return '—';
+  const t = formatoDiaSemana.format(d).replace(/\./g, '');
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 /** `dd/mm` en America/Bogota (para textos cortos como "Congelado hasta dd/mm"). */
 export function formatDiaMes(valor: string | Date | null | undefined): string {
   return formatFecha(valor).slice(0, 5);

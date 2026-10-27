@@ -1,8 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Users, ShieldCheck, CreditCard, Calendar, UserPlus, ArrowUpRight, Clock } from 'lucide-react';
+import {
+  Users,
+  ShieldCheck,
+  CreditCard,
+  Calendar,
+  CalendarDays,
+  UserPlus,
+  ArrowUpRight,
+  ArrowRight,
+  Clock,
+} from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useTenantTheme } from '../../contexts/TenantThemeContext';
 import { useCajaTurno } from '../../contexts/CajaTurnoContext';
 import { KpiCard, Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -13,13 +22,33 @@ import { clasesService } from '../../api/clases.service';
 import { deportistasService } from '../../api/deportistas.service';
 import { ResumenIngresosHoyDto } from '../../types/controlIngreso.types';
 import { ClaseResponse } from '../../types/clases.types';
-import { formatCOP, formatHora } from '../../utils/formato';
+import { formatCOP, formatDiaMes, formatHora, ZONA_HORARIA } from '../../utils/formato';
 
-const NOMBRE_ROL: Record<string, string> = {
-  jefe: 'Jefe',
-  recepcionista: 'Recepcionista',
-  entrenador: 'Entrenador',
-};
+/** "martes, 20 de octubre" en America/Bogota. */
+const formatoFechaLarga = new Intl.DateTimeFormat('es-CO', {
+  timeZone: ZONA_HORARIA,
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+});
+
+const formatoHoraNum = new Intl.DateTimeFormat('en-US', { timeZone: ZONA_HORARIA, hour: 'numeric', hour12: false });
+
+const capitalizar = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+function saludo(): string {
+  const h = Number(formatoHoraNum.format(new Date())) % 24;
+  if (h < 12) return 'Buenos días';
+  if (h < 19) return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
+interface AccionRapida {
+  clave: string;
+  titulo: string;
+  ruta: string;
+  icono: React.ReactNode;
+}
 
 /**
  * Inicio. Cada tarjeta pide solo lo que el usuario puede leer; si la API falla o devuelve 0,
@@ -29,7 +58,6 @@ export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, hasPermission } = useAuth();
-  const { tenant } = useTenantTheme();
   const caja = useCajaTurno();
 
   const permisoPerdido = (location.state as { permisoPerdido?: string } | null)?.permisoPerdido;
@@ -68,6 +96,35 @@ export const DashboardPage: React.FC = () => {
     cargar();
   }, [cargar]);
 
+  const primerNombre = user?.nombre?.split(' ')[0] ?? '';
+
+  const acciones: AccionRapida[] = [
+    puedeIngreso && {
+      clave: 'checkin',
+      titulo: 'Check-in',
+      ruta: '/control-ingreso',
+      icono: <ShieldCheck size={18} />,
+    },
+    puedeCaja && {
+      clave: 'caja',
+      titulo: 'Caja',
+      ruta: '/caja',
+      icono: <CreditCard size={18} />,
+    },
+    puedeDeportistas && {
+      clave: 'deportistas',
+      titulo: 'Deportistas',
+      ruta: '/deportistas',
+      icono: <Users size={18} />,
+    },
+    puedeClases && {
+      clave: 'clases',
+      titulo: 'Clases',
+      ruta: '/clases',
+      icono: <Calendar size={18} />,
+    },
+  ].filter(Boolean) as AccionRapida[];
+
   return (
     <div>
       {permisoPerdido && (
@@ -78,10 +135,11 @@ export const DashboardPage: React.FC = () => {
 
       <div className="page-header">
         <div>
-          <h1 className="page-title">Inicio</h1>
-          <p className="page-subtitle">
-            {tenant.nombre} · {user?.nombre} ({NOMBRE_ROL[user?.rol ?? ''] ?? user?.rol})
-          </p>
+          <h1 className="page-title">
+            {saludo()}
+            {primerNombre ? `, ${primerNombre}` : ''}
+          </h1>
+          <p className="page-subtitle">{capitalizar(formatoFechaLarga.format(new Date()))}</p>
         </div>
         {hasPermission('deportistas', 'crear') && (
           <Button variant="primary" leftIcon={<UserPlus size={16} />} onClick={() => navigate('/deportistas')}>
@@ -97,27 +155,30 @@ export const DashboardPage: React.FC = () => {
       )}
 
       {cargando ? (
-        <Cargando filas={4} alto={110} />
+        <div className="kpi-grid">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="skeleton" style={{ height: 118 }} />
+          ))}
+        </div>
       ) : (
         <div className="kpi-grid">
           {puedeDeportistas && (
             <KpiCard
               label="Deportistas registrados"
               value={totalDeportistas ?? '—'}
-              icon={<Users size={20} />}
+              icon={<Users size={18} />}
             />
           )}
           {puedeIngreso && (
             <KpiCard
               label="Ingresos de hoy"
               value={resumenIngresos?.total_ingresos ?? '—'}
-              icon={<ShieldCheck size={20} />}
+              icon={<ShieldCheck size={18} />}
               subtext={
                 resumenIngresos
                   ? `${resumenIngresos.accesos_abiertos} permitidos · ${resumenIngresos.alertas_mora} en gracia`
                   : undefined
               }
-              color="var(--success)"
             />
           )}
           {puedeCaja && (
@@ -132,67 +193,39 @@ export const DashboardPage: React.FC = () => {
                       ? formatCOP(caja.turno.total_esperado_efectivo)
                       : 'Cerrada'
               }
-              icon={<CreditCard size={20} />}
+              icon={<CreditCard size={18} />}
               subtext={caja.turnoAbierto ? 'Efectivo esperado en el turno' : 'No hay turno abierto'}
-              color="var(--secondary)"
             />
           )}
           {puedeClases && (
             <KpiCard
               label="Próximas clases"
               value={clasesHoy.length}
-              icon={<Calendar size={20} />}
-              color="var(--accent)"
+              icon={<Calendar size={18} />}
             />
           )}
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24 }}>
-        <Card title="Acciones rápidas">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {puedeIngreso && (
-              <Button
-                variant="secondary"
-                style={{ justifyContent: 'flex-start', padding: 14 }}
-                leftIcon={<ShieldCheck size={18} color="var(--primary)" />}
-                onClick={() => navigate('/control-ingreso')}
-              >
-                Check-in
-              </Button>
-            )}
-            {puedeCaja && (
-              <Button
-                variant="secondary"
-                style={{ justifyContent: 'flex-start', padding: 14 }}
-                leftIcon={<CreditCard size={18} color="var(--secondary)" />}
-                onClick={() => navigate('/caja')}
-              >
-                Caja
-              </Button>
-            )}
-            {puedeDeportistas && (
-              <Button
-                variant="secondary"
-                style={{ justifyContent: 'flex-start', padding: 14 }}
-                leftIcon={<UserPlus size={18} color="var(--accent)" />}
-                onClick={() => navigate('/deportistas')}
-              >
-                Deportistas
-              </Button>
-            )}
-            {puedeClases && (
-              <Button
-                variant="secondary"
-                style={{ justifyContent: 'flex-start', padding: 14 }}
-                leftIcon={<Calendar size={18} color="var(--info)" />}
-                onClick={() => navigate('/clases')}
-              >
-                Clases
-              </Button>
-            )}
-          </div>
-        </Card>
+      <div className="dash-grid">
+        {acciones.length > 0 && (
+          <Card title="Acciones rápidas">
+            <div className="quick-actions">
+              {acciones.map((a) => (
+                <button
+                  key={a.clave}
+                  type="button"
+                  className="quick-action"
+                  onClick={() => navigate(a.ruta)}
+                >
+                  <span className="quick-action-icon">{a.icono}</span>
+                  <span className="quick-action-title">{a.titulo}</span>
+                  <ArrowRight size={16} className="quick-action-arrow" />
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {puedeClases && (
           <Card
@@ -204,37 +237,23 @@ export const DashboardPage: React.FC = () => {
             }
           >
             {cargando ? (
-              <Cargando filas={3} alto={52} />
+              <Cargando filas={3} alto={56} />
             ) : clasesHoy.length === 0 ? (
-              <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0' }}>
-                No hay clases programadas.
+              <div className="empty-state">
+                <div className="empty-state-icon">
+                  <CalendarDays size={24} />
+                </div>
+                <div className="empty-state-title">No hay clases programadas</div>
+                <p className="empty-state-text">Las clases que agendes aparecerán aquí.</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="class-list">
                 {clasesHoy.slice(0, 4).map((clase) => (
-                  <div
-                    key={clase.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-sm)',
-                      backgroundColor: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-color)',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{clase.nombre}</div>
-                      <div
-                        style={{
-                          fontSize: '0.8rem',
-                          color: 'var(--text-muted)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}
-                      >
+                  <div key={clase.id} className="class-item">
+                    <div className="class-time">{formatDiaMes(clase.fecha_hora)}</div>
+                    <div className="class-info">
+                      <div className="class-name">{clase.nombre}</div>
+                      <div className="class-meta">
                         <Clock size={12} />
                         {formatHora(clase.fecha_hora)}
                         {(clase.entrenador_nombre || clase.profesor_externo) &&

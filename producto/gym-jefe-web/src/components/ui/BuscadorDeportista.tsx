@@ -76,7 +76,7 @@ export const BuscadorDeportista: React.FC<BuscadorDeportistaProps> = ({
           }}
         >
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600 }}>{seleccionado.nombre}</div>
+            <div style={{ fontWeight: 500 }}>{seleccionado.nombre}</div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{seleccionado.documento}</div>
           </div>
           {!disabled && (
@@ -180,7 +180,7 @@ export const BuscadorDeportista: React.FC<BuscadorDeportistaProps> = ({
                   color: 'var(--text-primary)',
                 }}
               >
-                <div style={{ fontWeight: 600 }}>{d.nombre}</div>
+                <div style={{ fontWeight: 500 }}>{d.nombre}</div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   {d.documento}
                   {!d.activo && ' · Desactivado'}

@@ -1,13 +1,16 @@
 import React from 'react';
-import { Menu, Sun, Moon, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { LogOut, Menu, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenantTheme } from '../../contexts/TenantThemeContext';
 import { useCajaTurno } from '../../contexts/CajaTurnoContext';
 import { Avatar } from '../ui/Avatar';
-import { Badge } from '../ui/Badge';
+import { BuscadorModulos } from './BuscadorModulos';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
+  /** Recepcionista sin turno: no se ofrece el buscador (solo puede estar en /caja). */
+  navegacionBloqueada?: boolean;
 }
 
 const NOMBRE_ROL: Record<string, string> = {
@@ -16,105 +19,95 @@ const NOMBRE_ROL: Record<string, string> = {
   entrenador: 'Entrenador',
 };
 
-const botonIcono: React.CSSProperties = {
-  background: 'none',
-  border: 'none',
-  color: 'var(--text-secondary)',
-  cursor: 'pointer',
-  padding: 6,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-};
-
 /** Header (§B3): nombre y logo · estado de caja · usuario con rol · salir. Sin selector de gimnasio. */
-export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
+export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, navegacionBloqueada = false }) => {
   const { user, logout, hasPermission } = useAuth();
   const { tenant, themeMode, toggleThemeMode } = useTenantTheme();
   const { turno, cargando, error, turnoAbierto } = useCajaTurno();
+  const navigate = useNavigate();
 
   const puedeVerCaja = hasPermission('caja', 'leer');
 
-  let badgeCaja: React.ReactNode = null;
+  // Estado de caja (§B3): chip clicable a la derecha del header que lleva a /caja.
+  let estadoCaja: React.ReactNode = null;
   if (puedeVerCaja) {
-    if (cargando) badgeCaja = <Badge variant="neutral">Caja: consultando…</Badge>;
-    else if (error) badgeCaja = <Badge variant="neutral">Caja: sin datos</Badge>;
-    else if (turnoAbierto)
-      badgeCaja = (
-        <Badge variant="success" dot>
-          Caja abierta{turno?.staff_nombre ? ` · ${turno.staff_nombre}` : ''}
-        </Badge>
-      );
-    else
-      badgeCaja = (
-        <Badge variant="warning" dot>
-          Caja cerrada
-        </Badge>
-      );
+    let clase = 'neutral';
+    let texto = 'Caja: consultando…';
+    let corto = 'Caja…';
+    let titulo = 'Consultando el estado de la caja';
+    if (!cargando && error) {
+      texto = 'Caja: sin datos';
+      corto = 'Caja';
+      titulo = 'No se pudo consultar la caja';
+    } else if (!cargando && turnoAbierto) {
+      clase = 'ok';
+      texto = 'Caja abierta';
+      corto = 'Abierta';
+      titulo = turno?.staff_nombre ? `Turno abierto por ${turno.staff_nombre}` : 'Turno abierto';
+    } else if (!cargando) {
+      clase = 'warn';
+      texto = 'Caja cerrada';
+      corto = 'Cerrada';
+      titulo = 'No hay turno abierto';
+    }
+    estadoCaja = (
+      <button
+        type="button"
+        className={`status-pill status-pill-btn ${clase}`}
+        onClick={() => navigate('/caja')}
+        title={titulo}
+        aria-label={`${texto}. Ir a caja`}
+      >
+        <span className="status-pill-largo">{texto}</span>
+        <span className="status-pill-corto">{corto}</span>
+      </button>
+    );
   }
 
   return (
     <header className="app-header">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
-        <button onClick={onToggleSidebar} style={{ ...botonIcono, color: 'var(--text-primary)' }} aria-label="Menú">
-          <Menu size={22} />
+      <div className="header-left">
+        <button type="button" onClick={onToggleSidebar} className="icon-btn header-menu-btn" aria-label="Abrir menú">
+          <Menu size={18} />
         </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          {tenant.logo_url && (
-            <img
-              src={tenant.logo_url}
-              alt=""
-              style={{ width: 28, height: 28, borderRadius: 'var(--radius-xs)', objectFit: 'cover' }}
-            />
-          )}
-          <span
-            style={{
-              fontWeight: 700,
-              fontSize: '0.95rem',
-              color: 'var(--text-primary)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {tenant.nombre}
-          </span>
+
+        <div className="header-gym">
+          {tenant.logo_url && <img src={tenant.logo_url} alt="" className="header-gym-logo" />}
+          <span className="header-gym-name">{tenant.nombre}</span>
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        {badgeCaja}
+      <div className="header-right">
+        {estadoCaja}
+
+        <BuscadorModulos deshabilitado={navegacionBloqueada} />
 
         <button
+          type="button"
+          className="icon-btn"
           onClick={toggleThemeMode}
           title={themeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-          style={{
-            ...botonIcono,
-            background: 'var(--bg-surface-elevated)',
-            border: '1px solid var(--border-color)',
-            borderRadius: 'var(--radius-sm)',
-            width: 36,
-            height: 36,
-          }}
+          aria-label={themeMode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
         >
-          {themeMode === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          {themeMode === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
         </button>
 
         {user && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Avatar name={user.nombre} />
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-                {user.nombre}
-              </span>
-              <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>
-                {NOMBRE_ROL[user.rol] ?? user.rol}
-              </span>
+          <>
+            <span className="header-divider" aria-hidden="true" />
+            <div className="user-chip">
+              <Avatar name={user.nombre} />
+              <div className="user-chip-text">
+                <span className="user-chip-name" title={user.nombre}>
+                  {user.nombre}
+                </span>
+                <span className="user-chip-role">{NOMBRE_ROL[user.rol] ?? user.rol}</span>
+              </div>
             </div>
-            <button onClick={logout} title="Salir" aria-label="Salir" style={{ ...botonIcono, marginLeft: 4 }}>
-              <LogOut size={18} />
+            <button type="button" className="icon-btn ghost" onClick={logout} title="Salir" aria-label="Salir">
+              <LogOut size={17} />
             </button>
-          </div>
+          </>
         )}
       </div>
     </header>

@@ -102,7 +102,7 @@ export const RecuperarPage: React.FC = () => {
             >
               <MailCheck size={26} />
             </div>
-            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Revisa tu correo</h2>
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 500, color: 'var(--text-primary)' }}>Revisa tu correo</h2>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.55, marginTop: 8 }}>
               Si <strong>{correo.trim()}</strong> está registrado en {tenant.nombre}, recibirás un enlace para crear una
               nueva contraseña. Solo sirve el último enlace enviado y vence en 1 hora.

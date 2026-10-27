@@ -30,7 +30,7 @@ export const EncabezadoGimnasio: React.FC<{ subtitulo?: string }> = ({ subtitulo
           <Dumbbell size={28} />
         </div>
       )}
-      <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+      <h1 style={{ fontSize: '1.4rem', fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
         {tenant.nombre}
       </h1>
       {subtitulo && (

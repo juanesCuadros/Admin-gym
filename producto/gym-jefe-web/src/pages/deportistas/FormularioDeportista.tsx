@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { deportistasService } from '../../api/deportistas.service';
 import { ApiError, toApiError } from '../../api/client';
-import { Modal, ConfirmDialog } from '../../components/ui/Modal';
+import { ConfirmDialog } from '../../components/ui/Modal';
+import { Drawer } from '../../components/ui/Drawer';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { MensajeFijo, Conflicto } from '../../components/estados/Estados';
+import { Info } from 'lucide-react';
 import { hoyBogota } from '../../utils/fechasBogota';
 import {
   AcudienteDto,
@@ -288,20 +290,36 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
     ...TIPOS_DOCUMENTO.map((t) => ({ value: t, label: `${t} · ${NOMBRE_TIPO_DOCUMENTO[t]}` })),
   ];
 
+  const SEXOS: Array<{ value: Valores['sexo']; label: string }> = [
+    { value: '', label: 'Sin dato' },
+    { value: 'M', label: 'Masculino' },
+    { value: 'F', label: 'Femenino' },
+    { value: 'otro', label: 'Otro' },
+  ];
+
   return (
     <>
-      <Modal
+      <Drawer
         isOpen={isOpen}
         onClose={pedirCerrar}
         title={editando ? 'Editar deportista' : 'Registrar deportista'}
-        maxWidth="640px"
+        subtitle={
+          editando ? (
+            inicial?.nombre
+          ) : (
+            <>
+              Los campos con <span className="req">*</span> son obligatorios
+            </>
+          )
+        }
         footer={
           <>
-            <Button variant="outline" onClick={pedirCerrar} disabled={enviando}>
+            <span className="drawer-footer-hint">Esc para cerrar</span>
+            <Button variant="secondary" onClick={pedirCerrar} disabled={enviando}>
               Cancelar
             </Button>
             <Button variant="primary" onClick={guardar} isLoading={enviando}>
-              {editando ? 'Guardar cambios' : 'Registrar'}
+              {editando ? 'Guardar cambios' : 'Registrar deportista'}
             </Button>
           </>
         }
@@ -313,215 +331,261 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
           }}
           noValidate
         >
-          {conflicto && (
-            <div style={{ marginBottom: 12 }}>
-              <Conflicto onRecargar={onRecargar} />
-            </div>
-          )}
-          {limite && (
-            <MensajeFijo tono="error" titulo="Llegaste al límite de clientes de tu plan" style={{ marginBottom: 12 }}>
-              El plan {limite.plan_nombre} permite {limite.limite} clientes activos y hoy tienes {limite.actuales}. Desactiva
-              clientes que ya no vienen o pide al Jefe cambiar de plan en Mi suscripción.
-            </MensajeFijo>
-          )}
-          {errorGeneral && !limite && (
-            <MensajeFijo tono="error" style={{ marginBottom: 12 }}>
-              {errorGeneral}
-            </MensajeFijo>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Select
-              id="dep-tipo-documento"
-              label="Tipo de documento *"
-              options={opcionesTipo}
-              value={v.tipo_documento}
-              onChange={(e) => cambiar('tipo_documento', e.target.value as TipoDocumento | '')}
-              onBlur={() => tocar('tipo_documento')}
-              error={errorDe('tipo_documento')}
-            />
-            <Input
-              id="dep-documento"
-              label="Documento *"
-              value={v.documento}
-              maxLength={30}
-              onChange={(e) => cambiar('documento', e.target.value)}
-              onBlur={() => tocar('documento')}
-              error={errorDe('documento')}
-            />
-          </div>
-
-          <Input
-            id="dep-nombre"
-            label="Nombre completo *"
-            value={v.nombre}
-            maxLength={150}
-            onChange={(e) => cambiar('nombre', e.target.value)}
-            onBlur={() => tocar('nombre')}
-            error={errorDe('nombre')}
-          />
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Input
-              id="dep-correo"
-              label="Correo"
-              type="email"
-              value={v.correo}
-              onChange={(e) => cambiar('correo', e.target.value)}
-              onBlur={() => tocar('correo')}
-              error={errorDe('correo')}
-            />
-            <Input
-              id="dep-telefono"
-              label="Teléfono"
-              value={v.telefono}
-              maxLength={25}
-              onChange={(e) => cambiar('telefono', e.target.value)}
-              error={errorDe('telefono')}
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <Select
-              id="dep-sexo"
-              label="Sexo"
-              options={[
-                { value: '', label: 'Sin dato' },
-                { value: 'M', label: 'Masculino' },
-                { value: 'F', label: 'Femenino' },
-                { value: 'otro', label: 'Otro' },
-              ]}
-              value={v.sexo}
-              onChange={(e) => cambiar('sexo', e.target.value as Valores['sexo'])}
-            />
-            <Input
-              id="dep-fecha-nacimiento"
-              label="Fecha de nacimiento"
-              type="date"
-              max={hoyBogota()}
-              value={v.fecha_nacimiento}
-              onChange={(e) => cambiar('fecha_nacimiento', e.target.value)}
-              onBlur={() => tocar('fecha_nacimiento')}
-              error={errorDe('fecha_nacimiento')}
-            />
-            <Input
-              id="dep-altura"
-              label="Estatura (cm)"
-              type="number"
-              min={1}
-              value={v.altura_cm}
-              onChange={(e) => cambiar('altura_cm', e.target.value)}
-              onBlur={() => tocar('altura_cm')}
-              error={errorDe('altura_cm')}
-            />
-          </div>
-
-          {esMenor && (
-            <fieldset
-              style={{
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '12px 14px',
-                margin: '4px 0 12px',
-              }}
-            >
-              <legend style={{ fontWeight: 700, fontSize: '0.9rem', padding: '0 6px' }}>
-                Acudiente (menor de edad: {edad} años)
-              </legend>
-              {erroresServidor.acudiente && (
-                <MensajeFijo tono="error" style={{ marginBottom: 10 }}>
-                  {erroresServidor.acudiente}
+          {(conflicto || limite || errorGeneral) && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {conflicto && <Conflicto onRecargar={onRecargar} />}
+              {limite && (
+                <MensajeFijo tono="error" titulo="Llegaste al límite de clientes de tu plan">
+                  El plan {limite.plan_nombre} permite {limite.limite} clientes activos y hoy tienes {limite.actuales}. Desactiva
+                  clientes que ya no vienen o pide al Jefe cambiar de plan en Mi suscripción.
                 </MensajeFijo>
               )}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <Input
-                  id="acu-nombre"
-                  label="Nombre del acudiente *"
-                  value={v.acudiente.nombre}
-                  maxLength={150}
-                  onChange={(e) => cambiarAcudiente('nombre', e.target.value)}
-                  onBlur={() => tocar('acudiente.nombre')}
-                  error={errorDe('acudiente.nombre')}
-                />
-                <Input
-                  id="acu-parentesco"
-                  label="Parentesco *"
-                  placeholder="Madre, padre, tutor…"
-                  value={v.acudiente.parentesco}
-                  maxLength={50}
-                  onChange={(e) => cambiarAcudiente('parentesco', e.target.value)}
-                  onBlur={() => tocar('acudiente.parentesco')}
-                  error={errorDe('acudiente.parentesco')}
-                />
-                <Select
-                  id="acu-tipo-documento"
-                  label="Tipo de documento *"
-                  options={opcionesTipo}
-                  value={v.acudiente.tipo_documento}
-                  onChange={(e) => cambiarAcudiente('tipo_documento', e.target.value as TipoDocumento | '')}
-                  onBlur={() => tocar('acudiente.tipo_documento')}
-                  error={errorDe('acudiente.tipo_documento')}
-                />
-                <Input
-                  id="acu-documento"
-                  label="Documento del acudiente *"
-                  value={v.acudiente.documento}
-                  maxLength={30}
-                  onChange={(e) => cambiarAcudiente('documento', e.target.value)}
-                  onBlur={() => tocar('acudiente.documento')}
-                  error={errorDe('acudiente.documento')}
-                />
-                <Input
-                  id="acu-telefono"
-                  label="Teléfono del acudiente *"
-                  value={v.acudiente.telefono}
-                  maxLength={25}
-                  onChange={(e) => cambiarAcudiente('telefono', e.target.value)}
-                  onBlur={() => tocar('acudiente.telefono')}
-                  error={errorDe('acudiente.telefono')}
-                />
-              </div>
-              <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: '0.85rem', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={v.acudiente.autoriza}
-                  onChange={(e) => cambiarAcudiente('autoriza', e.target.checked)}
-                  style={{ marginTop: 3 }}
-                />
-                <span>El acudiente autoriza el registro del menor, el tratamiento de sus datos y su participación en las actividades del gimnasio.</span>
-              </label>
-              {errorDe('acudiente.autoriza') && <span className="form-error-msg">{errorDe('acudiente.autoriza')}</span>}
-            </fieldset>
+              {errorGeneral && !limite && <MensajeFijo tono="error">{errorGeneral}</MensajeFijo>}
+            </div>
           )}
 
+          {/* Identificación */}
+          <section className="form-section">
+            <div className="form-section-head">
+              <div className="form-section-title">Identificación</div>
+            </div>
+            <div className="form-grid">
+              <div className="col-3">
+                <Select
+                  id="dep-tipo-documento"
+                  label="Tipo *"
+                  options={opcionesTipo}
+                  value={v.tipo_documento}
+                  onChange={(e) => cambiar('tipo_documento', e.target.value as TipoDocumento | '')}
+                  onBlur={() => tocar('tipo_documento')}
+                  error={errorDe('tipo_documento')}
+                />
+              </div>
+              <div className="col-3">
+                <Input
+                  id="dep-documento"
+                  label="Documento *"
+                  inputMode="numeric"
+                  value={v.documento}
+                  maxLength={30}
+                  autoFocus={!editando}
+                  onChange={(e) => cambiar('documento', e.target.value)}
+                  onBlur={() => tocar('documento')}
+                  error={errorDe('documento')}
+                />
+              </div>
+              <div className="col-6">
+                <Input
+                  id="dep-nombre"
+                  label="Nombre completo *"
+                  placeholder="Nombres y apellidos"
+                  value={v.nombre}
+                  maxLength={150}
+                  onChange={(e) => cambiar('nombre', e.target.value)}
+                  onBlur={() => tocar('nombre')}
+                  error={errorDe('nombre')}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Contacto */}
+          <section className="form-section">
+            <div className="form-section-head">
+              <div className="form-section-title">Contacto</div>
+            </div>
+            <div className="form-grid">
+              <div className="col-3">
+                <Input
+                  id="dep-correo"
+                  label="Correo"
+                  type="email"
+                  placeholder="correo@ejemplo.com"
+                  value={v.correo}
+                  onChange={(e) => cambiar('correo', e.target.value)}
+                  onBlur={() => tocar('correo')}
+                  error={errorDe('correo')}
+                />
+              </div>
+              <div className="col-3">
+                <Input
+                  id="dep-telefono"
+                  label="Teléfono"
+                  inputMode="tel"
+                  value={v.telefono}
+                  maxLength={25}
+                  onChange={(e) => cambiar('telefono', e.target.value)}
+                  error={errorDe('telefono')}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Datos físicos (+ acudiente si es menor) */}
+          <section className="form-section">
+            <div className="form-section-head">
+              <div>
+                <div className="form-section-title">Datos personales</div>
+                <div className="form-section-desc">Si es menor de edad se pedirán los datos del acudiente.</div>
+              </div>
+            </div>
+            <div className="form-grid">
+              <div className="col-6 form-group" role="radiogroup" aria-label="Sexo">
+                <span className="form-label">Sexo</span>
+                <div className="segmented">
+                  {SEXOS.map((o) => (
+                    <button
+                      key={o.value || 'sin'}
+                      type="button"
+                      role="radio"
+                      aria-checked={v.sexo === o.value}
+                      className={v.sexo === o.value ? 'active' : ''}
+                      onClick={() => cambiar('sexo', o.value)}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="col-3">
+                <Input
+                  id="dep-fecha-nacimiento"
+                  label={edad !== null && edad >= 0 ? `Fecha de nacimiento · ${edad} años` : 'Fecha de nacimiento'}
+                  type="date"
+                  max={hoyBogota()}
+                  value={v.fecha_nacimiento}
+                  onChange={(e) => cambiar('fecha_nacimiento', e.target.value)}
+                  onBlur={() => tocar('fecha_nacimiento')}
+                  error={errorDe('fecha_nacimiento')}
+                />
+              </div>
+              <div className="col-3">
+                <Input
+                  id="dep-altura"
+                  label="Estatura (cm)"
+                  type="number"
+                  min={1}
+                  value={v.altura_cm}
+                  onChange={(e) => cambiar('altura_cm', e.target.value)}
+                  onBlur={() => tocar('altura_cm')}
+                  error={errorDe('altura_cm')}
+                />
+              </div>
+            </div>
+
+            {esMenor && (
+              <div className="form-callout">
+                <div className="form-callout-head">
+                  <Info size={16} />
+                  <span>Acudiente (menor de edad: {edad} años)</span>
+                </div>
+                {erroresServidor.acudiente && (
+                  <MensajeFijo tono="error" style={{ marginBottom: 12 }}>
+                    {erroresServidor.acudiente}
+                  </MensajeFijo>
+                )}
+                <div className="form-grid form-grid-movil-2">
+                  <div className="col-4">
+                    <Input
+                      id="acu-nombre"
+                      label="Nombre del acudiente *"
+                      value={v.acudiente.nombre}
+                      maxLength={150}
+                      onChange={(e) => cambiarAcudiente('nombre', e.target.value)}
+                      onBlur={() => tocar('acudiente.nombre')}
+                      error={errorDe('acudiente.nombre')}
+                    />
+                  </div>
+                  <div className="col-2">
+                    <Input
+                      id="acu-parentesco"
+                      label="Parentesco *"
+                      placeholder="Madre, padre…"
+                      value={v.acudiente.parentesco}
+                      maxLength={50}
+                      onChange={(e) => cambiarAcudiente('parentesco', e.target.value)}
+                      onBlur={() => tocar('acudiente.parentesco')}
+                      error={errorDe('acudiente.parentesco')}
+                    />
+                  </div>
+                  <div className="col-2">
+                    <Select
+                      id="acu-tipo-documento"
+                      label="Tipo *"
+                      options={opcionesTipo}
+                      value={v.acudiente.tipo_documento}
+                      onChange={(e) => cambiarAcudiente('tipo_documento', e.target.value as TipoDocumento | '')}
+                      onBlur={() => tocar('acudiente.tipo_documento')}
+                      error={errorDe('acudiente.tipo_documento')}
+                    />
+                  </div>
+                  <div className="col-2">
+                    <Input
+                      id="acu-documento"
+                      label="Documento *"
+                      inputMode="numeric"
+                      value={v.acudiente.documento}
+                      maxLength={30}
+                      onChange={(e) => cambiarAcudiente('documento', e.target.value)}
+                      onBlur={() => tocar('acudiente.documento')}
+                      error={errorDe('acudiente.documento')}
+                    />
+                  </div>
+                  <div className="col-2">
+                    <Input
+                      id="acu-telefono"
+                      label="Teléfono *"
+                      inputMode="tel"
+                      value={v.acudiente.telefono}
+                      maxLength={25}
+                      onChange={(e) => cambiarAcudiente('telefono', e.target.value)}
+                      onBlur={() => tocar('acudiente.telefono')}
+                      error={errorDe('acudiente.telefono')}
+                    />
+                  </div>
+                  <div className="col-6">
+                    <label className={`check-card ${errorDe('acudiente.autoriza') ? 'error' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={v.acudiente.autoriza}
+                        onChange={(e) => cambiarAcudiente('autoriza', e.target.checked)}
+                      />
+                      <span>
+                        El acudiente autoriza el registro del menor, el tratamiento de sus datos y su participación en las
+                        actividades del gimnasio.
+                      </span>
+                    </label>
+                    {errorDe('acudiente.autoriza') && <span className="form-error-msg">{errorDe('acudiente.autoriza')}</span>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Tratamiento de datos: solo al registrar */}
           {!editando && (
-            <div
-              style={{
-                padding: '12px 14px',
-                borderRadius: 'var(--radius-sm)',
-                backgroundColor: 'var(--bg-surface-elevated)',
-                border: '1px solid var(--border-color)',
-                marginTop: 4,
-              }}
-            >
-              <label style={{ display: 'flex', gap: 12, alignItems: 'flex-start', cursor: 'pointer', fontSize: '0.825rem', color: 'var(--text-secondary)' }}>
+            <section className="form-section">
+              <div className="form-section-head">
+                <div className="form-section-title">
+                  Tratamiento de datos <span className="req">*</span>
+                </div>
+              </div>
+              <label className={`check-card ${errorDe('consentimiento_1581') ? 'error' : ''}`}>
                 <input
                   type="checkbox"
                   checked={v.consentimiento_1581}
                   onChange={(e) => cambiar('consentimiento_1581', e.target.checked)}
-                  style={{ marginTop: 3 }}
                 />
                 <span>
-                  <strong>Tratamiento de datos personales (Ley 1581 de 2012), versión {VERSION_CONSENTIMIENTO}:</strong> autorizo de
-                  manera previa, expresa e informada el tratamiento de mis datos personales para el control de acceso y la
-                  gestión del gimnasio.
+                  <strong>Ley 1581 de 2012, versión {VERSION_CONSENTIMIENTO}.</strong> Autorizo de manera previa, expresa e
+                  informada el tratamiento de mis datos personales para el control de acceso y la gestión del gimnasio.
                 </span>
               </label>
               {errorDe('consentimiento_1581') && <span className="form-error-msg">{errorDe('consentimiento_1581')}</span>}
-            </div>
+            </section>
           )}
         </form>
-      </Modal>
+      </Drawer>
 
       <ConfirmDialog
         isOpen={confirmarSalida}

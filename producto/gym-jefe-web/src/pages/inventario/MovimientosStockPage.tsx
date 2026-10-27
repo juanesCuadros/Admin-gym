@@ -78,7 +78,7 @@ export const MovimientosStockPage: React.FC = () => {
           }}
           columns={[
             { header: 'Fecha', render: (m) => formatFechaHora(m.created_at) },
-            { header: 'Producto', render: (m) => <span style={{ fontWeight: 600 }}>{m.producto_nombre || '—'}</span> },
+            { header: 'Producto', render: (m) => <span style={{ fontWeight: 500 }}>{m.producto_nombre || '—'}</span> },
             {
               header: 'Tipo',
               render: (m) => (
@@ -107,7 +107,7 @@ export const MovimientosStockPage: React.FC = () => {
         <div>
           <h1 className="page-title">Movimientos de stock</h1>
           <p className="page-subtitle">
-            Kardex del gimnasio: entradas, ajustes, ventas y devoluciones. Para un solo producto, ve a{' '}
+            Entradas, ajustes, ventas y devoluciones. Para un solo producto, ve a{' '}
             <Link to="/inventario">Productos</Link>.
           </p>
         </div>

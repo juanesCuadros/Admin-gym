@@ -32,7 +32,7 @@ export function Table<T>({
   pagination,
 }: TableProps<T>) {
   return (
-    <div className="table-wrapper">
+    <div className="table-wrapper table-cards">
       <div className="table-responsive">
         <table className="table-base">
           <thead>
@@ -65,7 +65,7 @@ export function Table<T>({
                 <td colSpan={columns.length} style={{ textAlign: 'center', padding: '48px 0' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                     <Inbox size={32} color="var(--text-muted)" />
-                    <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{emptyMessage}</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{emptyMessage}</span>
                   </div>
                 </td>
               </tr>
@@ -83,7 +83,7 @@ export function Table<T>({
                     }
 
                     return (
-                      <td key={colIdx} style={{ textAlign: col.align || 'left' }}>
+                      <td key={colIdx} data-label={col.header} style={{ textAlign: col.align || 'left' }}>
                         {content}
                       </td>
                     );
@@ -166,7 +166,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       <div style={{ color: 'var(--text-muted)', marginBottom: 12 }}>
         {icon || <Inbox size={42} />}
       </div>
-      <h4 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+      <h4 style={{ fontSize: '1.1rem', fontWeight: 500, color: 'var(--text-primary)', marginBottom: 6 }}>
         {title}
       </h4>
       <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: 420, marginBottom: 20 }}>

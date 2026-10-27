@@ -19,6 +19,7 @@ import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
+import { Drawer } from '../../components/ui/Drawer';
 import { Table } from '../../components/ui/Table';
 import {
   EjercicioResponse,
@@ -113,7 +114,7 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
     setIsProcessing(true);
     try {
       await entrenamientoService.crearEjercicio(nuevoEjercicio);
-      showToast('success', 'Ejercicio Creado', 'Añadido al catálogo personalizado de tu sede');
+      showToast('success', 'Ejercicio creado', 'Añadido al catálogo personalizado de tu sede');
       setShowCrearEjercicioModal(false);
       setNuevoEjercicio({
         nombre_es: '',
@@ -161,7 +162,7 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
         deportista_id: asignarForm.deportista_id,
         plantilla_id: asignarForm.plantilla_id,
       });
-      showToast('success', 'Rutina Asignada', 'Snapshot inmutable generado para el deportista');
+      showToast('success', 'Rutina asignada', 'Snapshot inmutable generado para el deportista');
       setShowAsignarModal(false);
     } catch (err) {
       showToast('error', 'Error al asignar rutina', parseApiError(err));
@@ -174,9 +175,9 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Entrenamiento y Catálogo de Ejercicios</h1>
+          <h1 className="page-title">Entrenamiento</h1>
           <p className="page-subtitle">
-            Catálogo híbrido global y de sede, plantillas de rutinas y snapshots inmutables
+            Ejercicios y plantillas de rutina
           </p>
         </div>
 
@@ -186,7 +187,7 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
             leftIcon={<Plus size={16} />}
             onClick={() => setShowCrearEjercicioModal(true)}
           >
-            Nuevo Ejercicio
+            Nuevo ejercicio
           </Button>
           <Button
             variant="primary"
@@ -204,7 +205,7 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
               setShowCrearPlantillaModal(true);
             }}
           >
-            Nueva Plantilla
+            Nueva plantilla
           </Button>
         </div>
       </div>
@@ -230,8 +231,8 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
           {/* Muscle group filter toolbar */}
           <Card style={{ marginBottom: 20 }}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                Grupo Muscular:
+              <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                Grupo muscular:
               </span>
               {['', 'Pecho', 'Espalda', 'Piernas', 'Hombros', 'Brazos', 'Core'].map((grp) => (
                 <button
@@ -266,19 +267,19 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                     <Badge variant={ej.propio ? 'primary' : 'neutral'}>
-                      {ej.propio ? 'Personalizado' : 'Plataforma Global'}
+                      {ej.propio ? 'Personalizado' : 'GymOS'}
                     </Badge>
                     <span style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>
                       {ej.equipo || 'Libre'}
                     </span>
                   </div>
 
-                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 6 }}>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 500, color: 'var(--text-primary)', marginBottom: 6 }}>
                     {ej.nombre_es}
                   </h3>
 
-                  <div style={{ fontSize: '0.825rem', color: 'var(--primary)', fontWeight: 600, marginBottom: 8 }}>
-                    {ej.grupo_muscular || 'Cuerpo Completo'}
+                  <div style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
+                    {ej.grupo_muscular || 'Cuerpo completo'}
                   </div>
 
                   {ej.instrucciones && (
@@ -307,7 +308,7 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
                   </span>
                 </div>
 
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 6 }}>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 500, color: 'var(--text-primary)', marginBottom: 6 }}>
                   {p.nombre}
                 </h3>
 
@@ -326,7 +327,7 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
                   leftIcon={<FileText size={14} />}
                   onClick={() => handleVerPlantilla(p.id)}
                 >
-                  Ver Ejercicios
+                  Ver ejercicios
                 </Button>
                 <Button
                   variant="primary"
@@ -344,25 +345,25 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
       )}
 
       {/* Modal: Crear Ejercicio Propio */}
-      <Modal
+      <Drawer
         isOpen={showCrearEjercicioModal}
         onClose={() => setShowCrearEjercicioModal(false)}
-        title="Nuevo Ejercicio de la Sede"
+        title="Nuevo ejercicio"
         footer={
           <>
             <Button variant="outline" onClick={() => setShowCrearEjercicioModal(false)}>
               Cancelar
             </Button>
             <Button variant="primary" onClick={handleCrearEjercicio} isLoading={isProcessing}>
-              Guardar Ejercicio
+              Guardar ejercicio
             </Button>
           </>
         }
       >
         <form onSubmit={handleCrearEjercicio}>
           <Input
-            label="Nombre del Ejercicio (Español) *"
-            placeholder="Ej. Press Militar con Barra"
+            label="Nombre del ejercicio *"
+            placeholder="Ej. Press militar con barra"
             value={nuevoEjercicio.nombre_es}
             onChange={(e) => setNuevoEjercicio({ ...nuevoEjercicio, nombre_es: e.target.value })}
             required
@@ -370,7 +371,7 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Select
-              label="Grupo Muscular"
+              label="Grupo muscular"
               options={[
                 { value: 'Pecho', label: 'Pecho' },
                 { value: 'Espalda', label: 'Espalda' },
@@ -383,7 +384,7 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
               onChange={(e) => setNuevoEjercicio({ ...nuevoEjercicio, grupo_muscular: e.target.value })}
             />
             <Input
-              label="Equipo Requerido"
+              label="Equipo"
               placeholder="Ej. Mancuernas, Polea, Barra..."
               value={nuevoEjercicio.equipo || ''}
               onChange={(e) => setNuevoEjercicio({ ...nuevoEjercicio, equipo: e.target.value })}
@@ -391,20 +392,20 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
           </div>
 
           <Input
-            label="Instrucciones Técnicas"
+            label="Instrucciones"
             placeholder="Paso a paso de la postura y ejecución correcta..."
             value={nuevoEjercicio.instrucciones || ''}
             onChange={(e) => setNuevoEjercicio({ ...nuevoEjercicio, instrucciones: e.target.value })}
           />
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Modal: Ver Ejercicios de la Plantilla */}
-      <Modal
+      <Drawer
         isOpen={!!selectedPlantilla}
         onClose={() => setSelectedPlantilla(null)}
         title={selectedPlantilla ? `Plantilla: ${selectedPlantilla.nombre}` : ''}
-        maxWidth="680px"
+        size="lg"
       >
         {selectedPlantilla && (
           <div>
@@ -426,7 +427,7 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
                   }}
                 >
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.925rem' }}>
+                    <div style={{ fontWeight: 500, fontSize: '0.925rem' }}>
                       {idx + 1}. {item.ejercicio_nombre}
                     </div>
                     <div style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>
@@ -450,30 +451,30 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
             </div>
           </div>
         )}
-      </Modal>
+      </Drawer>
 
       {/* Modal: Asignar Rutina a Deportista */}
       <Modal
         isOpen={showAsignarModal}
         onClose={() => setShowAsignarModal(false)}
-        title="Asignar Rutina a Deportista"
+        title="Asignar rutina"
         footer={
           <>
             <Button variant="outline" onClick={() => setShowAsignarModal(false)}>
               Cancelar
             </Button>
             <Button variant="primary" onClick={handleAsignarSubmit} isLoading={isProcessing}>
-              Generar Rutina Asignada
+              Asignar rutina
             </Button>
           </>
         }
       >
         <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 14 }}>
-          Esta acción crea una copia inmutable (snapshot) de los ejercicios en la ficha del deportista.
+          Se guarda una copia de la plantilla en la ficha del deportista. Si luego editas la plantilla, esta rutina no cambia.
         </p>
 
         <Select
-          label="Seleccionar Deportista *"
+          label="Deportista *"
           options={deportistasList.map((d) => ({
             value: d.id,
             label: `${d.nombre} (${d.documento})`,

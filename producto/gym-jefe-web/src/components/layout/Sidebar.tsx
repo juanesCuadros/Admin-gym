@@ -1,16 +1,9 @@
 import React, { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, Dumbbell } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
+import { ChevronDown, Dumbbell, X } from 'lucide-react';
 import { useTenantTheme } from '../../contexts/TenantThemeContext';
-import {
-  NAVEGACION,
-  ModuloNav,
-  SubmoduloNav,
-  moduloDeRuta,
-  moduloActivoEnDespliegue,
-  submodulosActivos,
-} from '../../navegacion';
+import { ModuloNav, SubmoduloNav, moduloDeRuta } from '../../navegacion';
+import { useNavegacionVisible } from '../../hooks/useNavegacionVisible';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -21,135 +14,95 @@ interface SidebarProps {
 
 /**
  * Sidebar (§B2): dos grupos, un módulo por permiso de lectura, acordeón solo en el módulo activo.
+ * Los permisos se calculan en `useNavegacionVisible` (compartido con el buscador del Header).
  */
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, bloqueada = false }) => {
-  const { hasPermission, isJefe } = useAuth();
   const { tenant } = useTenantTheme();
   const location = useLocation();
   const navigate = useNavigate();
+  const grupos = useNavegacionVisible();
 
   const moduloActivo = moduloDeRuta(location.pathname);
   // El acordeón solo se despliega en el módulo activo; el usuario puede plegarlo a mano.
-  // Al cambiar de módulo, el plegado anterior deja de aplicar porque ya no coincide la ruta.
   const [plegado, setPlegado] = useState<string | null>(null);
-
-  // Submódulos visibles: activos en el despliegue (`VITE_MODULOS_ACTIVOS`) y, si son del Jefe, solo para él.
-  const subsVisibles = (m: ModuloNav): SubmoduloNav[] =>
-    submodulosActivos(m).filter((s) => !s.soloJefe || isJefe);
-
-  const puedeVer = (m: ModuloNav): boolean => {
-    if (!moduloActivoEnDespliegue(m)) return false;
-    if (m.submodulos && subsVisibles(m).length === 0) return false;
-    if (m.soloJefe) return isJefe;
-    if (m.submodulo === null) return true;
-    return hasPermission(m.submodulo, 'leer');
-  };
 
   const cerrarEnMovil = () => {
     if (window.innerWidth <= 1024) onClose();
   };
 
-  const irAlModulo = (m: ModuloNav) => {
+  const irAlModulo = (m: ModuloNav, subs: SubmoduloNav[]) => {
     const yaActivo = moduloActivo?.ruta === m.ruta;
     if (m.submodulos && yaActivo) {
       setPlegado((prev) => (prev === m.ruta ? null : m.ruta));
       return;
     }
     // Si el primer submódulo está apagado en este despliegue, se entra por el primero visible.
-    navigate(m.submodulos ? subsVisibles(m)[0]?.ruta ?? m.ruta : m.ruta);
+    navigate(m.submodulos ? subs[0]?.ruta ?? m.ruta : m.ruta);
     cerrarEnMovil();
   };
 
   return (
     <>
-      {isOpen && <div className="sidebar-overlay" onClick={onClose} />}
-      <aside className={`app-sidebar ${isOpen ? 'open' : ''}`}>
+      {isOpen && <div className="sidebar-overlay" onClick={onClose} aria-hidden="true" />}
+      <aside className={`app-sidebar ${isOpen ? 'open' : ''}`} aria-label="Navegación principal">
         {/* Identidad del gimnasio */}
-        <div
-          style={{
-            height: 68,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '0 20px',
-            borderBottom: '1px solid var(--border-color)',
-          }}
-        >
+        <div className="sidebar-brand">
           {tenant.logo_url ? (
-            <img
-              src={tenant.logo_url}
-              alt=""
-              style={{ width: 38, height: 38, borderRadius: 'var(--radius-sm)', objectFit: 'cover', flexShrink: 0 }}
-            />
+            <img src={tenant.logo_url} alt="" className="sidebar-brand-logo" />
           ) : (
-            <div
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: 'var(--radius-sm)',
-                background: 'var(--primary)',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <Dumbbell size={22} />
+            <div className="sidebar-brand-logo">
+              <Dumbbell size={19} />
             </div>
           )}
-          <div style={{ overflow: 'hidden' }}>
-            <div
-              style={{
-                fontSize: '1rem',
-                fontWeight: 800,
-                color: 'var(--text-primary)',
-                letterSpacing: '-0.02em',
-                whiteSpace: 'nowrap',
-                textOverflow: 'ellipsis',
-                overflow: 'hidden',
-              }}
-              title={tenant.nombre}
-            >
-              {tenant.nombre}
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tenant.subdominio}</div>
+          <div className="sidebar-brand-text">
+            <span className="sidebar-brand-name" title={tenant.nombre}>
+              {tenant.nombre || 'GymOS'}
+            </span>
+            <span className="sidebar-brand-sub">{tenant.subdominio || 'Operations'}</span>
           </div>
+          <button type="button" className="icon-btn ghost sidebar-close" onClick={onClose} aria-label="Cerrar menú">
+            <X size={18} />
+          </button>
         </div>
 
         {/* Navegación */}
-        <nav style={{ flex: 1, padding: '6px 12px 16px', overflowY: 'auto' }}>
+        <nav className="sidebar-nav">
           {bloqueada && (
-            <p style={{ padding: '14px 12px', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              Abre el turno de caja para habilitar el resto del sistema.
-            </p>
+            <p className="sidebar-bloqueada">Abre el turno de caja para habilitar el resto del sistema.</p>
           )}
-          {!bloqueada && NAVEGACION.map((grupo) => {
-            const visibles = grupo.modulos.filter(puedeVer);
-            if (visibles.length === 0) return null;
-            return (
-              <div key={grupo.etiqueta}>
+          {!bloqueada &&
+            grupos.map(({ grupo, modulos }) => (
+              <div key={grupo.etiqueta} className="nav-seccion">
                 <div className="nav-grupo">{grupo.etiqueta}</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {visibles.map((m) => {
+                <div className="nav-lista">
+                  {modulos.map(({ modulo: m, submodulos: subs }) => {
                     const Icono = m.icono;
                     const activo = moduloActivo?.ruta === m.ruta;
                     const desplegado = !!m.submodulos && activo && plegado !== m.ruta;
+                    const clases = [
+                      'nav-modulo',
+                      activo ? 'activo' : '',
+                      desplegado ? 'abierto' : '',
+                      m.submodulos ? 'con-submodulos' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ');
                     return (
                       <div key={m.ruta}>
                         <button
                           type="button"
-                          className={`nav-modulo ${activo ? 'activo' : ''} ${desplegado ? 'abierto' : ''}`}
-                          onClick={() => irAlModulo(m)}
+                          className={clases}
+                          onClick={() => irAlModulo(m, subs)}
                           aria-expanded={m.submodulos ? desplegado : undefined}
+                          aria-current={activo && !m.submodulos ? 'page' : undefined}
                         >
                           <Icono size={18} />
                           <span>{m.etiqueta}</span>
-                          {m.submodulos && <ChevronDown size={16} className="nav-chevron" />}
+                          {m.submodulos && <ChevronDown size={15} className="nav-chevron" />}
                         </button>
                         {desplegado && m.submodulos && (
                           <div className="nav-submodulos">
-                            {subsVisibles(m).map((s) => (
+                            {subs.map((s) => (
                               <NavLink
                                 key={s.ruta}
                                 to={s.ruta}
@@ -167,9 +120,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, bloqueada = f
                   })}
                 </div>
               </div>
-            );
-          })}
+            ))}
         </nav>
+
       </aside>
     </>
   );

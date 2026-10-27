@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { UserPlus, Eye, Scale, Edit2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { UserPlus, Eye, Scale, Edit2, Plus } from 'lucide-react';
 import { deportistasService } from '../../api/deportistas.service';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { parseApiError } from '../../api/client';
 import { Button } from '../../components/ui/Button';
 import { Input, SearchInput } from '../../components/ui/Input';
-import { Modal } from '../../components/ui/Modal';
+import { Drawer } from '../../components/ui/Drawer';
+import { Avatar } from '../../components/ui/Avatar';
 import { Table } from '../../components/ui/Table';
 import { Cargando, ErrorCarga, MensajeFijo, VacioFiltro, VacioInicial } from '../../components/estados/Estados';
 import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
@@ -51,7 +52,15 @@ const ETIQUETAS_MEDICION: Record<keyof typeof MEDICION_VACIA, string> = {
   pecho: 'Pecho (cm)',
 };
 
-const filaDato: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '4px 0', fontSize: '0.875rem' };
+/** Fila etiqueta / valor de la ficha. */
+const Dato: React.FC<{ etiqueta: string; children: React.ReactNode }> = ({ etiqueta, children }) => (
+  <div className="dato-fila">
+    <span>{etiqueta}</span>
+    <span>{children}</span>
+  </div>
+);
+
+const numero = (n: number | null | undefined, unidad: string) => (n === null || n === undefined ? '—' : `${n} ${unidad}`);
 
 export const DeportistasPage: React.FC = () => {
   const { showToast } = useToast();
@@ -77,12 +86,23 @@ export const DeportistasPage: React.FC = () => {
   const [errorFicha, setErrorFicha] = useState<unknown>(null);
 
   // Medición
-  const [showMedicionModal, setShowMedicionModal] = useState(false);
+  const [medicionAbierta, setMedicionAbierta] = useState(false);
+  const medicionRef = useRef<HTMLDivElement>(null);
   const [medicion, setMedicion] = useState(MEDICION_VACIA);
   const [errorMedicion, setErrorMedicion] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const q = searchQuery.trim();
+
+  // Al abrir el formulario de medición dentro de la ficha, se lleva a la vista y se enfoca el primer campo.
+  useEffect(() => {
+    if (!medicionAbierta) return;
+    const t = window.setTimeout(() => {
+      medicionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      medicionRef.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [medicionAbierta]);
 
   const loadDeportistas = useCallback(async () => {
     setIsLoading(true);
@@ -124,6 +144,7 @@ export const DeportistasPage: React.FC = () => {
 
   const handleOpenFicha = (id: string) => {
     setFicha(null);
+    setMedicionAbierta(false);
     setSelectedDeportistaId(id);
     cargarFicha(id);
   };
@@ -174,7 +195,7 @@ export const DeportistasPage: React.FC = () => {
     try {
       await deportistasService.registrarMedicion(selectedDeportistaId, data);
       showToast('success', 'Medición guardada', 'Quedó en la ficha del deportista.');
-      setShowMedicionModal(false);
+      setMedicionAbierta(false);
       setMedicion(MEDICION_VACIA);
       cargarFicha(selectedDeportistaId);
     } catch (err) {
@@ -189,12 +210,24 @@ export const DeportistasPage: React.FC = () => {
 
   const dep = ficha?.deportista;
 
+  const abrirMedicion = () => {
+    setMedicion(MEDICION_VACIA);
+    setErrorMedicion(null);
+    setMedicionAbierta(true);
+  };
+
+  const cerrarFicha = () => {
+    if (isProcessing) return;
+    setSelectedDeportistaId(null);
+    setMedicionAbierta(false);
+  };
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Deportistas</h1>
-          <p className="page-subtitle">Registro, ficha 360°, consentimiento de datos y mediciones</p>
+          <p className="page-subtitle">Registro, ficha y mediciones</p>
         </div>
         {puedeCrear && (
           <Button variant="primary" leftIcon={<UserPlus size={16} />} onClick={abrirCrear}>
@@ -227,18 +260,18 @@ export const DeportistasPage: React.FC = () => {
         <Table<DeportistaResumenResponse>
           columns={[
             {
-              header: 'Documento',
-              accessor: (d) => formatDocumento(d.tipo_documento, d.documento),
-              width: '150px',
-            },
-            {
               header: 'Nombre',
               render: (d) => (
                 <div>
-                  <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{d.nombre}</div>
-                  {d.correo && <div style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>{d.correo}</div>}
+                  <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{d.nombre}</div>
+                  {d.correo && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{d.correo}</div>}
                 </div>
               ),
+            },
+            {
+              header: 'Documento',
+              accessor: (d) => formatDocumento(d.tipo_documento, d.documento),
+              width: '150px',
             },
             { header: 'Teléfono', accessor: (d) => d.telefono || '—', width: '130px' },
             { header: 'Plan', accessor: (d) => d.plan_nombre || 'Sin plan' },
@@ -289,159 +322,67 @@ export const DeportistasPage: React.FC = () => {
         onRecargar={recargarEdicion}
       />
 
-      {/* Ficha 360° */}
-      <Modal
+      {/* Ficha 360° en panel lateral */}
+      <Drawer
         isOpen={!!selectedDeportistaId}
-        onClose={() => setSelectedDeportistaId(null)}
+        onClose={cerrarFicha}
         title="Ficha del deportista"
-        maxWidth="760px"
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={cerrarFicha}>
+              Cerrar
+            </Button>
+            {puedeEditar && dep && (
+              <Button variant="primary" leftIcon={<Edit2 size={15} />} onClick={() => abrirEditar(dep.id)}>
+                Editar datos
+              </Button>
+            )}
+          </>
+        }
       >
         {errorFicha ? (
-          <ErrorCarga
-            error={errorFicha}
-            onReintentar={() => selectedDeportistaId && cargarFicha(selectedDeportistaId)}
-            textoNoEncontrado="Este deportista no existe o ya no está disponible."
-          />
-        ) : !ficha || !dep ? (
-          <Cargando filas={5} />
-        ) : (
           <div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12,
-                flexWrap: 'wrap',
-                paddingBottom: 16,
-                borderBottom: '1px solid var(--border-color)',
-                marginBottom: 16,
-              }}
-            >
-              <div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 800, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {dep.nombre}
-                  <EstadoDeportistaBadge
-                    estado={dep.estado}
-                    detalle={ficha.membresia_actual ? { dias: ficha.membresia_actual.dias_restantes } : {}}
-                  />
-                </h3>
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{formatDocumento(dep.tipo_documento, dep.documento)}</div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {puedeEditar && (
-                  <Button variant="secondary" size="sm" leftIcon={<Edit2 size={14} />} onClick={() => abrirEditar(dep.id)}>
-                    Editar datos
-                  </Button>
-                )}
-                {puedeCrear && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    leftIcon={<Scale size={14} />}
-                    onClick={() => {
-                      setMedicion(MEDICION_VACIA);
-                      setErrorMedicion(null);
-                      setShowMedicionModal(true);
-                    }}
-                  >
-                    Medición
-                  </Button>
-                )}
+            <ErrorCarga
+              error={errorFicha}
+              onReintentar={() => selectedDeportistaId && cargarFicha(selectedDeportistaId)}
+              textoNoEncontrado="Este deportista no existe o ya no está disponible."
+            />
+          </div>
+        ) : !ficha || !dep ? (
+          <div>
+            <Cargando filas={6} />
+          </div>
+        ) : (
+          <>
+            {/* Encabezado */}
+            <div className="ficha-perfil">
+              <Avatar name={dep.nombre} size="lg" />
+              <div className="ficha-perfil-text">
+                <div className="ficha-nombre">{dep.nombre}</div>
+                <div className="ficha-doc">{formatDocumento(dep.tipo_documento, dep.documento)}</div>
+                <EstadoDeportistaBadge
+                  estado={dep.estado}
+                  detalle={ficha.membresia_actual ? { dias: ficha.membresia_actual.dias_restantes } : {}}
+                />
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginBottom: 20 }}>
-              <div>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 6 }}>Datos</h4>
-                <div style={filaDato}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Tipo de documento</span>
-                  <span>{dep.tipo_documento}</span>
-                </div>
-                <div style={filaDato}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Correo</span>
-                  <span>{dep.correo || '—'}</span>
-                </div>
-                <div style={filaDato}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Teléfono</span>
-                  <span>{dep.telefono || '—'}</span>
-                </div>
-                <div style={filaDato}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Fecha de nacimiento</span>
-                  <span>{formatFechaNegocio(dep.fecha_nacimiento)}</span>
-                </div>
-                <div style={filaDato}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Consentimiento de datos</span>
-                  <span>
-                    {dep.consentimiento_1581 ? `Versión ${dep.consentimiento_version ?? '—'}` : 'No registrado'}
-                  </span>
-                </div>
-                {dep.consentimiento_fecha && (
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'right' }}>
-                    Aceptado el {formatFechaHora(dep.consentimiento_fecha)}
-                    {dep.consentimiento_registrado_por_nombre ? ` · registró ${dep.consentimiento_registrado_por_nombre}` : ''}
-                  </div>
-                )}
+            {/* Membresía */}
+            <section className="form-section">
+              <div className="form-section-head">
+                <div className="form-section-title">Membresía</div>
               </div>
-
-              <div>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 6 }}>Acudiente</h4>
-                {dep.acudiente ? (
-                  <>
-                    <div style={filaDato}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Nombre</span>
-                      <span>{dep.acudiente.nombre}</span>
-                    </div>
-                    <div style={filaDato}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Documento</span>
-                      <span>{formatDocumento(dep.acudiente.tipo_documento, dep.acudiente.documento)}</span>
-                    </div>
-                    <div style={filaDato}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Teléfono</span>
-                      <span>{dep.acudiente.telefono}</span>
-                    </div>
-                    <div style={filaDato}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Parentesco</span>
-                      <span>{dep.acudiente.parentesco}</span>
-                    </div>
-                    <div style={filaDato}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Autorización</span>
-                      <span>{dep.acudiente.autoriza ? 'Autorizó' : 'Sin autorización'}</span>
-                    </div>
-                  </>
-                ) : dep.acudiente_nombre ? (
-                  <div style={filaDato}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Nombre</span>
-                    <span>{dep.acudiente_nombre}</span>
-                  </div>
-                ) : (
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Sin acudiente registrado.</div>
-                )}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 20 }}>
-              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 8 }}>Membresía</h4>
               {ficha.membresia_actual ? (
-                <div
-                  style={{
-                    padding: 14,
-                    borderRadius: 'var(--radius-sm)',
-                    backgroundColor: 'var(--bg-surface-elevated)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: 12,
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 700 }}>{ficha.membresia_actual.plan_nombre}</div>
+                <div className="membresia-card">
+                  <div style={{ minWidth: 0 }}>
+                    <div className="membresia-plan">{ficha.membresia_actual.plan_nombre}</div>
                     {ficha.membresia_actual.paquete_id && (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600 }}>
+                      <div className="membresia-meta">
                         Plan grupal{ficha.membresia_actual.titular_nombre ? ` · titular ${ficha.membresia_actual.titular_nombre}` : ''}
                       </div>
                     )}
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    <div className="membresia-meta">
                       {formatVencimiento(
                         `${ficha.membresia_actual.fecha_vencimiento}T12:00:00-05:00`,
                         ficha.membresia_actual.dias_restantes
@@ -454,75 +395,133 @@ export const DeportistasPage: React.FC = () => {
                   />
                 </div>
               ) : (
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No tiene una membresía vigente.</div>
+                <p className="texto-vacio">No tiene una membresía vigente.</p>
               )}
-            </div>
+            </section>
 
-            <div>
-              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 8 }}>Mediciones recientes</h4>
-              {ficha.mediciones_recientes.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Aún no hay mediciones.</div>
+            {/* Datos */}
+            <section className="form-section">
+              <div className="form-section-head">
+                <div className="form-section-title">Datos</div>
+              </div>
+              <div className="dato-lista">
+                <Dato etiqueta="Tipo de documento">{dep.tipo_documento}</Dato>
+                <Dato etiqueta="Correo">{dep.correo || '—'}</Dato>
+                <Dato etiqueta="Teléfono">{dep.telefono || '—'}</Dato>
+                <Dato etiqueta="Fecha de nacimiento">{formatFechaNegocio(dep.fecha_nacimiento)}</Dato>
+                <Dato etiqueta="Consentimiento de datos">
+                  {dep.consentimiento_1581 ? `Versión ${dep.consentimiento_version ?? '—'}` : 'No registrado'}
+                </Dato>
+                {dep.consentimiento_fecha && (
+                  <div className="dato-nota">
+                    Aceptado el {formatFechaHora(dep.consentimiento_fecha)}
+                    {dep.consentimiento_registrado_por_nombre ? ` · registró ${dep.consentimiento_registrado_por_nombre}` : ''}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Acudiente */}
+            <section className="form-section">
+              <div className="form-section-head">
+                <div className="form-section-title">Acudiente</div>
+              </div>
+              {dep.acudiente ? (
+                <div className="dato-lista">
+                  <Dato etiqueta="Nombre">{dep.acudiente.nombre}</Dato>
+                  <Dato etiqueta="Documento">{formatDocumento(dep.acudiente.tipo_documento, dep.acudiente.documento)}</Dato>
+                  <Dato etiqueta="Teléfono">{dep.acudiente.telefono}</Dato>
+                  <Dato etiqueta="Parentesco">{dep.acudiente.parentesco}</Dato>
+                  <Dato etiqueta="Autorización">{dep.acudiente.autoriza ? 'Autorizó' : 'Sin autorización'}</Dato>
+                </div>
+              ) : dep.acudiente_nombre ? (
+                <div className="dato-lista">
+                  <Dato etiqueta="Nombre">{dep.acudiente_nombre}</Dato>
+                </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {ficha.mediciones_recientes.map((m) => (
-                    <div
-                      key={m.id}
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 'var(--radius-sm)',
-                        backgroundColor: 'var(--bg-surface-elevated)',
-                        fontSize: '0.85rem',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        gap: 8,
-                        flexWrap: 'wrap',
-                      }}
-                    >
-                      <span>{formatFechaNegocio(m.fecha)}</span>
-                      <span>Peso: {m.peso ? `${m.peso} kg` : '—'}</span>
-                      <span>Grasa: {m.grasa_pct ? `${m.grasa_pct} %` : '—'}</span>
-                      <span>Músculo: {m.masa_muscular ? `${m.masa_muscular} kg` : '—'}</span>
-                    </div>
-                  ))}
+                <p className="texto-vacio">Sin acudiente registrado.</p>
+              )}
+            </section>
+
+            {/* Mediciones */}
+            <section className="form-section">
+              <div className="form-section-head">
+                <div className="form-section-title">Mediciones recientes</div>
+                {puedeCrear && !medicionAbierta && (
+                  <Button variant="secondary" size="sm" leftIcon={<Plus size={14} />} onClick={abrirMedicion}>
+                    Registrar medición
+                  </Button>
+                )}
+              </div>
+
+              {medicionAbierta && (
+                <div className="form-callout" ref={medicionRef} style={{ marginTop: 0, marginBottom: 16 }}>
+                  <div className="form-callout-head">
+                    <Scale size={16} />
+                    <span>Nueva medición · {formatFechaNegocio(hoyBogota())}</span>
+                  </div>
+                  <div className="form-grid form-grid-movil-2">
+                    {(Object.keys(MEDICION_VACIA) as Array<keyof typeof MEDICION_VACIA>).map((k) => (
+                      <div className="col-2" key={k}>
+                        <Input
+                          id={`medicion-${k}`}
+                          label={ETIQUETAS_MEDICION[k]}
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          step="0.1"
+                          value={medicion[k]}
+                          onChange={(e) => setMedicion((m) => ({ ...m, [k]: e.target.value }))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {errorMedicion && (
+                    <MensajeFijo tono="error" style={{ marginTop: 12 }}>
+                      {errorMedicion}
+                    </MensajeFijo>
+                  )}
+                  <div className="form-callout-actions">
+                    <Button variant="secondary" size="sm" onClick={() => setMedicionAbierta(false)} disabled={isProcessing}>
+                      Cancelar
+                    </Button>
+                    <Button variant="primary" size="sm" onClick={handleRegistrarMedicion} isLoading={isProcessing}>
+                      Guardar medición
+                    </Button>
+                  </div>
                 </div>
               )}
-            </div>
-          </div>
-        )}
-      </Modal>
 
-      {/* Registrar medición */}
-      <Modal
-        isOpen={showMedicionModal}
-        onClose={() => !isProcessing && setShowMedicionModal(false)}
-        title="Registrar medición"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setShowMedicionModal(false)} disabled={isProcessing}>
-              Cancelar
-            </Button>
-            <Button variant="primary" onClick={handleRegistrarMedicion} isLoading={isProcessing}>
-              Guardar medición
-            </Button>
+              {ficha.mediciones_recientes.length === 0 ? (
+                !medicionAbierta && <p className="texto-vacio">Aún no hay mediciones.</p>
+              ) : (
+                <div className="table-responsive">
+                  <table className="mini-tabla">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Peso</th>
+                        <th>Grasa</th>
+                        <th>Músculo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ficha.mediciones_recientes.map((m) => (
+                        <tr key={m.id}>
+                          <td>{formatFechaNegocio(m.fecha)}</td>
+                          <td>{numero(m.peso, 'kg')}</td>
+                          <td>{numero(m.grasa_pct, '%')}</td>
+                          <td>{numero(m.masa_muscular, 'kg')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           </>
-        }
-      >
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-          {(Object.keys(MEDICION_VACIA) as Array<keyof typeof MEDICION_VACIA>).map((k) => (
-            <Input
-              key={k}
-              id={`medicion-${k}`}
-              label={ETIQUETAS_MEDICION[k]}
-              type="number"
-              min={0}
-              step="0.1"
-              value={medicion[k]}
-              onChange={(e) => setMedicion((m) => ({ ...m, [k]: e.target.value }))}
-            />
-          ))}
-        </div>
-        {errorMedicion && <MensajeFijo tono="error">{errorMedicion}</MensajeFijo>}
-      </Modal>
+        )}
+      </Drawer>
     </div>
   );
 };

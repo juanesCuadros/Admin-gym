@@ -5,8 +5,8 @@ import { ZONA_HORARIA } from '../utils/formato';
 
 /** Colores del sistema cuando el gimnasio no tiene branding propio. No son datos del gimnasio. */
 const COLORES_BASE = {
-  primary: '#4f46e5',
-  secondary: '#06b6d4',
+  primary: '#2563eb',
+  secondary: '#0891b2',
   accent: '#f59e0b',
 };
 
@@ -24,16 +24,19 @@ interface TenantThemeContextType {
 
 const TenantThemeContext = createContext<TenantThemeContextType | undefined>(undefined);
 
+/**
+ * Solo se inyectan los 3 colores de marca. Las variantes (hover, light, border, soft…)
+ * se derivan en CSS con color-mix() dentro de index.css, así funcionan en claro y oscuro.
+ */
 function applyCssTokens(primary: string, secondary: string, accent: string) {
   const root = document.documentElement;
   root.style.setProperty('--primary', primary);
   root.style.setProperty('--secondary', secondary);
   root.style.setProperty('--accent', accent);
-  root.style.setProperty('--primary-light', `${primary}1f`);
-  root.style.setProperty('--primary-border', `${primary}55`);
-  root.style.setProperty('--secondary-light', `${secondary}1f`);
-  root.style.setProperty('--accent-light', `${accent}1f`);
-  root.style.setProperty('--primary-hover', primary);
+  // Limpia variantes que versiones anteriores dejaban fijas en el <html>.
+  ['--primary-light', '--primary-border', '--secondary-light', '--accent-light', '--primary-hover'].forEach((v) =>
+    root.style.removeProperty(v)
+  );
 }
 
 /**
@@ -74,7 +77,7 @@ export const TenantThemeProvider: React.FC<{ children: ReactNode }> = ({ childre
     tenant.subdominio ? 'cargando' : 'sin_subdominio'
   );
   const [themeMode, setThemeMode] = useState<'dark' | 'light'>(() => {
-    return (localStorage.getItem('gymos_theme_mode') as 'dark' | 'light') || 'dark';
+    return (localStorage.getItem('gymos_theme_mode') as 'dark' | 'light') || 'light';
   });
 
   const recargarBranding = useCallback(async (): Promise<EstadoBranding> => {

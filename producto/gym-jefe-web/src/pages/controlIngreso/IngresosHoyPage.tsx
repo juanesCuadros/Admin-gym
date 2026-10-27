@@ -79,15 +79,14 @@ export const IngresosHoyPage: React.FC = () => {
         <>
           <div className="kpi-grid">
             <KpiCard label="Registros de hoy" value={resumen.total_ingresos} icon={<LogIn size={20} />} />
-            <KpiCard label="Adentro ahora" value={resumen.adentro_ahora} icon={<Users size={20} />} color="var(--primary)" />
-            <KpiCard label="Permitidos" value={resumen.accesos_abiertos} icon={<CheckCircle2 size={20} />} color="var(--success)" />
+            <KpiCard label="Adentro ahora" value={resumen.adentro_ahora} icon={<Users size={20} />} />
+            <KpiCard label="Permitidos" value={resumen.accesos_abiertos} icon={<CheckCircle2 size={20} />} />
             <KpiCard
               label="Con alerta de pago"
               value={resumen.alertas_mora}
               icon={<AlertTriangle size={20} />}
-              color="var(--warning)"
             />
-            <KpiCard label="Negados" value={resumen.accesos_negados} icon={<XCircle size={20} />} color="var(--danger)" />
+            <KpiCard label="Negados" value={resumen.accesos_negados} icon={<XCircle size={20} />} />
             <KpiCard label="Cortesías" value={resumen.cortesias} icon={<Gift size={20} />} />
           </div>
 
@@ -116,7 +115,7 @@ export const IngresosHoyPage: React.FC = () => {
                     header: 'Persona',
                     render: (i) => (
                       <div>
-                        <div style={{ fontWeight: 700 }}>
+                        <div style={{ fontWeight: 500 }}>
                           {i.deportista_nombre ?? (i.tipo === 'cortesia' ? 'Cortesía' : 'Sin identificar')}
                         </div>
                         {i.deportista_documento && (

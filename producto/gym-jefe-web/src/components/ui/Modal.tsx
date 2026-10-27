@@ -47,7 +47,7 @@ export const Modal: React.FC<ModalProps> = ({
         aria-modal="true"
       >
         <div className="modal-header">
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h3>
+          <h3 style={{ fontSize: 'var(--fs-lg)', fontWeight: 500, color: 'var(--text-primary)' }}>{title}</h3>
           <button
             onClick={onClose}
             style={{

@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, Search, Gift, CheckCircle2, AlertTriangle, XCircle, Users, LogIn } from 'lucide-react';
+import { ArrowRight, Gift, CheckCircle2, AlertTriangle, XCircle, Search } from 'lucide-react';
 import { controlIngresoService } from '../../api/controlIngreso.service';
+import { deportistasService } from '../../api/deportistas.service';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { parseApiError } from '../../api/client';
@@ -9,10 +10,16 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { Avatar } from '../../components/ui/Avatar';
+import { Badge } from '../../components/ui/Badge';
 import { MensajeFijo } from '../../components/estados/Estados';
 import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
-import { CheckinResponseDto, ResumenIngresosHoyDto } from '../../types/controlIngreso.types';
+import { formatHora } from '../../utils/formato';
+import { formatFechaNegocio } from '../../utils/fechasBogota';
+import { CheckinItemHistorialDto, CheckinResponseDto, ResumenIngresosHoyDto } from '../../types/controlIngreso.types';
+import { MembresiaFichaResponse } from '../../types/deportistas.types';
 import { PanelAdentro } from './PanelAdentro';
+import { presentarResultado } from './formatoIngreso';
 
 const TITULO_RESULTADO: Record<string, string> = {
   abrio: 'Acceso permitido',
@@ -20,17 +27,31 @@ const TITULO_RESULTADO: Record<string, string> = {
   negado: 'Acceso negado',
 };
 
+const CLASE_RESULTADO: Record<string, 'ok' | 'warn' | 'bad'> = {
+  abrio: 'ok',
+  alerta_mora: 'warn',
+  negado: 'bad',
+};
+
+/** Cuántos ingresos recientes se muestran en la columna derecha. */
+const INGRESOS_RECIENTES = 8;
+
 export const ControlIngresoPage: React.FC = () => {
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
   const puedeRegistrar = hasPermission('control_ingreso', 'crear');
+  // Plan y vencimiento salen de la ficha (endpoint existente); solo se consulta con permiso de lectura.
+  const puedeVerFicha = hasPermission('deportistas', 'leer');
 
+  const inputRef = useRef<HTMLInputElement>(null);
   const [documento, setDocumento] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastCheckin, setLastCheckin] = useState<CheckinResponseDto | null>(null);
+  const [membresia, setMembresia] = useState<MembresiaFichaResponse | null>(null);
   const [errorCheckin, setErrorCheckin] = useState<string | null>(null);
 
   const [resumen, setResumen] = useState<ResumenIngresosHoyDto | null>(null);
+  const [recientes, setRecientes] = useState<CheckinItemHistorialDto[]>([]);
   const [recargarAdentro, setRecargarAdentro] = useState(0);
 
   // Cortesía
@@ -38,23 +59,37 @@ export const ControlIngresoPage: React.FC = () => {
   const [motivoCortesia, setMotivoCortesia] = useState('');
   const [errorCortesia, setErrorCortesia] = useState<string | null>(null);
 
-  const cargarResumen = useCallback(async () => {
+  /** Resumen del día + últimos ingresos en una sola consulta. */
+  const cargarHoy = useCallback(async () => {
     try {
-      const data = await controlIngresoService.getIngresosHoy({ limit: 1 });
+      const data = await controlIngresoService.getIngresosHoy({ limit: INGRESOS_RECIENTES });
       setResumen(data.resumen);
+      setRecientes(data.items);
     } catch {
-      // El resumen es complementario: si falla, no se muestra (nunca un número inventado).
+      // Es complementario: si falla, no se muestra (nunca un número inventado).
       setResumen(null);
+      setRecientes([]);
     }
   }, []);
 
   useEffect(() => {
-    cargarResumen();
-  }, [cargarResumen]);
+    cargarHoy();
+  }, [cargarHoy]);
 
   const trasRegistro = () => {
-    cargarResumen();
+    cargarHoy();
     setRecargarAdentro((n) => n + 1);
+  };
+
+  /** Plan y vencimiento del deportista validado. Si falla, el resultado se muestra igual sin esos datos. */
+  const cargarMembresia = async (deportistaId: string) => {
+    if (!puedeVerFicha) return;
+    try {
+      const ficha = await deportistasService.getFicha(deportistaId);
+      setMembresia(ficha.membresia_actual ?? null);
+    } catch {
+      setMembresia(null);
+    }
   };
 
   const handleManualCheckin = async (e: React.FormEvent) => {
@@ -63,15 +98,19 @@ export const ControlIngresoPage: React.FC = () => {
 
     setIsProcessing(true);
     setErrorCheckin(null);
+    setMembresia(null);
     try {
       const res = await controlIngresoService.checkinManual({ documento: documento.trim() });
       setLastCheckin(res);
       setDocumento('');
       trasRegistro();
+      if (res.deportista?.id) cargarMembresia(res.deportista.id);
     } catch (err) {
       setErrorCheckin(parseApiError(err));
     } finally {
       setIsProcessing(false);
+      // El campo queda listo para el siguiente documento.
+      inputRef.current?.focus();
     }
   };
 
@@ -91,6 +130,7 @@ export const ControlIngresoPage: React.FC = () => {
     try {
       const res = await controlIngresoService.ingresoCortesia({ motivo: motivoCortesia.trim() });
       setLastCheckin(res);
+      setMembresia(null);
       showToast('success', 'Cortesía registrada', 'El ingreso quedó registrado con su motivo.');
       setShowCortesiaModal(false);
       setMotivoCortesia('');
@@ -102,7 +142,14 @@ export const ControlIngresoPage: React.FC = () => {
     }
   };
 
-  const colorResultado = (r: string) => (r === 'abrio' ? 'success' : r === 'alerta_mora' ? 'warning' : 'danger');
+  const esCortesia = lastCheckin?.tipo === 'cortesia';
+  const claseResultado = lastCheckin ? (esCortesia ? 'info' : CLASE_RESULTADO[lastCheckin.resultado] ?? 'info') : 'info';
+  const IconoResultado =
+    lastCheckin?.resultado === 'abrio' || esCortesia
+      ? CheckCircle2
+      : lastCheckin?.resultado === 'alerta_mora'
+        ? AlertTriangle
+        : XCircle;
 
   return (
     <div>
@@ -113,155 +160,153 @@ export const ControlIngresoPage: React.FC = () => {
         </div>
 
         {puedeRegistrar && (
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Button
-              variant="outline"
-              leftIcon={<Gift size={18} color="var(--accent)" />}
-              onClick={() => setShowCortesiaModal(true)}
-            >
-              Ingreso de cortesía
-            </Button>
-          </div>
+          <Button variant="secondary" leftIcon={<Gift size={16} />} onClick={() => setShowCortesiaModal(true)}>
+            Ingreso de cortesía
+          </Button>
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 24, marginBottom: 24 }}>
-        <Card title="Punto de acceso">
-          {puedeRegistrar ? (
-            <form onSubmit={handleManualCheckin}>
-              <Input
-                label="Documento"
-                placeholder="Número de documento"
-                value={documento}
-                onChange={(e) => setDocumento(e.target.value)}
-                autoFocus
-                leftIcon={<Search size={18} />}
-              />
-              <Button
-                type="submit"
-                variant="primary"
-                style={{ width: '100%', marginTop: 6 }}
-                isLoading={isProcessing}
-                disabled={!documento.trim()}
-                leftIcon={<ShieldCheck size={18} />}
-              >
-                Validar acceso
-              </Button>
-            </form>
-          ) : (
-            <MensajeFijo tono="info">No tienes permiso para registrar ingresos.</MensajeFijo>
-          )}
+      <div className="checkin-layout">
+        <div className="checkin-main">
+          {/* Punto de acceso */}
+          <div className="checkin-hero">
+            <h2 className="checkin-hero-title">Registrar ingreso</h2>
+            <p className="checkin-hero-text">Escribe el documento del deportista</p>
 
-          {errorCheckin && (
-            <MensajeFijo tono="error" style={{ marginTop: 12 }}>
-              {errorCheckin}
-            </MensajeFijo>
-          )}
-
-          {resumen && (
-            <div
-              style={{
-                marginTop: 20,
-                padding: '12px 14px',
-                borderRadius: 'var(--radius-sm)',
-                backgroundColor: 'var(--bg-surface-elevated)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12,
-                flexWrap: 'wrap',
-                fontSize: '0.85rem',
-              }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
-                <LogIn size={16} color="var(--text-muted)" />
-                Hoy: <strong style={{ color: 'var(--text-primary)' }}>{resumen.total_ingresos}</strong> registros
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
-                <Users size={16} color="var(--text-muted)" />
-                Adentro: <strong style={{ color: 'var(--text-primary)' }}>{resumen.adentro_ahora}</strong>
-              </span>
-              <Link to="/control-ingreso/ingresos-hoy">Ver ingresos de hoy</Link>
-            </div>
-          )}
-        </Card>
-
-        <Card title="Resultado">
-          {lastCheckin ? (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                padding: 16,
-                textAlign: 'center',
-                borderRadius: 'var(--radius-md)',
-                backgroundColor: `var(--${colorResultado(lastCheckin.resultado)}-light)`,
-                border: `1px solid var(--${colorResultado(lastCheckin.resultado)}-border)`,
-              }}
-            >
-              {lastCheckin.resultado === 'abrio' ? (
-                <CheckCircle2 size={48} color="var(--success)" style={{ marginBottom: 8 }} />
-              ) : lastCheckin.resultado === 'alerta_mora' ? (
-                <AlertTriangle size={48} color="var(--warning)" style={{ marginBottom: 8 }} />
-              ) : (
-                <XCircle size={48} color="var(--danger)" style={{ marginBottom: 8 }} />
-              )}
-
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                {lastCheckin.tipo === 'cortesia'
-                  ? 'Cortesía registrada'
-                  : TITULO_RESULTADO[lastCheckin.resultado] ?? lastCheckin.resultado}
-              </h3>
-
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginTop: 4, maxWidth: 320 }}>
-                {lastCheckin.mensaje}
-              </p>
-
-              {lastCheckin.deportista && (
-                <div
-                  style={{
-                    marginTop: 14,
-                    padding: '8px 16px',
-                    backgroundColor: 'var(--bg-surface)',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-color)',
-                    fontSize: '0.85rem',
-                    textAlign: 'left',
-                    width: '100%',
-                    maxWidth: 280,
-                  }}
+            {puedeRegistrar ? (
+              <form className="checkin-form" onSubmit={handleManualCheckin}>
+                <div className="checkin-input">
+                  <Search size={20} />
+                  <input
+                    ref={inputRef}
+                    className="form-input"
+                    placeholder="Número de documento"
+                    aria-label="Documento"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={documento}
+                    onChange={(e) => setDocumento(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  isLoading={isProcessing}
+                  disabled={!documento.trim()}
+                  rightIcon={<ArrowRight size={16} />}
                 >
-                  <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{lastCheckin.deportista.nombre}</div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.775rem', marginBottom: 6 }}>
-                    Doc: {lastCheckin.deportista.documento}
+                  Validar acceso
+                </Button>
+              </form>
+            ) : (
+              <div className="mensaje-fijo-wrap">
+                <MensajeFijo tono="info">No tienes permiso para registrar ingresos.</MensajeFijo>
+              </div>
+            )}
+
+            {errorCheckin && (
+              <div className="mensaje-fijo-wrap">
+                <MensajeFijo tono="error">{errorCheckin}</MensajeFijo>
+              </div>
+            )}
+          </div>
+
+          {/* Resultado del último registro */}
+          {lastCheckin && (
+            <div className="resultado" key={lastCheckin.checkin_id ?? lastCheckin.ts_local}>
+              <div className={`resultado-franja ${claseResultado}`}>
+                <IconoResultado size={20} />
+                <span>{esCortesia ? 'Cortesía registrada' : TITULO_RESULTADO[lastCheckin.resultado] ?? lastCheckin.resultado}</span>
+
+              </div>
+
+              {lastCheckin.deportista ? (
+                <div className="resultado-cuerpo">
+                  <Avatar name={lastCheckin.deportista.nombre} />
+                  <div className="resultado-quien">
+                    <div className="resultado-nombre">{lastCheckin.deportista.nombre}</div>
+                    <div className="resultado-doc">Doc. {lastCheckin.deportista.documento}</div>
                   </div>
                   <EstadoDeportistaBadge
                     estado={lastCheckin.deportista.estado}
                     detalle={{ dias: lastCheckin.deportista.dias_restantes_o_vencido }}
                   />
                 </div>
+              ) : (
+                <div style={{ height: 16 }} />
               )}
+
+              {lastCheckin.mensaje && <p className="resultado-mensaje">{lastCheckin.mensaje}</p>}
+
+              <div className="resultado-datos">
+                <div>
+                  <small>Plan</small>
+                  <span>{membresia?.plan_nombre ?? '—'}</span>
+                </div>
+                <div>
+                  <small>Vencimiento</small>
+                  <span>{membresia ? formatFechaNegocio(membresia.fecha_vencimiento) : '—'}</span>
+                </div>
+                <div>
+                  <small>Hora</small>
+                  <span>{formatHora(lastCheckin.ts_local)}</span>
+                </div>
+              </div>
             </div>
+          )}
+
+          <PanelAdentro recargar={recargarAdentro} onSalida={cargarHoy} />
+        </div>
+
+        {/* Hoy */}
+        <Card title="Hoy">
+          {resumen ? (
+            <>
+              <div className="checkin-stats">
+                <div className="checkin-stat">
+                  <small>Registros</small>
+                  <strong>{resumen.total_ingresos}</strong>
+                </div>
+                <div className="checkin-stat">
+                  <small>Adentro ahora</small>
+                  <strong>{resumen.adentro_ahora}</strong>
+                </div>
+              </div>
+
+              {recientes.length === 0 ? (
+                <p className="texto-vacio" style={{ textAlign: 'center', padding: '12px 0' }}>
+                  Aún no hay ingresos hoy.
+                </p>
+              ) : (
+                <div>
+                  {recientes.map((i) => {
+                    const r = presentarResultado(i.resultado);
+                    const nombre = i.deportista_nombre ?? (i.tipo === 'cortesia' ? 'Cortesía' : 'Sin identificar');
+                    return (
+                      <div className="feed-item" key={i.id}>
+                        <span className="feed-hora">{formatHora(i.ts_local)}</span>
+                        <Avatar name={nombre} size="sm" />
+                        <span className="feed-nombre" title={nombre}>
+                          {nombre}
+                        </span>
+                        <Badge variant={i.tipo === 'cortesia' ? 'info' : r.variante}>
+                          {i.tipo === 'cortesia' ? 'Cortesía' : r.variante === 'warning' ? 'Alerta' : r.texto}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <Link to="/control-ingreso/ingresos-hoy" className="feed-ver-todos">
+                Ver todos los ingresos de hoy
+              </Link>
+            </>
           ) : (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                padding: '40px 16px',
-                textAlign: 'center',
-                color: 'var(--text-muted)',
-              }}
-            >
-              <ShieldCheck size={42} style={{ marginBottom: 8 }} />
-              <p>Escribe un documento para validar el acceso.</p>
-            </div>
+            <p className="texto-vacio">No se pudo cargar el resumen del día.</p>
           )}
         </Card>
       </div>
-
-      <PanelAdentro recargar={recargarAdentro} onSalida={cargarResumen} />
 
       <Modal
         isOpen={showCortesiaModal}
@@ -269,7 +314,7 @@ export const ControlIngresoPage: React.FC = () => {
         title="Registrar ingreso de cortesía"
         footer={
           <>
-            <Button variant="outline" onClick={cerrarCortesia} disabled={isProcessing}>
+            <Button variant="secondary" onClick={cerrarCortesia} disabled={isProcessing}>
               Cancelar
             </Button>
             <Button variant="primary" onClick={handleCortesiaSubmit} isLoading={isProcessing}>
@@ -278,7 +323,7 @@ export const ControlIngresoPage: React.FC = () => {
           </>
         }
       >
-        <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: 16 }}>
+        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', marginBottom: 16 }}>
           La cortesía queda registrada con tu nombre y el motivo en la auditoría del gimnasio.
         </p>
         <Input

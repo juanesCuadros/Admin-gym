@@ -76,7 +76,7 @@ export const ConfigLandingPage: React.FC = () => {
             <Card title="Enlace público">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                 <Globe size={18} color="var(--text-muted)" />
-                <a href={landing.landing_url} target="_blank" rel="noopener noreferrer" style={{ wordBreak: 'break-all', fontWeight: 600 }}>
+                <a href={landing.landing_url} target="_blank" rel="noopener noreferrer" style={{ wordBreak: 'break-all', fontWeight: 500 }}>
                   {landing.landing_url}
                 </a>
               </div>

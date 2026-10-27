@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Crown, Trash2 } from 'lucide-react';
 import type { ApiError } from '../../api/client';
-import { Modal } from '../../components/ui/Modal';
+import { Drawer } from '../../components/ui/Drawer';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { BuscadorDeportista } from '../../components/ui/BuscadorDeportista';
@@ -97,11 +97,11 @@ export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, pl
   };
 
   return (
-    <Modal
+    <Drawer
       isOpen={isOpen}
       onClose={onCerrar}
       title="Nuevo plan grupal"
-      maxWidth="620px"
+
       footer={
         <>
           <Button variant="outline" onClick={onCerrar}>
@@ -148,7 +148,7 @@ export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, pl
             onSeleccionar={elegirTitular}
           />
 
-          <div style={{ marginBottom: 8, fontWeight: 600, fontSize: '0.9rem' }}>
+          <div style={{ marginBottom: 8, fontWeight: 500, fontSize: '0.9rem' }}>
             Beneficiarios {plan ? `(${beneficiarios.length} de ${plan.cupo_personas})` : ''}
           </div>
           {beneficiarios.length === 0 ? (
@@ -172,7 +172,7 @@ export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, pl
                     }}
                   >
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600 }}>{b.nombre}</div>
+                      <div style={{ fontWeight: 500 }}>{b.nombre}</div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{b.documento}</div>
                     </div>
                     {esTitular ? (
@@ -186,7 +186,7 @@ export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, pl
                         aria-label={`Quitar a ${b.nombre}`}
                         onClick={() => setOtros((prev) => prev.filter((o) => o.id !== b.id))}
                       >
-                        <Trash2 size={14} color="var(--danger)" />
+                        <Trash2 size={14} />
                       </Button>
                     )}
                   </li>
@@ -208,6 +208,6 @@ export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, pl
           {avisoBuscador && <span className="form-error-msg">{avisoBuscador}</span>}
         </>
       )}
-    </Modal>
+    </Drawer>
   );
 };

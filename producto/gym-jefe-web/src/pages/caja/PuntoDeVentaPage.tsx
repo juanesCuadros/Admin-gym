@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Minus, Plus, ShoppingCart, Trash2, Ticket, CalendarDays, Receipt, PackageSearch } from 'lucide-react';
+import { Minus, Plus, ShoppingCart, Trash2, Ticket, CalendarDays, Receipt, PackageSearch, Package, Search, X } from 'lucide-react';
 import { inventarioService } from '../../api/inventario.service';
 import { myGymService } from '../../api/myGym.service';
 import { cajaService } from '../../api/caja.service';
@@ -8,9 +8,8 @@ import { toApiError, ApiError } from '../../api/client';
 import { useCajaTurno } from '../../contexts/CajaTurnoContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { Input, Select, SearchInput } from '../../components/ui/Input';
+import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { BuscadorDeportista } from '../../components/ui/BuscadorDeportista';
 import { Cargando, ErrorCarga, MensajeFijo } from '../../components/estados/Estados';
@@ -89,6 +88,8 @@ export const PuntoDeVentaPage: React.FC = () => {
   const [errorVenta, setErrorVenta] = useState<ApiError | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [recibo, setRecibo] = useState<VentaResponseDto | null>(null);
+  // Tablet/móvil: la venta es un panel que sube desde abajo.
+  const [ventaAbierta, setVentaAbierta] = useState(false);
 
   const metodosConfigurados = info?.metodos_pago?.length ? info.metodos_pago : null;
   const descuentosPermitidos = info?.permitir_descuentos === true;
@@ -271,6 +272,7 @@ export const PuntoDeVentaPage: React.FC = () => {
         clave
       );
       setRecibo(venta);
+      setVentaAbierta(true);
       setLineas([]);
       setCliente(null);
       setValorRecibido('');
@@ -289,20 +291,25 @@ export const PuntoDeVentaPage: React.FC = () => {
   };
 
   // ---- Render ----
+  const unidades = lineas.reduce((acc, l) => acc + l.cantidad, 0);
+  const cantidadEnVenta = (id: string) =>
+    lineas.find((l) => l.tipo === 'producto' && l.producto?.id === id)?.cantidad ?? 0;
+  /** Con pocos métodos configurados se muestran como botones; con muchos, como lista. */
+  const metodosComoBotones = !!metodosConfigurados && metodosConfigurados.length <= 4;
+
   if (cargandoTurno) return <Cargando />;
 
   return (
-    <div>
+    <div className="pos-page">
       <div className="page-header">
         <div>
           <h1 className="page-title">Punto de venta</h1>
-          <p className="page-subtitle">Venta de productos y pases ligada al turno de caja abierto</p>
+          <p className="page-subtitle">
+            {turno && turnoAbierto
+              ? `Turno abierto desde ${formatFechaHora(turno.abierto_en)}`
+              : 'Venta de productos y pases ligada al turno de caja abierto'}
+          </p>
         </div>
-        {turno && turnoAbierto && (
-          <Badge variant="success" dot>
-            Turno abierto desde {formatFechaHora(turno.abierto_en)}
-          </Badge>
-        )}
       </div>
 
       {errorTurno && <ErrorCarga error={errorTurno} onReintentar={refrescarTurno} />}
@@ -334,7 +341,7 @@ export const PuntoDeVentaPage: React.FC = () => {
           }
           style={{ marginBottom: 20 }}
         >
-          Para vender hay que abrir el turno primero. La API rechaza cualquier venta sin turno abierto.
+          Para vender hay que abrir el turno primero.
         </MensajeFijo>
       )}
 
@@ -344,304 +351,358 @@ export const PuntoDeVentaPage: React.FC = () => {
         </MensajeFijo>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20, alignItems: 'start' }}>
-        {/* Catálogo */}
-        <Card title="Catálogo">
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-            <SearchInput
-              placeholder="Buscar producto"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              aria-label="Buscar producto"
-            />
-            <Button variant="outline" size="sm" leftIcon={<CalendarDays size={14} />} onClick={() => agregarPase('pase_dia')} disabled={!turnoAbierto}>
+      <div className="pos-layout">
+        {/* ---------- Catálogo ---------- */}
+        <section aria-label="Catálogo">
+          <div className="pos-catalogo-head">
+            <div className="pos-buscar">
+              <Search size={16} />
+              <input
+                className="form-input"
+                placeholder="Buscar producto"
+                aria-label="Buscar producto"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+              />
+            </div>
+            <Button variant="secondary" size="sm" leftIcon={<CalendarDays size={14} />} onClick={() => agregarPase('pase_dia')} disabled={!turnoAbierto}>
               Pase de día
             </Button>
-            <Button variant="outline" size="sm" leftIcon={<Ticket size={14} />} onClick={() => agregarPase('pase_clase')} disabled={!turnoAbierto}>
+            <Button variant="secondary" size="sm" leftIcon={<Ticket size={14} />} onClick={() => agregarPase('pase_clase')} disabled={!turnoAbierto}>
               Pase de clase
             </Button>
           </div>
 
           {!puedeVerInventario ? (
-            <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
-              No tienes permiso para ver el inventario. Puedes vender pases de día y de clase.
-            </p>
+            <MensajeFijo tono="info">No tienes permiso para ver el inventario. Puedes vender pases de día y de clase.</MensajeFijo>
           ) : cargandoProductos ? (
-            <Cargando filas={5} alto={40} />
+            <Cargando filas={4} alto={120} />
           ) : errorProductos ? (
             <ErrorCarga error={errorProductos} onReintentar={() => cargarProductos(busqueda)} />
           ) : productos.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '32px 12px', color: 'var(--text-secondary)' }}>
-              <PackageSearch size={32} color="var(--text-muted)" style={{ marginBottom: 8 }} />
-              <div style={{ fontWeight: 600 }}>
+            <div className="card empty-state">
+              <div className="empty-state-icon">
+                <PackageSearch size={22} />
+              </div>
+              <div className="empty-state-title">
                 {busqueda.trim() ? 'No hay productos activos con ese nombre' : 'No hay productos activos'}
               </div>
-              <div style={{ fontSize: '0.85rem', marginTop: 4 }}>
-                {busqueda.trim() ? (
-                  <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={() => setBusqueda('')}>
-                    Limpiar búsqueda
-                  </button>
-                ) : (
-                  'Los productos se crean en Inventario · Productos.'
-                )}
-              </div>
+              {busqueda.trim() ? (
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 12 }} onClick={() => setBusqueda('')}>
+                  Limpiar búsqueda
+                </button>
+              ) : (
+                <p className="empty-state-text">Los productos se crean en Inventario · Productos.</p>
+              )}
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="producto-grid">
               {productos.map((p) => {
                 const agotado = p.stock <= 0;
+                const enVenta = cantidadEnVenta(p.id);
+                const sinMasStock = enVenta >= p.stock;
                 return (
-                  <div
+                  <button
                     key={p.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      padding: '8px 10px',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-sm)',
-                    }}
+                    type="button"
+                    className={`producto ${enVenta > 0 ? 'en-venta' : ''}`}
+                    disabled={agotado || !turnoAbierto || sinMasStock}
+                    onClick={() => agregarProducto(p)}
+                    aria-label={`Agregar ${p.nombre}`}
                   >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600 }}>{p.nombre}</div>
-                      <div style={{ fontSize: '0.8rem', color: agotado ? 'var(--danger)' : 'var(--text-muted)' }}>
-                        {agotado ? 'Agotado' : `Stock: ${p.stock}`}
-                      </div>
-                    </div>
-                    <div style={{ fontWeight: 700 }}>{formatCOP(p.precio)}</div>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      leftIcon={<Plus size={14} />}
-                      disabled={agotado || !turnoAbierto}
-                      onClick={() => agregarProducto(p)}
-                    >
-                      Agregar
+                    {enVenta > 0 && <span className="producto-cantidad">{enVenta}</span>}
+                    <span className="producto-icono">
+                      <Package size={22} />
+                    </span>
+                    <span className="producto-nombre">{p.nombre}</span>
+                    <span className="producto-fila">
+                      <span className="producto-precio">{formatCOP(p.precio)}</span>
+                      <span className={`producto-stock ${agotado ? 'agotado' : ''}`}>
+                        {agotado ? 'Agotado' : `${p.stock} en stock`}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* ---------- Venta actual ---------- */}
+        <div className={`venta-overlay ${ventaAbierta ? 'abierta' : ''}`} onClick={() => setVentaAbierta(false)} aria-hidden="true" />
+        <aside className={`venta ${ventaAbierta ? 'abierta' : ''}`} aria-label="Venta actual">
+          <div className="venta-head">
+            <ShoppingCart size={18} />
+            <h3>Venta actual</h3>
+            <Badge variant="neutral">
+              {unidades} {unidades === 1 ? 'ítem' : 'ítems'}
+            </Badge>
+            {lineas.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={limpiarVenta} disabled={enviando}>
+                Vaciar
+              </Button>
+            )}
+            <button
+              type="button"
+              className="icon-btn ghost venta-cerrar-movil"
+              onClick={() => setVentaAbierta(false)}
+              aria-label="Cerrar venta"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="venta-scroll">
+            {recibo && (
+              <div style={{ padding: '14px 18px 0' }}>
+                <MensajeFijo
+                  tono="info"
+                  titulo={`Venta registrada · ${formatCOP(recibo.total)}`}
+                  accion={
+                    <Button variant="ghost" size="sm" onClick={() => setRecibo(null)}>
+                      Cerrar
                     </Button>
+                  }
+                >
+                  <div>
+                    {formatFechaHora(recibo.created_at)} · {recibo.metodo}
+                    {recibo.cambio_devuelto !== null && recibo.cambio_devuelto !== undefined && Number(recibo.cambio_devuelto) > 0 && (
+                      <> · Cambio: <strong>{formatCOP(recibo.cambio_devuelto)}</strong></>
+                    )}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-
-        {/* Venta */}
-        <Card title="Venta actual">
-          {recibo && (
-            <MensajeFijo
-              tono="info"
-              titulo={`Venta registrada · ${formatCOP(recibo.total)}`}
-              style={{ marginBottom: 16 }}
-              accion={
-                <Button variant="ghost" size="sm" onClick={() => setRecibo(null)}>
-                  Cerrar
-                </Button>
-              }
-            >
-              <div>
-                {formatFechaHora(recibo.created_at)} · {recibo.metodo}
-                {recibo.cambio_devuelto !== null && recibo.cambio_devuelto !== undefined && Number(recibo.cambio_devuelto) > 0 && (
-                  <> · Cambio: <strong>{formatCOP(recibo.cambio_devuelto)}</strong></>
-                )}
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    {recibo.items.map((it) => (
+                      <li key={it.id}>
+                        {it.cantidad} × {it.descripcion} · {formatCOP(it.subtotal)}
+                      </li>
+                    ))}
+                  </ul>
+                </MensajeFijo>
               </div>
-              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                {recibo.items.map((it) => (
-                  <li key={it.id}>
-                    {it.cantidad} × {it.descripcion} · {formatCOP(it.subtotal)}
-                  </li>
-                ))}
-              </ul>
-            </MensajeFijo>
-          )}
+            )}
 
-          {lineas.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '32px 12px', color: 'var(--text-secondary)' }}>
-              <ShoppingCart size={32} color="var(--text-muted)" style={{ marginBottom: 8 }} />
-              <div style={{ fontWeight: 600 }}>La venta está vacía</div>
-              <div style={{ fontSize: '0.85rem', marginTop: 4 }}>Agrega productos del catálogo o un pase.</div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-              {lineas.map((l) => {
-                const err = erroresLinea(l);
-                const max = l.tipo === 'producto' ? l.producto?.stock ?? 1 : 999;
-                return (
-                  <div key={l.clave} style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ flex: 1, fontWeight: 600 }}>{l.descripcion}</div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        aria-label="Restar uno"
-                        onClick={() => actualizarLinea(l.clave, { cantidad: Math.max(1, l.cantidad - 1) })}
-                        disabled={l.cantidad <= 1}
-                      >
-                        <Minus size={14} />
-                      </Button>
-                      <span style={{ minWidth: 24, textAlign: 'center', fontWeight: 700 }}>{l.cantidad}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        aria-label="Sumar uno"
-                        onClick={() => actualizarLinea(l.clave, { cantidad: Math.min(max, l.cantidad + 1) })}
-                        disabled={l.cantidad >= max}
-                      >
-                        <Plus size={14} />
-                      </Button>
-                      <div style={{ minWidth: 90, textAlign: 'right', fontWeight: 700 }}>
-                        {formatCOP(precioFinal(l) * l.cantidad)}
+            <div className="venta-items">
+              {lineas.length === 0 ? (
+                <div className="venta-vacia">
+                  <ShoppingCart size={26} />
+                  <div>Toca un producto o agrega un pase.</div>
+                </div>
+              ) : (
+                lineas.map((l) => {
+                  const err = erroresLinea(l);
+                  const max = l.tipo === 'producto' ? l.producto?.stock ?? 1 : 999;
+                  return (
+                    <div key={l.clave} className="linea">
+                      <div className="linea-top">
+                        <div className="linea-nombre">
+                          {l.descripcion}
+                          {l.tipo === 'producto' && <small>{formatCOP(l.precio)} c/u</small>}
+                        </div>
+                        <div className="cantidad">
+                          {l.cantidad <= 1 ? (
+                            <button type="button" aria-label="Quitar" onClick={() => quitarLinea(l.clave)}>
+                              <Trash2 size={14} />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              aria-label="Restar uno"
+                              onClick={() => actualizarLinea(l.clave, { cantidad: Math.max(1, l.cantidad - 1) })}
+                            >
+                              <Minus size={14} />
+                            </button>
+                          )}
+                          <span>{l.cantidad}</span>
+                          <button
+                            type="button"
+                            aria-label="Sumar uno"
+                            onClick={() => actualizarLinea(l.clave, { cantidad: Math.min(max, l.cantidad + 1) })}
+                            disabled={l.cantidad >= max}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                        <div className="linea-total">{formatCOP(precioFinal(l) * l.cantidad)}</div>
                       </div>
-                      <Button variant="ghost" size="sm" aria-label="Quitar" onClick={() => quitarLinea(l.clave)}>
-                        <Trash2 size={14} color="var(--danger)" />
-                      </Button>
+
+                      {l.tipo !== 'producto' && (
+                        <div className="linea-extra uno">
+                          <Input
+                            label="Precio del pase (COP)"
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            step={100}
+                            value={l.precio ? String(l.precio) : ''}
+                            onChange={(e) => actualizarLinea(l.clave, { precio: entero(e.target.value) ?? 0 })}
+                          />
+                        </div>
+                      )}
+
+                      {descuentosPermitidos && l.tipo === 'producto' && (
+                        <div className="linea-extra">
+                          <Input
+                            label="Precio cobrado"
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            step={100}
+                            placeholder={String(l.precio)}
+                            value={l.precioCobrado}
+                            onChange={(e) => actualizarLinea(l.clave, { precioCobrado: e.target.value })}
+                          />
+                          <Input
+                            label="Motivo del descuento"
+                            value={l.motivoDescuento}
+                            maxLength={255}
+                            disabled={!(entero(l.precioCobrado) !== null && (entero(l.precioCobrado) ?? 0) < l.precio)}
+                            onChange={(e) => actualizarLinea(l.clave, { motivoDescuento: e.target.value })}
+                          />
+                        </div>
+                      )}
+
+                      {err && <span className="form-error-msg">{err}</span>}
                     </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
 
-                    {l.tipo === 'producto' ? (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                        Precio de lista: {formatCOP(l.precio)}
-                      </div>
-                    ) : (
-                      <div style={{ marginTop: 8, maxWidth: 220 }}>
-                        <Input
-                          label="Precio del pase (COP)"
-                          type="number"
-                          min={0}
-                          step={100}
-                          value={l.precio ? String(l.precio) : ''}
-                          onChange={(e) => actualizarLinea(l.clave, { precio: entero(e.target.value) ?? 0 })}
-                        />
-                      </div>
-                    )}
+          <div className="venta-pago">
+              <BuscadorDeportista
+                label="Cliente (opcional)"
+                seleccionado={cliente}
+                onSeleccionar={setCliente}
+                disabled={enviando}
+              />
 
-                    {descuentosPermitidos && l.tipo === 'producto' && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8, marginTop: 8 }}>
-                        <Input
-                          label="Precio cobrado"
-                          type="number"
-                          min={0}
-                          step={100}
-                          placeholder={String(l.precio)}
-                          value={l.precioCobrado}
-                          onChange={(e) => actualizarLinea(l.clave, { precioCobrado: e.target.value })}
-                        />
-                        <Input
-                          label="Motivo del descuento"
-                          value={l.motivoDescuento}
-                          maxLength={255}
-                          disabled={!(entero(l.precioCobrado) !== null && (entero(l.precioCobrado) ?? 0) < l.precio)}
-                          onChange={(e) => actualizarLinea(l.clave, { motivoDescuento: e.target.value })}
-                        />
-                      </div>
-                    )}
-
-                    {err && <span className="form-error-msg">{err}</span>}
+              {metodosConfigurados ? (
+                metodosComoBotones ? (
+                  <div className="form-group" role="radiogroup" aria-label="Método de pago">
+                    <span className="form-label">Método de pago</span>
+                    <div className="segmented">
+                      {metodosConfigurados.map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          role="radio"
+                          aria-checked={metodo === m}
+                          className={metodo === m ? 'active' : ''}
+                          onClick={() => setMetodo(m)}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-
-          <BuscadorDeportista
-            label="Cliente (opcional)"
-            seleccionado={cliente}
-            onSeleccionar={setCliente}
-            disabled={enviando}
-          />
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {metodosConfigurados ? (
-              <Select
-                label="Método de pago"
-                value={metodo}
-                onChange={(e) => setMetodo(e.target.value)}
-                options={metodosConfigurados.map((m) => ({ value: m, label: m }))}
-              />
-            ) : (
-              <>
-                <Input
-                  label="Método de pago"
-                  value={metodo}
-                  maxLength={50}
-                  onChange={(e) => setMetodo(e.target.value)}
-                  error={metodoVacio ? 'Escribe el método de pago.' : undefined}
-                />
-                <Select
-                  label="Tipo de medio"
-                  value={tipoMedioManual}
-                  onChange={(e) => setTipoMedioManual(e.target.value as 'efectivo' | 'otro')}
-                  options={[
-                    { value: 'efectivo', label: 'Efectivo' },
-                    { value: 'otro', label: 'Otro medio' },
-                  ]}
-                />
-              </>
-            )}
-            {tipoMedio === 'efectivo' && (
-              <Input
-                label="Valor recibido (opcional)"
-                type="number"
-                min={0}
-                step={100}
-                value={valorRecibido}
-                onChange={(e) => setValorRecibido(e.target.value)}
-                error={errorRecibido ?? undefined}
-              />
-            )}
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'baseline',
-              borderTop: '1px solid var(--border-color)',
-              paddingTop: 12,
-              marginTop: 4,
-            }}
-          >
-            <span style={{ color: 'var(--text-secondary)' }}>Total</span>
-            <span style={{ fontSize: '1.5rem', fontWeight: 800 }}>{formatCOP(total)}</span>
-          </div>
-          {cambio !== null && cambio >= 0 && (
-            <div style={{ textAlign: 'right', color: 'var(--text-secondary)', marginTop: 2 }}>
-              Cambio: <strong>{formatCOP(cambio)}</strong>
-            </div>
-          )}
-
-          {errorVenta && (
-            <MensajeFijo tono="error" titulo="No se registró la venta" style={{ marginTop: 12 }}>
-              {errorVenta.message}
-              {Object.keys(errorVenta.campos).length > 0 && (
-                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                  {Object.entries(errorVenta.campos).map(([campo, msg]) => (
-                    <li key={campo}>
-                      {campo}: {msg}
-                    </li>
-                  ))}
-                </ul>
+                ) : (
+                  <Select
+                    label="Método de pago"
+                    value={metodo}
+                    onChange={(e) => setMetodo(e.target.value)}
+                    options={metodosConfigurados.map((m) => ({ value: m, label: m }))}
+                  />
+                )
+              ) : (
+                <>
+                  <Input
+                    label="Método de pago"
+                    value={metodo}
+                    maxLength={50}
+                    onChange={(e) => setMetodo(e.target.value)}
+                    error={metodoVacio ? 'Escribe el método de pago.' : undefined}
+                  />
+                  <div className="form-group" role="radiogroup" aria-label="Tipo de medio">
+                    <span className="form-label">Tipo de medio</span>
+                    <div className="segmented">
+                      {(
+                        [
+                          ['efectivo', 'Efectivo'],
+                          ['otro', 'Otro medio'],
+                        ] as const
+                      ).map(([valor, texto]) => (
+                        <button
+                          key={valor}
+                          type="button"
+                          role="radio"
+                          aria-checked={tipoMedioManual === valor}
+                          className={tipoMedioManual === valor ? 'active' : ''}
+                          onClick={() => setTipoMedioManual(valor)}
+                        >
+                          {texto}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
               )}
-              {idempotencyKey && errorVenta.tipo === 'red' && (
-                <div style={{ marginTop: 4 }}>Puedes reintentar: si la venta sí quedó registrada, no se cobrará dos veces.</div>
-              )}
-            </MensajeFijo>
-          )}
 
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
-            <Button variant="outline" onClick={limpiarVenta} disabled={enviando || lineas.length === 0}>
-              Vaciar
-            </Button>
-            <Button
-              variant="primary"
-              leftIcon={<Receipt size={16} />}
-              onClick={cobrar}
-              isLoading={enviando}
-              disabled={!puedeCobrar}
-            >
-              Cobrar {lineas.length > 0 ? formatCOP(total) : ''}
-            </Button>
+              {tipoMedio === 'efectivo' && (
+                <>
+                  <Input
+                    label="Valor recibido (opcional)"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    step={100}
+                    value={valorRecibido}
+                    onChange={(e) => setValorRecibido(e.target.value)}
+                    error={errorRecibido ?? undefined}
+                  />
+                  {cambio !== null && cambio >= 0 && (
+                    <div className="venta-linea">
+                      <span>Cambio</span>
+                      <span>{formatCOP(cambio)}</span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="venta-total">
+                <span>Total</span>
+                <strong>{formatCOP(total)}</strong>
+              </div>
+
+              {errorVenta && (
+                <MensajeFijo tono="error" titulo="No se registró la venta">
+                  {errorVenta.message}
+                  {Object.keys(errorVenta.campos).length > 0 && (
+                    <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                      {Object.entries(errorVenta.campos).map(([campo, msg]) => (
+                        <li key={campo}>
+                          {campo}: {msg}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {idempotencyKey && errorVenta.tipo === 'red' && (
+                    <div style={{ marginTop: 4 }}>Puedes reintentar: si la venta sí quedó registrada, no se cobrará dos veces.</div>
+                  )}
+                </MensajeFijo>
+              )}
+
+              <Button
+                variant="primary"
+                size="lg"
+                className="venta-cobrar"
+                leftIcon={<Receipt size={17} />}
+                onClick={cobrar}
+                isLoading={enviando}
+                disabled={!puedeCobrar}
+              >
+                Cobrar {lineas.length > 0 ? formatCOP(total) : ''}
+              </Button>
           </div>
-        </Card>
+        </aside>
       </div>
+
+      {/* Barra inferior (tablet y móvil) */}
+      <button type="button" className="venta-barra" onClick={() => setVentaAbierta(true)}>
+        <ShoppingCart size={18} />
+        <span>{unidades > 0 ? `Ver venta · ${unidades} ${unidades === 1 ? 'ítem' : 'ítems'}` : recibo ? 'Ver última venta' : 'Venta vacía'}</span>
+        <strong>{formatCOP(total)}</strong>
+      </button>
     </div>
   );
 };

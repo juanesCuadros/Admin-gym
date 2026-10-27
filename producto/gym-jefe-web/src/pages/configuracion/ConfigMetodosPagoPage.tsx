@@ -145,7 +145,7 @@ export const ConfigMetodosPagoPage: React.FC = () => {
                   }}
                 >
                   <Wallet size={16} color="var(--text-muted)" />
-                  <span style={{ flex: 1, fontWeight: 600 }}>{m}</span>
+                  <span style={{ flex: 1, fontWeight: 500 }}>{m}</span>
                   {m.toLowerCase() === 'efectivo' && (
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Cuenta en el arqueo de caja</span>
                   )}
@@ -153,7 +153,7 @@ export const ConfigMetodosPagoPage: React.FC = () => {
                     <Button
                       variant="ghost"
                       size="sm"
-                      leftIcon={<Trash2 size={14} color="var(--danger)" />}
+                      leftIcon={<Trash2 size={14} />}
                       disabled={guardando || metodos.length <= 1}
                       title={metodos.length <= 1 ? 'Debe quedar al menos un método' : undefined}
                       onClick={() => setAQuitar(m)}

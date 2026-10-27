@@ -78,7 +78,7 @@ export const PersonalPage: React.FC = () => {
         }));
 
       await authService.updateMatrizPermisos(payload);
-      showToast('success', 'Permisos Actualizados', 'La matriz de acceso por rol ha sido guardada en la base de datos.');
+      showToast('success', 'Permisos actualizados', 'La matriz de acceso por rol ha sido guardada en la base de datos.');
     } catch (err) {
       showToast('error', 'Error al guardar permisos', parseApiError(err));
     } finally {
@@ -90,7 +90,7 @@ export const PersonalPage: React.FC = () => {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Personal y Matriz de Permisos (RBAC)</h1>
+          <h1 className="page-title">Permisos</h1>
           <p className="page-subtitle">
             Configuración de accesos y capacidades por rol subordinado (Recepcionista / Entrenador) · Solo Jefe
           </p>
@@ -102,13 +102,13 @@ export const PersonalPage: React.FC = () => {
           onClick={handleSave}
           isLoading={isSaving}
         >
-          Guardar Cambios
+          Guardar cambios
         </Button>
       </div>
 
-      <Card title="Matriz de Capacidades por Submódulo">
+      <Card title="Permisos por sección">
         <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: 20 }}>
-          Como Jefe, puedes encender o apagar permisos individuales en tiempo real. El backend valida estas capacidades en cada petición y registra las modificaciones en la auditoría inmutable.
+          Activa o desactiva lo que puede hacer cada rol. Los cambios aplican de inmediato y quedan en la auditoría.
         </p>
 
         <div className="table-responsive">
@@ -131,7 +131,7 @@ export const PersonalPage: React.FC = () => {
                       {item.rol}
                     </Badge>
                   </td>
-                  <td style={{ fontWeight: 700, textTransform: 'capitalize' }}>
+                  <td style={{ fontWeight: 500, textTransform: 'capitalize' }}>
                     {item.submodulo.replace('_', ' ')}
                   </td>
                   {(['puede_leer', 'puede_crear', 'puede_editar', 'puede_eliminar'] as const).map(

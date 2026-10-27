@@ -21,7 +21,7 @@ export const PantallaTvAccesoPage: React.FC = () => (
     <div className="page-header">
       <div>
         <h1 className="page-title">Pantalla TV</h1>
-        <p className="page-subtitle">Modo de visualización del control de ingreso para el monitor de recepción</p>
+        <p className="page-subtitle">El control de ingreso en el televisor de recepción</p>
       </div>
     </div>
     <Card>
@@ -42,7 +42,7 @@ export const PantallaTvAccesoPage: React.FC = () => (
           <Tv size={22} />
         </div>
         <div style={{ flex: 1, minWidth: 220 }}>
-          <div style={{ fontWeight: 700 }}>Abrir la pantalla en una pestaña nueva</div>
+          <div style={{ fontWeight: 500 }}>Abrir la pantalla en una pestaña nueva</div>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 2 }}>
             La pantalla pide el token del dispositivo la primera vez. La configuración de avisos y logo estará
             disponible en una próxima entrega.

@@ -277,7 +277,7 @@ export const ConfigParametrosPage: React.FC = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">Parámetros</h1>
-          <p className="page-subtitle">Reglas del gimnasio. Cada cambio aplica desde la siguiente evaluación y queda en auditoría.</p>
+          <p className="page-subtitle">Reglas del gimnasio. Cada cambio aplica de inmediato y queda en la auditoría.</p>
         </div>
       </div>
 
@@ -307,7 +307,7 @@ export const ConfigParametrosPage: React.FC = () => {
                       disabled={!descuentosDisponibles || !puedeEditar || guardando}
                       onChange={(e) => setForm({ ...form, permitir_descuentos: e.target.checked })}
                     />
-                    <span style={{ fontWeight: 600 }}>Permitir descuentos en caja</span>
+                    <span style={{ fontWeight: 500 }}>Permitir descuentos en caja</span>
                   </label>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                     {descuentosDisponibles

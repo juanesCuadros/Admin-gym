@@ -32,6 +32,19 @@ const GuardTurnoRecepcionista: React.FC<{ children: React.ReactNode }> = ({ chil
 const Contenido: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Cierra el menu movil al cambiar de ruta y con la tecla Escape.
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSidebarOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sidebarOpen]);
   const { refrescarUsuario, isRecepcionista, hasPermission } = useAuth();
   const { cargando, error, turnoAbierto } = useCajaTurno();
 
@@ -54,7 +67,10 @@ const Contenido: React.FC = () => {
     <div className="app-layout">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} bloqueada={navegacionBloqueada} />
       <div className="app-content-wrapper">
-        <Header onToggleSidebar={() => setSidebarOpen((prev) => !prev)} />
+        <Header
+          onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+          navegacionBloqueada={navegacionBloqueada}
+        />
         <FranjaSuscripcion />
         <main className="page-container">
           <GuardTurnoRecepcionista>

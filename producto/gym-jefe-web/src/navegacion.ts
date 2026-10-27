@@ -136,7 +136,7 @@ export const NAVEGACION: GrupoNav[] = [
         icono: UserCheck,
         submodulo: 'personal',
         submodulos: [
-          { id: 'personal.staff', etiqueta: 'Staff', ruta: '/personal' },
+          { id: 'personal.staff', etiqueta: 'Equipo', ruta: '/personal' },
           { id: 'personal.permisos', etiqueta: 'Permisos', ruta: '/personal/permisos' },
         ],
       },

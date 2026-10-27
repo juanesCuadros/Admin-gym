@@ -16,6 +16,7 @@ interface MensajeFijoProps {
   children: ReactNode;
   accion?: ReactNode;
   style?: React.CSSProperties;
+  className?: string;
 }
 
 const TONO = {
@@ -24,11 +25,12 @@ const TONO = {
   info: { color: 'var(--info)', fondo: 'var(--info-light)', borde: 'var(--info-border)', Icono: Info },
 } as const;
 
-export const MensajeFijo: React.FC<MensajeFijoProps> = ({ tono = 'error', titulo, children, accion, style }) => {
+export const MensajeFijo: React.FC<MensajeFijoProps> = ({ tono = 'error', titulo, children, accion, style, className }) => {
   const t = TONO[tono];
   return (
     <div
       role={tono === 'error' ? 'alert' : 'status'}
+      className={className}
       style={{
         display: 'flex',
         gap: 12,
@@ -45,7 +47,7 @@ export const MensajeFijo: React.FC<MensajeFijoProps> = ({ tono = 'error', titulo
     >
       <t.Icono size={18} color={t.color} style={{ flexShrink: 0, marginTop: 2 }} />
       <div style={{ flex: 1 }}>
-        {titulo && <div style={{ fontWeight: 700, marginBottom: 2 }}>{titulo}</div>}
+        {titulo && <div style={{ fontWeight: 500, marginBottom: 2 }}>{titulo}</div>}
         <div style={{ color: titulo ? 'var(--text-secondary)' : 'var(--text-primary)' }}>{children}</div>
       </div>
       {accion && <div style={{ flexShrink: 0 }}>{accion}</div>}
@@ -95,7 +97,7 @@ const cajaVacia: React.CSSProperties = {
 
 const tituloVacio: React.CSSProperties = {
   fontSize: '1.05rem',
-  fontWeight: 700,
+  fontWeight: 500,
   color: 'var(--text-primary)',
   marginBottom: 6,
 };

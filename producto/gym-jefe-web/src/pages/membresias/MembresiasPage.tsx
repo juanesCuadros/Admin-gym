@@ -21,6 +21,9 @@ import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
+import { Drawer } from '../../components/ui/Drawer';
+import { MenuAcciones } from '../../components/ui/MenuAcciones';
+import { formatCOP } from '../../utils/formato';
 import { Table } from '../../components/ui/Table';
 import { formatFechaNegocio } from '../../utils/fechasBogota';
 import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
@@ -146,7 +149,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     setIsProcessing(true);
     try {
       await membresiasService.crearPlan(newPlan);
-      showToast('success', 'Plan Creado', 'Nuevo plan tarifario agregado al catálogo');
+      showToast('success', 'Plan creado', 'Nuevo plan tarifario agregado al catálogo');
       setShowCrearPlanModal(false);
       setNewPlan({ nombre: '', precio: 90000, duracion_dias: 30, tipo: 'individual', cupo_personas: 1 });
       loadPlanes();
@@ -200,7 +203,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     setIsProcessing(true);
     try {
       await membresiasService.congelarMembresia(selectedMembresiaId, { motivo: motivoCongelar });
-      showToast('success', 'Membresía Congelada', 'El periodo de vigencia se encuentra pausado');
+      showToast('success', 'Membresía congelada', 'El periodo de vigencia se encuentra pausado');
       setShowCongelarModal(false);
       setSelectedMembresiaId(null);
       setMotivoCongelar('');
@@ -216,7 +219,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     setIsProcessing(true);
     try {
       await membresiasService.descongelarMembresia(id);
-      showToast('success', 'Membresía Descongelada', 'Vencimiento recalculado con los días correspondientes');
+      showToast('success', 'Membresía descongelada', 'Vencimiento recalculado con los días correspondientes');
       loadMembresias();
     } catch (err) {
       showToast('error', 'Error al descongelar', parseApiError(err));
@@ -254,7 +257,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     setIsProcessing(true);
     try {
       await membresiasService.cancelarMembresia(selectedMembresiaId, { motivo: motivoCancelar });
-      showToast('info', 'Membresía Cancelada', 'Membresía dada de baja');
+      showToast('info', 'Membresía cancelada', 'Membresía dada de baja');
       setShowCancelarModal(false);
       setSelectedMembresiaId(null);
       setMotivoCancelar('');
@@ -270,9 +273,9 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Membresías y Catálogo de Planes</h1>
+          <h1 className="page-title">Membresías</h1>
           <p className="page-subtitle">
-            Ciclo de vida, asignación de planes, congelamientos con recálculo automático y cancelaciones
+            Asigna planes, congela, cambia o cancela membresías
           </p>
         </div>
 
@@ -287,14 +290,14 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
             leftIcon={<UserCheck size={16} />}
             onClick={handleOpenAsignar}
           >
-            Asignar a Deportista
+            Asignar plan
           </Button>
           <Button
             variant="primary"
             leftIcon={<Plus size={16} />}
             onClick={() => setShowCrearPlanModal(true)}
           >
-            Nuevo Plan
+            Nuevo plan
           </Button>
         </div>
       </div>
@@ -305,13 +308,13 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
           className={`tab-btn ${activeTab === 'membresias' ? 'active' : ''}`}
           onClick={() => setActiveTab('membresias')}
         >
-          Membresías Activas
+          Membresías activas
         </button>
         <button
           className={`tab-btn ${activeTab === 'planes' ? 'active' : ''}`}
           onClick={() => setActiveTab('planes')}
         >
-          Catálogo de Planes ({planes.length})
+          Planes ({planes.length})
         </button>
       </div>
 
@@ -323,9 +326,9 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                 header: 'Deportista',
                 render: (m) => (
                   <div>
-                    <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{m.deportista_nombre}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Doc: {m.deportista_documento}
+                    <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{m.deportista_nombre}</div>
+                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                      Doc. {m.deportista_documento}
                     </div>
                   </div>
                 ),
@@ -335,30 +338,14 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                 accessor: 'plan_nombre',
               },
               {
-                header: 'Vigencia',
+                header: 'Vence',
                 render: (m) => (
-                  <div style={{ fontSize: '0.85rem' }}>
-                    <div>Inicio: {formatFechaNegocio(m.fecha_inicio)}</div>
-                    <div style={{ fontWeight: 600 }}>Vence: {formatFechaNegocio(m.fecha_vencimiento)}</div>
+                  <div>
+                    <div>{formatFechaNegocio(m.fecha_vencimiento)}</div>
+                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                      desde {formatFechaNegocio(m.fecha_inicio)}
+                    </div>
                   </div>
-                ),
-              },
-              {
-                header: 'Días Restantes',
-                render: (m) => (
-                  <span
-                    style={{
-                      fontWeight: 800,
-                      color:
-                        m.dias_restantes_o_vencido > 5
-                          ? 'var(--success)'
-                          : m.dias_restantes_o_vencido > 0
-                          ? 'var(--warning)'
-                          : 'var(--danger)',
-                    }}
-                  >
-                    {m.dias_restantes_o_vencido > 0 ? `${m.dias_restantes_o_vencido} días` : 'Vencida'}
-                  </span>
                 ),
               },
               {
@@ -368,10 +355,11 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                 ),
               },
               {
-                header: 'Acciones',
+                header: '',
                 align: 'right',
+                width: '150px',
                 render: (m) => (
-                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                  <div className="acciones-fila">
                     {puedeCobrar && !m.cancelada && (
                       <Button
                         variant="secondary"
@@ -382,53 +370,44 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                         Renovar
                       </Button>
                     )}
-                    {m.congelamiento_activo ? (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        leftIcon={<Sun size={14} color="var(--warning)" />}
-                        onClick={() => handleDescongelar(m.id)}
-                      >
-                        Descongelar
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        leftIcon={<Snowflake size={14} color="var(--info)" />}
-                        onClick={() => {
-                          setSelectedMembresiaId(m.id);
-                          setShowCongelarModal(true);
-                        }}
-                      >
-                        Congelar
-                      </Button>
-                    )}
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      leftIcon={<RefreshCw size={14} />}
-                      onClick={() => {
-                        setSelectedMembresiaId(m.id);
-                        setNuevoPlanId(planes[0]?.id || '');
-                        setShowCambiarPlanModal(true);
-                      }}
-                    >
-                      Cambiar Plan
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      leftIcon={<XCircle size={14} color="var(--danger)" />}
-                      onClick={() => {
-                        setSelectedMembresiaId(m.id);
-                        setShowCancelarModal(true);
-                      }}
-                    >
-                      Cancelar
-                    </Button>
+                    <MenuAcciones
+                      etiqueta={`Acciones de ${m.deportista_nombre}`}
+                      acciones={[
+                        {
+                          etiqueta: 'Descongelar',
+                          icono: <Sun size={15} />,
+                          oculto: !m.congelamiento_activo,
+                          onClick: () => handleDescongelar(m.id),
+                        },
+                        {
+                          etiqueta: 'Congelar',
+                          icono: <Snowflake size={15} />,
+                          oculto: m.congelamiento_activo,
+                          onClick: () => {
+                            setSelectedMembresiaId(m.id);
+                            setShowCongelarModal(true);
+                          },
+                        },
+                        {
+                          etiqueta: 'Cambiar plan',
+                          icono: <RefreshCw size={15} />,
+                          onClick: () => {
+                            setSelectedMembresiaId(m.id);
+                            setNuevoPlanId(planes[0]?.id || '');
+                            setShowCambiarPlanModal(true);
+                          },
+                        },
+                        {
+                          etiqueta: 'Cancelar membresía',
+                          icono: <XCircle size={15} />,
+                          peligro: true,
+                          onClick: () => {
+                            setSelectedMembresiaId(m.id);
+                            setShowCancelarModal(true);
+                          },
+                        },
+                      ]}
+                    />
                   </div>
                 ),
               },
@@ -467,13 +446,13 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                   </span>
                 </div>
 
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 6 }}>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 500, color: 'var(--text-primary)', marginBottom: 6 }}>
                   {plan.nombre}
                 </h3>
 
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, margin: '14px 0' }}>
-                  <span style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--primary)' }}>
-                    ${Number(plan.precio).toLocaleString()}
+                  <span style={{ fontSize: '1.75rem', fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '-0.03em' }}>
+                    {formatCOP(plan.precio)}
                   </span>
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                     / {plan.duracion_dias} días
@@ -490,25 +469,25 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
       )}
 
       {/* Modal: Crear Plan */}
-      <Modal
+      <Drawer
         isOpen={showCrearPlanModal}
         onClose={() => setShowCrearPlanModal(false)}
-        title="Crear Nuevo Plan Tarifario"
+        title="Nuevo plan"
         footer={
           <>
             <Button variant="outline" onClick={() => setShowCrearPlanModal(false)}>
               Cancelar
             </Button>
             <Button variant="primary" onClick={handleCrearPlan} isLoading={isProcessing}>
-              Guardar Plan
+              Guardar plan
             </Button>
           </>
         }
       >
         <form onSubmit={handleCrearPlan}>
           <Input
-            label="Nombre del Plan *"
-            placeholder="Ej. Mensualidad Estándar"
+            label="Nombre del plan *"
+            placeholder="Ej. Mensualidad"
             value={newPlan.nombre}
             onChange={(e) => setNewPlan({ ...newPlan, nombre: e.target.value })}
             required
@@ -523,7 +502,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
               required
             />
             <Input
-              label="Duración en Días *"
+              label="Duración en días *"
               type="number"
               value={newPlan.duracion_dias}
               onChange={(e) => setNewPlan({ ...newPlan, duracion_dias: Number(e.target.value) })}
@@ -543,20 +522,20 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
               onChange={(e) => setNewPlan({ ...newPlan, tipo: e.target.value as any })}
             />
             <Input
-              label="Cupo Máximo de Personas"
+              label="Cupo máximo de personas"
               type="number"
               value={newPlan.cupo_personas || 1}
               onChange={(e) => setNewPlan({ ...newPlan, cupo_personas: Number(e.target.value) })}
             />
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Modal: Asignar Membresía */}
-      <Modal
+      <Drawer
         isOpen={showAsignarModal}
         onClose={() => setShowAsignarModal(false)}
-        title="Asignar Plan a Deportista"
+        title="Asignar plan"
         footer={
           <>
             <Button variant="outline" onClick={() => setShowAsignarModal(false)}>
@@ -569,7 +548,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
         }
       >
         <Select
-          label="Seleccionar Deportista *"
+          label="Deportista *"
           options={deportistasList.map((d) => ({
             value: d.id,
             label: `${d.nombre} (${d.documento})`,
@@ -579,28 +558,28 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
         />
 
         <Select
-          label="Seleccionar Plan *"
+          label="Plan *"
           options={planes.map((p) => ({
             value: p.id,
-            label: `${p.nombre} - $${Number(p.precio).toLocaleString()} (${p.duracion_dias} días)`,
+            label: `${p.nombre} · ${formatCOP(p.precio)} · ${p.duracion_dias} días`,
           }))}
           value={asignarData.plan_id}
           onChange={(e) => setAsignarData({ ...asignarData, plan_id: e.target.value })}
         />
-      </Modal>
+      </Drawer>
 
       {/* Modal: Congelar */}
       <Modal
         isOpen={showCongelarModal}
         onClose={() => setShowCongelarModal(false)}
-        title="Congelar Membresía"
+        title="Congelar membresía"
         footer={
           <>
             <Button variant="outline" onClick={() => setShowCongelarModal(false)}>
               Cancelar
             </Button>
             <Button variant="primary" onClick={handleCongelar} isLoading={isProcessing}>
-              Congelar Ahora
+              Congelar
             </Button>
           </>
         }
@@ -609,7 +588,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
           Al congelar la membresía, el deportista no acumula días vencidos. Al descongelar, la fecha de vencimiento se recalcula automáticamente sumando los días que estuvo congelado.
         </p>
         <Input
-          label="Motivo Opcional"
+          label="Motivo (opcional)"
           placeholder="Ej. Incapacidad médica, viaje de trabajo..."
           value={motivoCongelar}
           onChange={(e) => setMotivoCongelar(e.target.value)}
@@ -620,7 +599,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
       <Modal
         isOpen={showCambiarPlanModal}
         onClose={() => setShowCambiarPlanModal(false)}
-        title="Cambiar Plan de Membresía"
+        title="Cambiar plan"
         footer={
           <>
             <Button variant="outline" onClick={() => setShowCambiarPlanModal(false)}>
@@ -633,10 +612,10 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
         }
       >
         <Select
-          label="Nuevo Plan a Asignar *"
+          label="Nuevo plan *"
           options={planes.map((p) => ({
             value: p.id,
-            label: `${p.nombre} - $${Number(p.precio).toLocaleString()} (${p.duracion_dias} días)`,
+            label: `${p.nombre} · ${formatCOP(p.precio)} · ${p.duracion_dias} días`,
           }))}
           value={nuevoPlanId}
           onChange={(e) => setNuevoPlanId(e.target.value)}
@@ -686,14 +665,14 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
       <Modal
         isOpen={showCancelarModal}
         onClose={() => setShowCancelarModal(false)}
-        title="Cancelar Membresía"
+        title="Cancelar membresía"
         footer={
           <>
             <Button variant="outline" onClick={() => setShowCancelarModal(false)}>
               Volver
             </Button>
             <Button variant="danger" onClick={handleCancelarMembresia} isLoading={isProcessing}>
-              Confirmar Cancelación
+              Cancelar membresía
             </Button>
           </>
         }
@@ -702,7 +681,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
           Esta acción da de baja la membresía y cierra cualquier congelamiento abierto. Quedará registrada en la auditoría inmutable del gimnasio.
         </p>
         <Input
-          label="Motivo Obligatorio *"
+          label="Motivo *"
           placeholder="Ej. Solicitud voluntaria del afiliado..."
           value={motivoCancelar}
           onChange={(e) => setMotivoCancelar(e.target.value)}

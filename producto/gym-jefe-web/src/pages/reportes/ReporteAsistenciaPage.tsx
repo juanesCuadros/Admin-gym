@@ -34,7 +34,7 @@ const Barras: React.FC<{ filas: Array<{ etiqueta: string; valor: number }> }> = 
               }}
             />
           </div>
-          <span style={{ textAlign: 'right', fontWeight: 600 }}>{f.valor}</span>
+          <span style={{ textAlign: 'right', fontWeight: 500 }}>{f.valor}</span>
         </div>
       ))}
     </div>
@@ -204,7 +204,7 @@ export const ReporteAsistenciaPage: React.FC = () => {
                       header: 'Deportista',
                       render: (t) => (
                         <div>
-                          <div style={{ fontWeight: 600 }}>{t.nombre}</div>
+                          <div style={{ fontWeight: 500 }}>{t.nombre}</div>
                           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t.documento}</div>
                         </div>
                       ),
@@ -280,7 +280,7 @@ export const ReporteAsistenciaPage: React.FC = () => {
                 header: 'Deportista',
                 render: (d) => (
                   <div>
-                    <div style={{ fontWeight: 600 }}>{d.nombre}</div>
+                    <div style={{ fontWeight: 500 }}>{d.nombre}</div>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{d.documento}</div>
                   </div>
                 ),

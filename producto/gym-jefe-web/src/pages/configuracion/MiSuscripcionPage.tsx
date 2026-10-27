@@ -29,7 +29,7 @@ const BarraUso: React.FC<{ etiqueta: string; icono: React.ReactNode; uso: number
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         {icono}
-        <span style={{ flex: 1, fontWeight: 600 }}>{etiqueta}</span>
+        <span style={{ flex: 1, fontWeight: 500 }}>{etiqueta}</span>
         <span>
           {uso}
           {conLimite ? ` de ${limite}` : ' · sin límite'}
@@ -129,7 +129,7 @@ export const MiSuscripcionPage: React.FC = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">Mi suscripción</h1>
-          <p className="page-subtitle">Plan de GymOS del gimnasio, uso actual y cambio de plan</p>
+          <p className="page-subtitle">Tu plan de GymOS, el uso actual y cambio de plan</p>
         </div>
       </div>
 
@@ -150,7 +150,7 @@ export const MiSuscripcionPage: React.FC = () => {
               {actual ? (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                    <span style={{ fontSize: '1.3rem', fontWeight: 800 }}>{actual.nombre}</span>
+                    <span style={{ fontSize: '1.3rem', fontWeight: 500 }}>{actual.nombre}</span>
                     <Badge variant="primary">{actual.tipo}</Badge>
                   </div>
                   <BarraUso
@@ -178,7 +178,7 @@ export const MiSuscripcionPage: React.FC = () => {
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <Clock size={16} color="var(--warning)" />
-                    <span style={{ fontWeight: 700 }}>Pendiente: {pendiente.plan_nombre}</span>
+                    <span style={{ fontWeight: 500 }}>Pendiente: {pendiente.plan_nombre}</span>
                   </div>
                   <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: 0 }}>
                     Solicitada por {pendiente.solicitado_por} el {formatFechaHora(pendiente.created_at)}. MVC la aprueba
@@ -186,7 +186,7 @@ export const MiSuscripcionPage: React.FC = () => {
                   </p>
                   <Button
                     variant="outline"
-                    leftIcon={<XCircle size={16} color="var(--danger)" />}
+                    leftIcon={<XCircle size={16} />}
                     onClick={() => setConfirmarCancelar(true)}
                   >
                     Cancelar solicitud
@@ -200,7 +200,7 @@ export const MiSuscripcionPage: React.FC = () => {
             </Card>
           </div>
 
-          <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 12 }}>Planes disponibles</h2>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 500, marginBottom: 12 }}>Planes disponibles</h2>
           {planes.length === 0 ? (
             <p style={{ color: 'var(--text-secondary)' }}>MVC no tiene planes publicados en este momento.</p>
           ) : (
@@ -210,13 +210,13 @@ export const MiSuscripcionPage: React.FC = () => {
                 return (
                   <Card key={p.id} style={{ display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                      <span style={{ fontSize: '1.1rem', fontWeight: 800, flex: 1 }}>{p.nombre}</span>
+                      <span style={{ fontSize: '1.1rem', fontWeight: 500, flex: 1 }}>{p.nombre}</span>
                       {esActual && <Badge variant="success">Actual</Badge>}
                     </div>
                     {p.descripcion && (
                       <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: 0 }}>{p.descripcion}</p>
                     )}
-                    <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{formatCOP(p.precio)}</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 500 }}>{formatCOP(p.precio)}</div>
                     <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 12 }}>
                       por {p.duracion_meses} {p.duracion_meses === 1 ? 'mes' : 'meses'}
                     </div>
@@ -224,7 +224,7 @@ export const MiSuscripcionPage: React.FC = () => {
                       <li>
                         {p.max_clientes_activos ? `Hasta ${p.max_clientes_activos} clientes activos` : 'Clientes activos sin límite'}
                       </li>
-                      <li>{p.max_staff ? `Hasta ${p.max_staff} personas de staff` : 'Staff sin límite'}</li>
+                      <li>{p.max_staff ? `Hasta ${p.max_staff} personas en el equipo` : 'Equipo sin límite'}</li>
                     </ul>
                     <Button
                       variant={esActual ? 'outline' : 'primary'}

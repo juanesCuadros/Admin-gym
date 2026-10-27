@@ -41,7 +41,7 @@ const Desglose: React.FC<{ titulo: string; datos: Record<string, number | string
             {filas.map(([clave, monto]) => (
               <tr key={clave}>
                 <td>{etiquetas?.[clave] ?? clave}</td>
-                <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatCOP(monto)}</td>
+                <td style={{ textAlign: 'right', fontWeight: 500 }}>{formatCOP(monto)}</td>
               </tr>
             ))}
           </tbody>

@@ -231,7 +231,7 @@ export const LoginPage: React.FC = () => {
         </form>
 
         <div style={{ textAlign: 'center', marginTop: 18, fontSize: '0.875rem' }}>
-          <Link to="/recuperar" style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}>
+          <Link to="/recuperar" style={{ color: 'var(--primary)', fontWeight: 500, textDecoration: 'none' }}>
             ¿Olvidaste tu contraseña?
           </Link>
         </div>

@@ -93,7 +93,7 @@ export const BloqueadoPage: React.FC = () => {
         {tenant.nombre && motivo !== 'no_encontrado' && (
           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 4 }}>{tenant.nombre}</div>
         )}
-        <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
           {texto.titulo}
         </h1>
         <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.55, marginTop: 10 }}>
@@ -111,7 +111,7 @@ export const BloqueadoPage: React.FC = () => {
             textAlign: 'left',
           }}
         >
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Contacto de MVC</div>
+          <div style={{ fontWeight: 500, marginBottom: 4 }}>Contacto de MVC</div>
           {CONTACTO_MVC ? (
             <div style={{ color: 'var(--text-secondary)', wordBreak: 'break-word' }}>{CONTACTO_MVC}</div>
           ) : (

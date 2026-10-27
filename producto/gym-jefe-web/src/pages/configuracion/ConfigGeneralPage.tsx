@@ -346,7 +346,7 @@ export const ConfigGeneralPage: React.FC = () => {
                       style={{ marginBottom: 16 }}
                       onClick={() => setForm({ ...form, horarios: form.horarios.filter((x) => x.clave !== h.clave) })}
                     >
-                      <Trash2 size={14} color="var(--danger)" />
+                      <Trash2 size={14} />
                     </Button>
                   )}
                 </div>
