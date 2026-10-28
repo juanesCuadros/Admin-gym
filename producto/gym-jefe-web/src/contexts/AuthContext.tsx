@@ -11,7 +11,7 @@ const INACTIVIDAD_MS = 60 * 60 * 1000;
 const EVENTOS_ACTIVIDAD = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'] as const;
 
 /** Motivo por el que se terminó la última sesión; el login lo muestra como mensaje fijo. */
-export type MotivoFinSesion = 'expirada' | 'inactividad' | 'cerrada' | null;
+export type MotivoFinSesion = 'expirada' | 'inactividad' | 'cerrada' | 'temporal_vencida' | null;
 const STORAGE_MOTIVO = 'gymos_motivo_fin_sesion';
 
 export type ResultadoLogin = { ok: true; usuario: UsuarioAuthDto } | { ok: false; error: ApiError };
@@ -24,6 +24,10 @@ interface AuthContextType {
   logout: () => Promise<void>;
   /** Vuelve a pedir `/auth/me` para refrescar permisos (p. ej. tras un 403). */
   refrescarUsuario: () => Promise<void>;
+  /** Tras cambiar la contraseña en sesión: quita la marca de temporal y libera la navegación (§C4). */
+  marcarPasswordCambiada: () => void;
+  /** La contraseña temporal venció estando en sesión: cierra y el login pide una nueva (§C4). */
+  cerrarPorTemporalVencida: () => void;
   hasPermission: (submodulo: string, accion?: 'leer' | 'crear' | 'editar' | 'eliminar') => boolean;
   isJefe: boolean;
   isRecepcionista: boolean;
@@ -132,6 +136,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
+  const marcarPasswordCambiada = useCallback(() => {
+    setUser((actual) => {
+      if (!actual) return actual;
+      const nuevo = { ...actual, debe_cambiar_password: false, password_temporal_expira_en: null };
+      localStorage.setItem(STORAGE.user, JSON.stringify(nuevo));
+      return nuevo;
+    });
+  }, []);
+
+  const cerrarPorTemporalVencida = useCallback(() => {
+    sessionStorage.setItem(STORAGE_MOTIVO, 'temporal_vencida');
+    expirarSesion();
+  }, []);
+
   const hasPermission = useCallback(
     (submodulo: string, accion?: 'leer' | 'crear' | 'editar' | 'eliminar'): boolean => {
       if (!user) return false;
@@ -158,6 +176,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         login,
         logout,
         refrescarUsuario,
+        marcarPasswordCambiada,
+        cerrarPorTemporalVencida,
         hasPermission,
         isJefe: user?.rol === 'jefe',
         isRecepcionista: user?.rol === 'recepcionista',

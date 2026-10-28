@@ -17,7 +17,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   requiredAction = 'leer',
   soloJefe = false,
 }) => {
-  const { isAuthenticated, hasPermission, isJefe } = useAuth();
+  const { isAuthenticated, hasPermission, isJefe, user } = useAuth();
   const location = useLocation();
 
   if (!isAuthenticated) {
@@ -25,6 +25,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     const destino = `${location.pathname}${location.search}`;
     if (destino !== '/') sessionStorage.setItem(STORAGE.returnTo, destino);
     return <Navigate to="/login" replace state={{ from: destino }} />;
+  }
+
+  // Contraseña temporal: cualquier ruta protegida lleva a /cambiar-clave hasta cambiarla (§C4).
+  if (user?.debe_cambiar_password && location.pathname !== '/cambiar-clave') {
+    return <Navigate to="/cambiar-clave" replace />;
   }
 
   if (soloJefe && !isJefe) return <SinPermiso />;

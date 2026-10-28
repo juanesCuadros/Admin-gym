@@ -6,6 +6,7 @@ import {
   RefreshTokenRequest,
   SolicitarRecuperacionRequest,
   ConfirmarRecuperacionRequest,
+  CambiarPasswordRequest,
   UsuarioAuthDto,
   PermisoMatrizItemDto,
   PermisoItemUpdate,
@@ -40,6 +41,12 @@ export const authService = {
 
   async confirmarRecuperacion(data: ConfirmarRecuperacionRequest): Promise<ApiResponse> {
     const response = await apiClient.post<ApiResponse>('/auth/recuperar-password/confirmar', data);
+    return response.data;
+  },
+
+  /** Cierra las demás sesiones del usuario; la actual sigue viva. */
+  async cambiarPassword(data: CambiarPasswordRequest): Promise<ApiResponse> {
+    const response = await apiClient.post<ApiResponse>('/auth/cambiar-password', data);
     return response.data;
   },
 

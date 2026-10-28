@@ -8,6 +8,10 @@ export interface UsuarioAuthDto {
   permisos: string[]; // ["*"] o ["submodulo:accion"] ej: ["caja:crear", "caja:leer"]
   /** Contrato 2.8: true solo para recepcionista sin turno de caja abierto en el gimnasio. */
   requiere_abrir_caja?: boolean;
+  /** GW-RF-00.1 CA3: contraseña temporal o marcada para cambio → `/cambiar-clave` bloquea la navegación. */
+  debe_cambiar_password?: boolean;
+  /** Vencimiento de la contraseña temporal (72 h), ISO-8601. Null si no hay temporal. */
+  password_temporal_expira_en?: string | null;
 }
 
 export interface LoginRequest {
@@ -25,6 +29,8 @@ export interface LoginResponseDto {
 
 export interface RefreshResponseDto {
   access_token: string;
+  /** El refresh rota en cada uso: el anterior deja de servir. */
+  refresh_token: string;
   token_type: string;
   usuario: UsuarioAuthDto;
 }
@@ -41,6 +47,11 @@ export interface SolicitarRecuperacionRequest {
 export interface ConfirmarRecuperacionRequest {
   token: string;
   nueva_password: string;
+}
+
+export interface CambiarPasswordRequest {
+  password_actual: string;
+  password_nueva: string;
 }
 
 export interface PermisoItemUpdate {

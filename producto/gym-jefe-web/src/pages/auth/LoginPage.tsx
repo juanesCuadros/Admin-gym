@@ -43,6 +43,8 @@ export const LoginPage: React.FC = () => {
   const [aviso] = useState(() => {
     const m = consumirMotivoFinSesion();
     if (m === 'inactividad') return 'Tu sesión terminó por inactividad. Vuelve a iniciar sesión.';
+    if (m === 'temporal_vencida')
+      return 'Tu contraseña temporal venció. Pide una nueva al Jefe del gimnasio o, si eres el Jefe, a MVC.';
     if (m === 'expirada') return 'Tu sesión terminó. Vuelve a iniciar sesión.';
     return null;
   });
@@ -106,7 +108,7 @@ export const LoginPage: React.FC = () => {
 
     if (resultado.ok) {
       // Orden de §C1:
-      // 1. Contraseña temporal → /cambiar-clave. Pendiente: el backend no marca contraseñas temporales.
+      // 1. Contraseña temporal → /cambiar-clave. Lo aplica ProtectedRoute en cualquier ruta.
       // 2. Recepcionista sin turno → /caja con el modal. Lo aplica el guard del layout en cualquier ruta.
       // 3. Ruta guardada o Inicio: lo hace el <Navigate> de arriba al quedar autenticado.
       return;
@@ -124,6 +126,12 @@ export const LoginPage: React.FC = () => {
     if (err.tipo === 'validacion' && Object.keys(err.campos).length > 0) {
       setErrores({ correo: err.campos.correo, password: err.campos.password });
       if (!err.campos.correo && !err.campos.password) setErrorGeneral(err.message);
+      return;
+    }
+
+    // Solo llega con la contraseña correcta, así que no revela nada: se muestra tal cual (§C1).
+    if (err.codigo === 'PASSWORD_TEMPORAL_VENCIDA') {
+      setErrorGeneral(err.message);
       return;
     }
 
