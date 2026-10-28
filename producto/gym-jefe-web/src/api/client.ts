@@ -208,9 +208,22 @@ const CODIGOS_PERMISO = new Set(['PERMISO_DENEGADO', 'ROL_NO_AUTORIZADO', 'ACCES
 
 let refrescando: Promise<string> | null = null;
 
-/** Un solo refresh en vuelo; el resto de peticiones espera el mismo resultado. */
-async function refrescarAccessToken(): Promise<string> {
-  if (refrescando) return refrescando;
+/**
+ * Corre `fn` con un candado compartido por todas las pestañas del gimnasio.
+ * El backend rota el refresh y, si recibe uno ya usado, revoca la sesión entera por seguridad:
+ * dos pestañas refrescando a la vez con el mismo token cerraban la sesión de ambas.
+ */
+function conCandadoEntrePestanas<T>(fn: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request('gymos_refresh', fn);
+  }
+  return fn();
+}
+
+async function pedirRefresh(tokenRechazado: string | null): Promise<string> {
+  // Otra pestaña ya refrescó mientras esta esperaba el candado: se usa su access token.
+  const accessActual = localStorage.getItem(STORAGE.access);
+  if (accessActual && tokenRechazado && accessActual !== tokenRechazado) return accessActual;
 
   const refreshToken = localStorage.getItem(STORAGE.refresh);
   if (!refreshToken) {
@@ -223,26 +236,30 @@ async function refrescarAccessToken(): Promise<string> {
     });
   }
 
-  refrescando = axios
-    .post(`${BASE_URL}/auth/refresh`, { refresh_token: refreshToken }, { timeout: 15000 })
-    .then((res) => {
-      const nuevo: string = res.data.access_token;
-      localStorage.setItem(STORAGE.access, nuevo);
-      // El backend hoy no rota el refresh; si algún día lo devuelve, se conserva.
-      if (res.data.refresh_token) localStorage.setItem(STORAGE.refresh, res.data.refresh_token);
-      if (res.data.usuario) localStorage.setItem(STORAGE.user, JSON.stringify(res.data.usuario));
-      return nuevo;
-    })
-    .catch((err) => {
-      const apiErr = toApiError(err);
-      if (apiErr.tipo === 'suspendido') marcarGimnasioSuspendido('suspendido');
-      else if (apiErr.tipo !== 'red') expirarSesion();
-      throw apiErr;
-    })
-    .finally(() => {
-      refrescando = null;
-    });
+  try {
+    const res = await axios.post(`${BASE_URL}/auth/refresh`, { refresh_token: refreshToken }, { timeout: 15000 });
+    const nuevo: string = res.data.access_token;
+    localStorage.setItem(STORAGE.access, nuevo);
+    if (res.data.refresh_token) localStorage.setItem(STORAGE.refresh, res.data.refresh_token);
+    if (res.data.usuario) localStorage.setItem(STORAGE.user, JSON.stringify(res.data.usuario));
+    return nuevo;
+  } catch (err) {
+    const apiErr = toApiError(err);
+    if (apiErr.tipo === 'suspendido') marcarGimnasioSuspendido('suspendido');
+    else if (apiErr.tipo !== 'red') expirarSesion();
+    throw apiErr;
+  }
+}
 
+/**
+ * Un solo refresh en vuelo por pestaña, y uno a la vez entre pestañas.
+ * `tokenRechazado` es el access token con el que falló la petición.
+ */
+async function refrescarAccessToken(tokenRechazado: string | null): Promise<string> {
+  if (refrescando) return refrescando;
+  refrescando = conCandadoEntrePestanas(() => pedirRefresh(tokenRechazado)).finally(() => {
+    refrescando = null;
+  });
   return refrescando;
 }
 
@@ -270,7 +287,8 @@ apiClient.interceptors.response.use(
     if (apiErr.status === 401 && original && !original._retry && !esAuth) {
       original._retry = true;
       try {
-        const nuevo = await refrescarAccessToken();
+        const enviado = String(original.headers?.Authorization ?? '').replace(/^Bearer\s+/, '') || null;
+        const nuevo = await refrescarAccessToken(enviado);
         if (original.headers) original.headers.Authorization = `Bearer ${nuevo}`;
         return apiClient(original);
       } catch (e) {
