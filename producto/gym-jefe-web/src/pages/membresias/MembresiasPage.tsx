@@ -33,6 +33,7 @@ import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge
 import { useAuth } from '../../contexts/AuthContext';
 import { CobroMembresiaModal, DestinoCobro } from './CobroMembresiaModal';
 import { CrearPaqueteModal, traducirErrorPaquete } from './CrearPaqueteModal';
+import type { DeportistaBusquedaItem } from '../../types/comun.types';
 import {
   PlanResponse,
   MembresiaListItemResponse,
@@ -98,8 +99,11 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
   const [cobro, setCobro] = useState<DestinoCobro | null>(null);
   // Plan grupal (contrato 1.3)
   const [showPaqueteModal, setShowPaqueteModal] = useState(false);
+  const [paquetePlanInicialId, setPaquetePlanInicialId] = useState<string>('');
+  const [paqueteTitularInicial, setPaqueteTitularInicial] = useState<DeportistaBusquedaItem | null>(null);
   const puedeCrearMembresia = hasPermission('membresias', 'crear');
   const puedeEditarPlan = hasPermission('membresias', 'editar');
+  const planesActivos = planes.filter((p) => p.activo);
 
   /** Precio de lista de una membresía: la copia del plan vendido (contrato 1.4) o, si no la hay, el precio del plan. */
   const precioListaDe = (m: Pick<MembresiaResponse, 'plan_id' | 'plan_precio_vendido'>): number | null => {
@@ -267,10 +271,10 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     try {
       const depRes = await deportistasService.getDeportistas({ limit: 50 });
       setDeportistasList(depRes.items);
-      if (planes.length > 0) {
+      if (planesActivos.length > 0) {
         setAsignarData({
           deportista_id: depRes.items[0]?.id || '',
-          plan_id: planes[0]?.id || '',
+          plan_id: planesActivos[0]?.id || '',
         });
       }
       setShowAsignarModal(true);
@@ -289,6 +293,12 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     if (!deportista_id || !plan) return;
     const dep = deportistasList.find((d) => d.id === deportista_id);
     setShowAsignarModal(false);
+    if (plan.cupo_personas > 1) {
+      setPaquetePlanInicialId(plan.id);
+      setPaqueteTitularInicial(dep ?? null);
+      setShowPaqueteModal(true);
+      return;
+    }
     setCobro({
       tipo: 'venta',
       titulo: dep?.nombre ?? 'Venta de plan',
@@ -339,6 +349,29 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     const actual = membresias.find((m) => m.id === membresiaId);
     setShowCambiarPlanModal(false);
     setSelectedMembresiaId(null);
+    if (plan.cupo_personas > 1) {
+      setPaquetePlanInicialId(plan.id);
+      setPaqueteTitularInicial(
+        actual
+          ? {
+              id: actual.deportista_id,
+              tipo_documento: 'CC',
+              documento: actual.deportista_documento,
+              nombre: actual.deportista_nombre,
+              correo: actual.deportista_correo ?? null,
+              telefono: actual.deportista_telefono ?? null,
+              activo: actual.deportista_activo,
+              plan_nombre: actual.plan_nombre,
+              fecha_vencimiento: actual.fecha_vencimiento,
+              esta_congelada: actual.congelamiento_activo,
+              cancelada: actual.cancelada,
+              estado: actual.estado_calculado,
+            }
+          : null,
+      );
+      setShowPaqueteModal(true);
+      return;
+    }
     setCobro({
       tipo: 'venta',
       titulo: actual?.deportista_nombre ?? 'Cambio de plan',
@@ -384,7 +417,15 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {puedeCrearMembresia && (
-            <Button variant="outline" leftIcon={<Users size={16} />} onClick={() => setShowPaqueteModal(true)}>
+            <Button
+              variant="outline"
+              leftIcon={<Users size={16} />}
+              onClick={() => {
+                setPaquetePlanInicialId('');
+                setPaqueteTitularInicial(null);
+                setShowPaqueteModal(true);
+              }}
+            >
               Plan grupal
             </Button>
           )}
@@ -496,7 +537,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                           icono: <RefreshCw size={15} />,
                           onClick: () => {
                             setSelectedMembresiaId(m.id);
-                            setNuevoPlanId(planes[0]?.id || '');
+                            setNuevoPlanId(planesActivos.find((p) => p.id !== m.plan_id)?.id || planesActivos[0]?.id || '');
                             setShowCambiarPlanModal(true);
                           },
                         },
@@ -731,9 +772,9 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
 
         <Select
           label="Plan *"
-          options={planes.map((p) => ({
+          options={planesActivos.map((p) => ({
             value: p.id,
-            label: `${p.nombre} · ${formatCOP(p.precio)} · ${p.duracion_dias} días`,
+            label: `${p.nombre} · ${formatCOP(p.precio)} · ${p.duracion_dias} días${p.cupo_personas > 1 ? ` · ${p.cupo_personas} personas` : ''}`,
           }))}
           value={asignarData.plan_id}
           onChange={(e) => setAsignarData({ ...asignarData, plan_id: e.target.value })}
@@ -785,9 +826,9 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
       >
         <Select
           label="Nuevo plan *"
-          options={planes.map((p) => ({
+          options={planesActivos.map((p) => ({
             value: p.id,
-            label: `${p.nombre} · ${formatCOP(p.precio)} · ${p.duracion_dias} días`,
+            label: `${p.nombre} · ${formatCOP(p.precio)} · ${p.duracion_dias} días${p.cupo_personas > 1 ? ` · ${p.cupo_personas} personas` : ''}`,
           }))}
           value={nuevoPlanId}
           onChange={(e) => setNuevoPlanId(e.target.value)}
@@ -797,6 +838,8 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
       <CrearPaqueteModal
         isOpen={showPaqueteModal}
         planes={planes}
+        planInicialId={paquetePlanInicialId}
+        titularInicial={paqueteTitularInicial}
         onCerrar={() => setShowPaqueteModal(false)}
         onContinuar={({ plan, titular, beneficiarios, fechaInicio }) => {
           setShowPaqueteModal(false);

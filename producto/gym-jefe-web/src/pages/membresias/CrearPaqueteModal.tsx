@@ -23,6 +23,8 @@ interface CrearPaqueteModalProps {
   isOpen: boolean;
   /** Planes del gimnasio; aquí solo se ofrecen los grupales activos. */
   planes: PlanResponse[];
+  planInicialId?: string;
+  titularInicial?: DeportistaBusquedaItem | null;
   onCerrar: () => void;
   onContinuar: (datos: DatosPlanGrupal) => void;
 }
@@ -51,7 +53,14 @@ export function traducirErrorPaquete(err: ApiError): string | null {
  * Primer paso para vender un plan grupal (pareja o familiar, contrato 1.3, GW-RF-52): plan, titular y
  * beneficiarios (el titular cuenta como beneficiario). El cobro y `POST /membresias/paquetes` van juntos después.
  */
-export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, planes, onCerrar, onContinuar }) => {
+export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({
+  isOpen,
+  planes,
+  planInicialId,
+  titularInicial,
+  onCerrar,
+  onContinuar,
+}) => {
   const grupales = planes.filter((p) => p.activo && p.cupo_personas > 1);
 
   const [planId, setPlanId] = useState('');
@@ -62,12 +71,12 @@ export const CrearPaqueteModal: React.FC<CrearPaqueteModalProps> = ({ isOpen, pl
 
   useEffect(() => {
     if (!isOpen) return;
-    setPlanId('');
-    setTitular(null);
+    setPlanId(planInicialId ?? '');
+    setTitular(titularInicial ?? null);
     setOtros([]);
     setFechaInicio(hoyBogota());
     setAvisoBuscador(null);
-  }, [isOpen]);
+  }, [isOpen, planInicialId, titularInicial]);
 
   const plan = grupales.find((p) => p.id === planId) ?? null;
   const beneficiarios = titular ? [titular, ...otros] : otros;

@@ -479,7 +479,7 @@ class MembresiasService:
 
         # 3. Validar que no exista membresía activa previa (RF-25)
         q_activa = text("""
-            SELECT id, fecha_vencimiento FROM platform.membresias
+            SELECT id, plan_id, fecha_vencimiento FROM platform.membresias
             WHERE gimnasio_id = :gym_id AND deportista_id = :deportista_id AND cancelada = false
             ORDER BY fecha_vencimiento DESC
             LIMIT 1
@@ -487,6 +487,21 @@ class MembresiasService:
         res_activa = await session.execute(q_activa, {"gym_id": gym_id, "deportista_id": req.deportista_id})
         memb_activa = res_activa.mappings().first()
         if memb_activa:
+            if memb_activa["plan_id"] != req.plan_id:
+                return await cls.cambiar_plan(
+                    session=session,
+                    gym_id=gym_id,
+                    staff_id=staff_id,
+                    staff_nombre=staff_nombre,
+                    membresia_id=memb_activa["id"],
+                    req=CambiarPlanRequest(
+                        nuevo_plan_id=req.plan_id,
+                        motivo="Cambio automático al asignar nuevo plan",
+                        pago=req.pago,
+                    ),
+                    staff_rol=staff_rol,
+                    idempotency_key=idempotency_key,
+                )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
@@ -642,16 +657,25 @@ class MembresiasService:
                 detail={"codigo": "PLAN_INACTIVO", "mensaje": "No se puede cambiar a un plan tarifario que se encuentra desactivado"}
             )
 
-        # 3. Cerrar cualquier congelamiento huérfano abierto
-        await cls._cerrar_congelamiento_si_existe(session, gym_id, membresia_id, hoy)
+        # 3. Cerrar cualquier congelamiento huérfano abierto en membresías activas del deportista
+        q_activas_dep = text("""
+            SELECT id FROM platform.membresias
+            WHERE gimnasio_id = :gym_id AND deportista_id = :dep_id AND cancelada = false
+            FOR UPDATE
+        """)
+        res_activas_dep = await session.execute(
+            q_activas_dep, {"gym_id": gym_id, "dep_id": curr["deportista_id"]}
+        )
+        for row_act in res_activas_dep.mappings().all():
+            await cls._cerrar_congelamiento_si_existe(session, gym_id, row_act["id"], hoy)
 
-        # 4. Cancelar membresía anterior
+        # 4. Cancelar membresía anterior (y cualquier otra activa del deportista)
         q_cancel = text("""
             UPDATE platform.membresias
             SET cancelada = true, updated_at = now()
-            WHERE id = :id
+            WHERE gimnasio_id = :gym_id AND deportista_id = :dep_id AND cancelada = false
         """)
-        await session.execute(q_cancel, {"id": membresia_id})
+        await session.execute(q_cancel, {"gym_id": gym_id, "dep_id": curr["deportista_id"]})
 
         # 5. Insertar la nueva membresía: empieza cuando termina la actual (CA3); si ya venció, regla C2.
         gracia, umbral = await cls._obtener_config_tenant(session, gym_id)
@@ -1061,11 +1085,13 @@ class MembresiasService:
             cond_q = "AND (d.documento ILIKE :q_text OR d.nombre ILIKE :q_text)"
             params["q_text"] = f"%{q.strip()}%"
 
+        cond_cancelada = "AND m.cancelada = true" if estado == "cancelada" else "AND m.cancelada = false"
+
         q_count = text(f"""
             SELECT COUNT(*)
             FROM platform.membresias m
             JOIN platform.deportistas d ON d.id = m.deportista_id
-            WHERE m.gimnasio_id = :gym_id AND d.deleted_at IS NULL {cond_q}
+            WHERE m.gimnasio_id = :gym_id AND d.deleted_at IS NULL {cond_cancelada} {cond_q}
         """)
         res_count = await session.execute(q_count, params)
         total = res_count.scalar() or 0
@@ -1078,7 +1104,7 @@ class MembresiasService:
             FROM platform.membresias m
             JOIN platform.deportistas d ON d.id = m.deportista_id
             JOIN platform.planes p ON p.id = m.plan_id
-            WHERE m.gimnasio_id = :gym_id AND d.deleted_at IS NULL {cond_q}
+            WHERE m.gimnasio_id = :gym_id AND d.deleted_at IS NULL {cond_cancelada} {cond_q}
             ORDER BY m.fecha_vencimiento DESC, m.created_at DESC
             OFFSET :skip LIMIT :limit
         """)
@@ -1384,23 +1410,36 @@ class MembresiasService:
         for b_id in req.beneficiarios:
             dep_info = deps_map[b_id]
             # Beneficiario con membresía vigente: Su membresía del paquete empieza cuando vence la actual (GW-RF-52)
-            q_vigente = text("""
-                SELECT fecha_vencimiento
+            # y se desactiva automáticamente su membresía anterior para dejar solo activo el nuevo plan.
+            q_previas = text("""
+                SELECT id, fecha_vencimiento
                 FROM platform.membresias
                 WHERE gimnasio_id = :gym_id AND deportista_id = :b_id AND cancelada = false
-                  AND fecha_vencimiento >= :hoy
                 ORDER BY fecha_vencimiento DESC
-                LIMIT 1
+                FOR UPDATE
             """)
-            res_vig = await session.execute(q_vigente, {"gym_id": gym_id, "b_id": b_id, "hoy": hoy})
-            row_vig = res_vig.mappings().first()
+            res_prev = await session.execute(q_previas, {"gym_id": gym_id, "b_id": b_id})
+            rows_prev = res_prev.mappings().all()
 
+            row_vig = next((r for r in rows_prev if r["fecha_vencimiento"] >= hoy), None)
             if row_vig and row_vig["fecha_vencimiento"] >= fecha_inicio_base:
                 f_inicio = row_vig["fecha_vencimiento"] + timedelta(days=1)
             else:
                 f_inicio = fecha_inicio_base
 
             f_venc = f_inicio + timedelta(days=duracion_dias)
+
+            for prev_m in rows_prev:
+                await cls._cerrar_congelamiento_si_existe(session, gym_id, prev_m["id"], hoy)
+            if rows_prev:
+                await session.execute(
+                    text("""
+                        UPDATE platform.membresias
+                        SET cancelada = true, updated_at = now()
+                        WHERE gimnasio_id = :gym_id AND deportista_id = :b_id AND cancelada = false
+                    """),
+                    {"gym_id": gym_id, "b_id": b_id},
+                )
 
             # Si es el titular, recibe el sobrante
             p_asignado = (precio_base_indiv + sobrante) if b_id == req.titular_id else precio_base_indiv

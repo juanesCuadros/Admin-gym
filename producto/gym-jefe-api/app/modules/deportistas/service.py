@@ -272,7 +272,7 @@ class DeportistasService:
                 JOIN platform.planes p ON p.id = mb.plan_id
                 WHERE mb.deportista_id = d.id
                   AND mb.gimnasio_id = :gym_id
-                ORDER BY mb.fecha_vencimiento DESC, mb.created_at DESC
+                ORDER BY mb.cancelada ASC, mb.fecha_vencimiento DESC, mb.created_at DESC
                 LIMIT 1
             ) m ON true
             WHERE {where_clause}
@@ -356,7 +356,7 @@ class DeportistasService:
                 JOIN platform.planes p ON p.id = mb.plan_id
                 WHERE mb.deportista_id = d.id
                   AND mb.gimnasio_id = :gym_id
-                ORDER BY mb.fecha_vencimiento DESC, mb.created_at DESC
+                ORDER BY mb.cancelada ASC, mb.fecha_vencimiento DESC, mb.created_at DESC
                 LIMIT 1
             ) m ON true
             WHERE d.gimnasio_id = :gym_id
