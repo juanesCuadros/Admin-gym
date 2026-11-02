@@ -10,9 +10,45 @@ Incluye:
 - Consulta paginada de auditoría con filtros (RF-49, RF-50)
 """
 from datetime import datetime
+import re
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+
+PATRON_NOMENCLATURA_DIRECCION = re.compile(
+    r"\b(calle|cll|cl|carrera|cra|cr|kr|avenida|ave|av|diagonal|dg|transversal|tv|autopista|circular|circunvalar|manzana|mz|lote|km|kilometro|vereda|sede|edificio|torre|piso|local|centro comercial|cc|barrio|sector)\b",
+    re.IGNORECASE,
+)
+PATRON_CARACTERES_DIRECCION = re.compile(r"^[a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s\#\-\.\,\/\°\º]+$")
+
+def validar_direccion_sede(v: Optional[str]) -> Optional[str]:
+    """
+    Valida que la dirección de la sede tenga una longitud mínima (al menos 5 caracteres)
+    y un formato coherente con nomenclatura vial y numeración (ej. 'Carrera 15 # 85-30').
+    """
+    if v is None:
+        return None
+    val = v.strip()
+    if not val:
+        return None
+    if len(val) < 5:
+        raise ValueError("La dirección de la sede debe tener al menos 5 caracteres (ej. Carrera 15 # 85-30).")
+    if len(val) > 250:
+        raise ValueError("La dirección de la sede no puede exceder los 250 caracteres.")
+    if not PATRON_CARACTERES_DIRECCION.match(val):
+        raise ValueError("La dirección de la sede contiene caracteres no permitidos.")
+    if val.isdigit():
+        raise ValueError("La dirección de la sede no puede contener únicamente números.")
+    sin_espacios = val.replace(" ", "")
+    if len(set(sin_espacios)) <= 1:
+        raise ValueError("La dirección de la sede debe ser una dirección válida y legible.")
+    if not re.search(r"[a-zA-ZáéíóúñÁÉÍÓÚÑ]", val):
+        raise ValueError("La dirección de la sede debe contener letras o nomenclatura vial.")
+    tiene_numero = bool(re.search(r"\d", val))
+    tiene_nomenclatura = bool(PATRON_NOMENCLATURA_DIRECCION.search(val))
+    if not (tiene_numero or tiene_nomenclatura):
+        raise ValueError("Ingresa un formato coherente de dirección con nomenclatura y numeración (ej. Carrera 15 # 85-30 o Calle 72 # 10-34).")
+    return val
 
 
 # ==============================================================================
@@ -111,6 +147,11 @@ class ActualizarInfoGymRequest(BaseModel):
         default_factory=dict,
         description="Horarios de atención por rangos (ej. lunes_viernes, sabados, domingos_festivos)"
     )
+
+    @field_validator("direccion", mode="before")
+    @classmethod
+    def validar_campo_direccion(cls, v: Optional[str]) -> Optional[str]:
+        return validar_direccion_sede(v)
 
 
 class InfoGymResponse(BaseModel):

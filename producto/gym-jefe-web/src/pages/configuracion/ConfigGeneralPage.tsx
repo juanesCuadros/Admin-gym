@@ -9,7 +9,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Cargando, Conflicto, ErrorCarga, MensajeFijo } from '../../components/estados/Estados';
 import { useCambiosSinGuardar } from '../../hooks/useCambiosSinGuardar';
-import { formatFechaHora } from '../../utils/formato';
+import { formatFechaHora, validarDireccionSede } from '../../utils/formato';
 import type { InfoGymResponse } from '../../types/myGym.types';
 
 const REDES_BASE = ['instagram', 'facebook', 'whatsapp', 'tiktok'];
@@ -150,7 +150,8 @@ export const ConfigGeneralPage: React.FC = () => {
   if (form.nombre.trim().length < 2) erroresInfo.nombre = 'El nombre debe tener al menos 2 caracteres.';
   if (form.nombre.trim().length > 150) erroresInfo.nombre = 'Máximo 150 caracteres.';
   if (form.correo.trim() && !CORREO_RE.test(form.correo.trim())) erroresInfo.correo = 'Escribe un correo válido.';
-  if (form.direccion.length > 250) erroresInfo.direccion = 'Máximo 250 caracteres.';
+  const errDireccion = validarDireccionSede(form.direccion);
+  if (errDireccion) erroresInfo.direccion = errDireccion;
 
   const erroresBranding: Record<string, string> = {};
   for (const k of ['primary_color', 'secondary_color', 'accent_color'] as const) {
@@ -163,7 +164,12 @@ export const ConfigGeneralPage: React.FC = () => {
   const guardarInfo = async (e: React.FormEvent) => {
     e.preventDefault();
     setTocados({ nombre: true, correo: true, direccion: true });
-    if (Object.keys(erroresInfo).length > 0 || guardandoInfo) return;
+    if (Object.keys(erroresInfo).length > 0 || guardandoInfo) {
+      if (erroresInfo.direccion) {
+        showToast('error', 'Dirección de la sede no válida', erroresInfo.direccion);
+      }
+      return;
+    }
     setGuardandoInfo(true);
     setErrorInfo(null);
     const redes: Record<string, string | null> = {};
@@ -276,6 +282,7 @@ export const ConfigGeneralPage: React.FC = () => {
               label="Dirección"
               value={form.direccion}
               maxLength={250}
+              placeholder="ej. Carrera 15 # 85-30"
               onChange={(e) => setForm({ ...form, direccion: e.target.value })}
               onBlur={() => tocar('direccion')}
               error={errorDe('direccion')}
@@ -394,7 +401,13 @@ export const ConfigGeneralPage: React.FC = () => {
             >
               Descartar
             </Button>
-            <Button variant="primary" type="submit" leftIcon={<Save size={16} />} isLoading={guardandoInfo} disabled={!infoCambiada}>
+            <Button
+              variant="primary"
+              type="submit"
+              leftIcon={<Save size={16} />}
+              isLoading={guardandoInfo}
+              disabled={!infoCambiada || !!(tocados.direccion && erroresInfo.direccion)}
+            >
               Guardar información
             </Button>
           </div>
