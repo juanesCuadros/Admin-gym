@@ -48,6 +48,7 @@ export const membresiasService = {
     skip?: number;
     limit?: number;
     estado?: string;
+    q?: string;
   }): Promise<MembresiasPaginadasResponse> {
     const response = await apiClient.get<MembresiasPaginadasResponse>('/membresias', { params });
     return response.data;

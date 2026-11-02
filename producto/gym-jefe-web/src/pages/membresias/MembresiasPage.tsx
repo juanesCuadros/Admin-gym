@@ -21,7 +21,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { parseApiError } from '../../api/client';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { Input, Select } from '../../components/ui/Input';
+import { Input, Select, SearchInput } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal, ConfirmDialog } from '../../components/ui/Modal';
 import { Drawer } from '../../components/ui/Drawer';
@@ -57,6 +57,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
   const [membresias, setMembresias] = useState<MembresiaListItemResponse[]>([]);
   const [totalMembresias, setTotalMembresias] = useState(0);
   const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
   const [isLoadingMembresias, setIsLoadingMembresias] = useState(false);
 
   // Planes state
@@ -80,6 +81,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
 
   const [showAsignarModal, setShowAsignarModal] = useState(false);
   const [asignarData, setAsignarData] = useState({ deportista_id: '', plan_id: '' });
+  const [busquedaAsignar, setBusquedaAsignar] = useState('');
   const [deportistasList, setDeportistasList] = useState<any[]>([]);
 
   // Action Modals
@@ -142,7 +144,12 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
   const loadMembresias = useCallback(async () => {
     setIsLoadingMembresias(true);
     try {
-      const res = await membresiasService.getMembresias({ skip: (page - 1) * 10, limit: 10 });
+      const q = searchQuery.trim();
+      const res = await membresiasService.getMembresias({
+        skip: (page - 1) * 10,
+        limit: 10,
+        q: q.length > 0 ? q : undefined,
+      });
       setMembresias(res.items);
       setTotalMembresias(res.total);
     } catch (e) {
@@ -150,12 +157,19 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     } finally {
       setIsLoadingMembresias(false);
     }
-  }, [page]);
+  }, [page, searchQuery]);
 
   useEffect(() => {
     loadPlanes();
+  }, [loadPlanes]);
+
+  useEffect(() => {
     loadMembresias();
-  }, [loadPlanes, loadMembresias]);
+  }, [loadMembresias]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery]);
 
   const abrirNuevoPlan = () => {
     setEditandoPlan(null);
@@ -269,6 +283,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
 
   const handleOpenAsignar = async () => {
     try {
+      setBusquedaAsignar('');
       const depRes = await deportistasService.getDeportistas({ limit: 50 });
       setDeportistasList(depRes.items);
       if (planesActivos.length > 0) {
@@ -282,6 +297,26 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
       showToast('error', 'Error', 'No se pudieron cargar los deportistas');
     }
   };
+
+  useEffect(() => {
+    if (!showAsignarModal) return;
+    const t = window.setTimeout(async () => {
+      try {
+        const q = busquedaAsignar.trim();
+        const depRes = await deportistasService.getDeportistas({
+          limit: 50,
+          q: q.length > 0 ? q : undefined,
+        });
+        setDeportistasList(depRes.items);
+        if (depRes.items.length > 0 && !depRes.items.some((d) => d.id === asignarData.deportista_id)) {
+          setAsignarData((prev) => ({ ...prev, deportista_id: depRes.items[0].id }));
+        }
+      } catch (e) {
+        console.error('Error filtrando deportistas', e);
+      }
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [busquedaAsignar, showAsignarModal]);
 
   /**
    * Vender un plan es una sola operación: la membresía se crea junto con su cobro (decisión del 15-oct).
@@ -463,7 +498,16 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
       </div>
 
       {activeTab === 'membresias' ? (
-        <Card>
+        <>
+          <div style={{ marginBottom: 16, maxWidth: 420 }}>
+            <SearchInput
+              placeholder="Buscar por nombre o número de documento"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Buscar membresía por nombre o documento"
+            />
+          </div>
+          <Card>
           <Table<MembresiaListItemResponse>
             columns={[
               {
@@ -564,9 +608,14 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
               totalPages: Math.ceil(totalMembresias / 10) || 1,
               onPageChange: (p) => setPage(p),
             }}
-            emptyMessage="No hay membresías registradas"
+            emptyMessage={
+              searchQuery.trim()
+                ? 'Ninguna membresía coincide con el nombre o número de documento buscado.'
+                : 'No hay membresías activas registradas.'
+            }
           />
         </Card>
+        </>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
           {planes.map((plan) => (
@@ -760,12 +809,25 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
           </>
         }
       >
+        <div style={{ marginBottom: 12 }}>
+          <SearchInput
+            placeholder="Buscar deportista por nombre o documento..."
+            value={busquedaAsignar}
+            onChange={(e) => setBusquedaAsignar(e.target.value)}
+            aria-label="Buscar deportista para asignar plan"
+          />
+        </div>
+
         <Select
           label="Deportista *"
-          options={deportistasList.map((d) => ({
-            value: d.id,
-            label: `${d.nombre} (${d.documento})`,
-          }))}
+          options={
+            deportistasList.length > 0
+              ? deportistasList.map((d) => ({
+                  value: d.id,
+                  label: `${d.nombre} (${d.documento})`,
+                }))
+              : [{ value: '', label: 'Sin coincidencias para la búsqueda' }]
+          }
           value={asignarData.deportista_id}
           onChange={(e) => setAsignarData({ ...asignarData, deportista_id: e.target.value })}
         />
