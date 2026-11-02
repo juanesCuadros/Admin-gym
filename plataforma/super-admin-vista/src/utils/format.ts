@@ -123,3 +123,43 @@ export function textoDiasRestantes(dias: number | null | undefined): string {
   const n = Math.abs(dias);
   return n === 1 ? 'Vencido hace 1 día' : `Vencido hace ${n} días`;
 }
+
+/**
+ * Valida que una dirección física de sede tenga una longitud mínima (al menos 5 caracteres)
+ * y un formato coherente con nomenclatura vial y numeración (ej. 'Carrera 15 # 85-30').
+ */
+const PATRON_NOMENCLATURA_DIRECCION =
+  /\b(calle|cll|cl|carrera|cra|cr|kr|avenida|ave|av|diagonal|dg|transversal|tv|autopista|circular|circunvalar|manzana|mz|lote|km|kilometro|vereda|sede|edificio|torre|piso|local|centro comercial|cc|barrio|sector)\b/i;
+const PATRON_CARACTERES_DIRECCION = /^[a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s\#\-\.\,\/\°\º]+$/;
+
+export function validarDireccionSede(direccion?: string | null): string | null {
+  if (!direccion || direccion.trim() === '') {
+    return null;
+  }
+  const val = direccion.trim();
+  if (val.length < 5) {
+    return 'La dirección de la sede debe tener al menos 5 caracteres (ej. Carrera 15 # 85-30).';
+  }
+  if (val.length > 255) {
+    return 'La dirección de la sede no puede exceder los 255 caracteres.';
+  }
+  if (!PATRON_CARACTERES_DIRECCION.test(val)) {
+    return 'La dirección de la sede contiene caracteres no permitidos.';
+  }
+  if (/^\d+$/.test(val)) {
+    return 'La dirección de la sede no puede contener únicamente números.';
+  }
+  const sinEspacios = val.replace(/\s+/g, '');
+  if (new Set(sinEspacios).size <= 1) {
+    return 'La dirección de la sede debe ser una dirección válida y legible.';
+  }
+  if (!/[a-zA-ZáéíóúñÁÉÍÓÚÑ]/.test(val)) {
+    return 'La dirección de la sede debe contener letras o nomenclatura vial.';
+  }
+  const tieneNumero = /\d/.test(val);
+  const tieneNomenclatura = PATRON_NOMENCLATURA_DIRECCION.test(val);
+  if (!tieneNumero && !tieneNomenclatura) {
+    return 'Ingresa un formato coherente de dirección con nomenclatura y numeración (ej. Carrera 15 # 85-30 o Calle 72 # 10-34).';
+  }
+  return null;
+}

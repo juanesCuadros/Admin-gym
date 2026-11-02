@@ -25,7 +25,7 @@ import {
   TipoInicio,
 } from '@/types/gym.types';
 import { Plan } from '@/types/plan.types';
-import { formatCOP } from '@/utils/format';
+import { formatCOP, validarDireccionSede } from '@/utils/format';
 import {
   Building2,
   CheckCircle2,
@@ -244,6 +244,12 @@ export const GymCreateWizardPage: React.FC = () => {
       }
       if (correo.trim() && !RE_CORREO.test(correo.trim())) {
         errs.correo = 'Ingresa un correo válido.';
+      }
+      if (direccion.trim()) {
+        const errDir = validarDireccionSede(direccion);
+        if (errDir) {
+          errs.direccion = errDir;
+        }
       }
     } else if (paso === 2) {
       if (descripcion.length > 300) {
@@ -515,8 +521,15 @@ export const GymCreateWizardPage: React.FC = () => {
               </FormField>
             </div>
 
-            <FormField label="Dirección" optional>
-              <TextInput value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="ej. Cra. 15 # 85-30, Chapinero" maxLength={255} leftElement={<MapPin size={16} />} />
+            <FormField label="Dirección" optional error={errors.direccion}>
+              <TextInput
+                value={direccion}
+                onChange={(e) => setDireccion(e.target.value)}
+                placeholder="ej. Cra. 15 # 85-30, Chapinero"
+                maxLength={255}
+                hasError={!!errors.direccion}
+                leftElement={<MapPin size={16} />}
+              />
             </FormField>
           </div>
         )}

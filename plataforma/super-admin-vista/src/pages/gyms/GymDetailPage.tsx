@@ -30,6 +30,7 @@ import {
   hoyBogota,
   sumarDias,
   textoDiasRestantes,
+  validarDireccionSede,
 } from '@/utils/format';
 import { DIAS_RETENCION_CANCELADO, etiquetaEstadoCalculado } from '@/utils/estados';
 import { ExportLinkModal } from '@/components/business/ExportLinkModal';
@@ -88,6 +89,7 @@ export const GymDetailPage: React.FC = () => {
   const [nombre, setNombre] = useState('');
   const [nit, setNit] = useState('');
   const [direccion, setDireccion] = useState('');
+  const [direccionError, setDireccionError] = useState<string | null>(null);
   const [ciudad, setCiudad] = useState('');
   const [telefono, setTelefono] = useState('');
   const [correo, setCorreo] = useState('');
@@ -105,6 +107,7 @@ export const GymDetailPage: React.FC = () => {
       setNombre(gym.nombre);
       setNit(gym.nit || '');
       setDireccion(gym.direccion || '');
+      setDireccionError(null);
       setCiudad(gym.ciudad || '');
       setTelefono(gym.telefono || '');
       setCorreo(gym.correo || '');
@@ -116,6 +119,25 @@ export const GymDetailPage: React.FC = () => {
       setWhatsapp(gym.whatsapp || '');
     }
   }, [gym]);
+
+  const cancelarEdicionGeneral = () => {
+    if (gym) {
+      setNombre(gym.nombre);
+      setNit(gym.nit || '');
+      setDireccion(gym.direccion || '');
+      setCiudad(gym.ciudad || '');
+      setTelefono(gym.telefono || '');
+      setCorreo(gym.correo || '');
+      setLogoUrl(gym.logo_url || '');
+      setBannerUrl(gym.banner_url || '');
+      setDescripcion(gym.descripcion || '');
+      setInstagram(gym.instagram || '');
+      setFacebook(gym.facebook || '');
+      setWhatsapp(gym.whatsapp || '');
+    }
+    setDireccionError(null);
+    setIsEditingGeneral(false);
+  };
 
   if (isLoading && !gym) {
     return (
@@ -154,6 +176,13 @@ export const GymDetailPage: React.FC = () => {
 
   const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
+    const errorDir = validarDireccionSede(direccion);
+    if (errorDir) {
+      setDireccionError(errorDir);
+      toastError(errorDir);
+      return;
+    }
+    setDireccionError(null);
     setIsSavingGeneral(true);
     try {
       await updateGym({
@@ -175,7 +204,10 @@ export const GymDetailPage: React.FC = () => {
       refetch();
     } catch (err) {
       const parsed = parseApiError(err);
-      toastError(parsed.message);
+      if (parsed.fieldErrors?.direccion) {
+        setDireccionError(parsed.fieldErrors.direccion);
+      }
+      toastError(parsed.fieldErrors?.direccion || parsed.message);
     } finally {
       setIsSavingGeneral(false);
     }
@@ -691,10 +723,16 @@ export const GymDetailPage: React.FC = () => {
               </Button>
             ) : (
               <div style={{ display: 'flex', gap: '8px' }}>
-                <Button variant="cancel" size="sm" onClick={() => setIsEditingGeneral(false)}>
+                <Button variant="cancel" size="sm" onClick={cancelarEdicionGeneral}>
                   Cancelar
                 </Button>
-                <Button variant="primary" size="sm" onClick={handleSaveGeneral} isLoading={isSavingGeneral}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleSaveGeneral}
+                  isLoading={isSavingGeneral}
+                  disabled={!!direccionError}
+                >
                   Guardar Cambios
                 </Button>
               </div>
@@ -744,10 +782,26 @@ export const GymDetailPage: React.FC = () => {
                 />
               </FormField>
 
-              <FormField label="Dirección de la Sede">
+              <FormField
+                label="Dirección de la Sede"
+                error={direccionError || undefined}
+                helperText={!direccionError ? 'Debe incluir nomenclatura y numeración (ej. Carrera 15 # 85-30).' : undefined}
+              >
                 <TextInput
                   value={direccion}
-                  onChange={(e) => setDireccion(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setDireccion(val);
+                    if (direccionError) {
+                      setDireccionError(validarDireccionSede(val));
+                    }
+                  }}
+                  onBlur={() => {
+                    if (isEditingGeneral && direccion.trim().length > 0) {
+                      setDireccionError(validarDireccionSede(direccion));
+                    }
+                  }}
+                  hasError={!!direccionError}
                   disabled={!isEditingGeneral}
                   placeholder="ej. Carrera 15 # 85-30"
                   leftElement={<MapPin size={16} />}
