@@ -11,6 +11,9 @@ import {
   DollarSign,
   UserCheck,
   Users,
+  Edit2,
+  Power,
+  Trash2,
 } from 'lucide-react';
 import { membresiasService } from '../../api/membresias.service';
 import { deportistasService } from '../../api/deportistas.service';
@@ -20,7 +23,7 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { Modal } from '../../components/ui/Modal';
+import { Modal, ConfirmDialog } from '../../components/ui/Modal';
 import { Drawer } from '../../components/ui/Drawer';
 import { MenuAcciones } from '../../components/ui/MenuAcciones';
 import { formatCOP } from '../../utils/formato';
@@ -61,6 +64,8 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
 
   // Modals
   const [showCrearPlanModal, setShowCrearPlanModal] = useState(false);
+  const [editandoPlan, setEditandoPlan] = useState<PlanResponse | null>(null);
+  const [planAEliminar, setPlanAEliminar] = useState<PlanResponse | null>(null);
   const [precioPlan, setPrecioPlan] = useState('90000');
   const [duracionPlan, setDuracionPlan] = useState('30');
   const [cupoPlan, setCupoPlan] = useState('1');
@@ -94,6 +99,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
   // Plan grupal (contrato 1.3)
   const [showPaqueteModal, setShowPaqueteModal] = useState(false);
   const puedeCrearMembresia = hasPermission('membresias', 'crear');
+  const puedeEditarPlan = hasPermission('membresias', 'editar');
 
   /** Precio de lista de una membresía: la copia del plan vendido (contrato 1.4) o, si no la hay, el precio del plan. */
   const precioListaDe = (m: Pick<MembresiaResponse, 'plan_id' | 'plan_precio_vendido'>): number | null => {
@@ -147,6 +153,31 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     loadMembresias();
   }, [loadPlanes, loadMembresias]);
 
+  const abrirNuevoPlan = () => {
+    setEditandoPlan(null);
+    setPrecioPlan('90000');
+    setDuracionPlan('30');
+    setCupoPlan('1');
+    setNewPlan({ nombre: '', precio: 90000, duracion_dias: 30, tipo: 'individual', cupo_personas: 1 });
+    setShowCrearPlanModal(true);
+  };
+
+  const abrirEditarPlan = (plan: PlanResponse) => {
+    const precioRedondeado = Math.round(Number(plan.precio));
+    setEditandoPlan(plan);
+    setPrecioPlan(String(precioRedondeado));
+    setDuracionPlan(String(plan.duracion_dias));
+    setCupoPlan(String(plan.cupo_personas));
+    setNewPlan({
+      nombre: plan.nombre,
+      precio: precioRedondeado,
+      duracion_dias: plan.duracion_dias,
+      tipo: plan.tipo,
+      cupo_personas: plan.cupo_personas,
+    });
+    setShowCrearPlanModal(true);
+  };
+
   const handleCrearPlan = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPlan.nombre.trim() || newPlan.nombre.trim().length < 2) {
@@ -167,16 +198,66 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     }
     setIsProcessing(true);
     try {
-      await membresiasService.crearPlan(newPlan);
-      showToast('success', 'Plan creado', 'Nuevo plan tarifario agregado al catálogo');
+      if (editandoPlan) {
+        await membresiasService.editarPlan(editandoPlan.id, {
+          version: editandoPlan.version,
+          nombre: newPlan.nombre.trim(),
+          precio: newPlan.precio,
+          duracion_dias: newPlan.duracion_dias,
+          tipo: newPlan.tipo,
+          cupo_personas: newPlan.cupo_personas,
+        });
+        showToast('success', 'Plan actualizado', `Se guardaron los cambios de ${newPlan.nombre.trim()}`);
+      } else {
+        await membresiasService.crearPlan({
+          ...newPlan,
+          nombre: newPlan.nombre.trim(),
+        });
+        showToast('success', 'Plan creado', 'Nuevo plan tarifario agregado al catálogo');
+      }
       setShowCrearPlanModal(false);
+      setEditandoPlan(null);
       setPrecioPlan('90000');
       setDuracionPlan('30');
       setCupoPlan('1');
       setNewPlan({ nombre: '', precio: 90000, duracion_dias: 30, tipo: 'individual', cupo_personas: 1 });
       loadPlanes();
     } catch (err) {
-      showToast('error', 'Error al crear plan', parseApiError(err));
+      showToast('error', editandoPlan ? 'Error al actualizar plan' : 'Error al crear plan', parseApiError(err));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleCambiarEstadoPlan = async (plan: PlanResponse) => {
+    setIsProcessing(true);
+    try {
+      const nuevoEstado = !plan.activo;
+      await membresiasService.cambiarEstadoPlan(plan.id, nuevoEstado);
+      showToast(
+        'success',
+        nuevoEstado ? 'Plan activado' : 'Plan desactivado',
+        `${plan.nombre} ahora está ${nuevoEstado ? 'disponible para la venta' : 'inactivo'}`
+      );
+      loadPlanes();
+    } catch (err) {
+      showToast('error', 'Error al cambiar estado del plan', parseApiError(err));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleEliminarPlan = async () => {
+    if (!planAEliminar) return;
+    setIsProcessing(true);
+    try {
+      await membresiasService.eliminarPlan(planAEliminar.id);
+      showToast('success', 'Plan eliminado', `${planAEliminar.nombre} fue eliminado del catálogo`);
+      setPlanAEliminar(null);
+      loadPlanes();
+    } catch (err) {
+      showToast('error', 'No se pudo eliminar el plan', parseApiError(err));
+      setPlanAEliminar(null);
     } finally {
       setIsProcessing(false);
     }
@@ -317,7 +398,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
           <Button
             variant="primary"
             leftIcon={<Plus size={16} />}
-            onClick={() => setShowCrearPlanModal(true)}
+            onClick={abrirNuevoPlan}
           >
             Nuevo plan
           </Button>
@@ -463,9 +544,34 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                   <Badge variant={plan.activo ? 'success' : 'neutral'}>
                     {plan.activo ? 'Activo' : 'Inactivo'}
                   </Badge>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>
-                    {plan.tipo}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>
+                      {plan.tipo}
+                    </span>
+                    {puedeEditarPlan && (
+                      <MenuAcciones
+                        etiqueta={`Acciones de ${plan.nombre}`}
+                        acciones={[
+                          {
+                            etiqueta: 'Editar plan',
+                            icono: <Edit2 size={15} />,
+                            onClick: () => abrirEditarPlan(plan),
+                          },
+                          {
+                            etiqueta: plan.activo ? 'Desactivar plan' : 'Activar plan',
+                            icono: <Power size={15} />,
+                            onClick: () => handleCambiarEstadoPlan(plan),
+                          },
+                          {
+                            etiqueta: 'Eliminar plan',
+                            icono: <Trash2 size={15} />,
+                            peligro: true,
+                            onClick: () => setPlanAEliminar(plan),
+                          },
+                        ]}
+                      />
+                    )}
+                  </div>
                 </div>
 
                 <h3 style={{ fontSize: '1.25rem', fontWeight: 500, color: 'var(--text-primary)', marginBottom: 6 }}>
@@ -481,8 +587,20 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                   </span>
                 </div>
 
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Clock size={14} /> Cupo: {plan.cupo_personas} persona(s)
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Clock size={14} /> Cupo: {plan.cupo_personas} persona(s)
+                  </div>
+                  {puedeEditarPlan && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      leftIcon={<Edit2 size={14} />}
+                      onClick={() => abrirEditarPlan(plan)}
+                    >
+                      Editar
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -490,18 +608,27 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
         </div>
       )}
 
-      {/* Modal: Crear Plan */}
+      {/* Modal: Crear / Editar Plan */}
       <Drawer
         isOpen={showCrearPlanModal}
-        onClose={() => setShowCrearPlanModal(false)}
-        title="Nuevo plan"
+        onClose={() => {
+          setShowCrearPlanModal(false);
+          setEditandoPlan(null);
+        }}
+        title={editandoPlan ? 'Editar plan' : 'Nuevo plan'}
         footer={
           <>
-            <Button variant="outline" onClick={() => setShowCrearPlanModal(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowCrearPlanModal(false);
+                setEditandoPlan(null);
+              }}
+            >
               Cancelar
             </Button>
             <Button variant="primary" onClick={handleCrearPlan} isLoading={isProcessing}>
-              Guardar plan
+              {editandoPlan ? 'Guardar cambios' : 'Guardar plan'}
             </Button>
           </>
         }
@@ -733,6 +860,21 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
           required
         />
       </Modal>
+
+      <ConfirmDialog
+        isOpen={!!planAEliminar}
+        onClose={() => setPlanAEliminar(null)}
+        onConfirm={handleEliminarPlan}
+        title="Eliminar plan"
+        message={
+          planAEliminar
+            ? `¿Seguro que deseas eliminar el plan "${planAEliminar.nombre}"? Solo se puede eliminar si aún no tiene membresías asociadas.`
+            : ''
+        }
+        confirmText="Eliminar plan"
+        cancelText="Cancelar"
+        isDestructive
+      />
     </div>
   );
 };

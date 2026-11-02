@@ -33,8 +33,13 @@ export const membresiasService = {
     return response.data;
   },
 
-  async cambiarEstadoPlan(id: string, activo: boolean): Promise<any> {
-    const response = await apiClient.patch(`/planes/${id}/estado`, { activo });
+  async cambiarEstadoPlan(id: string, activo: boolean): Promise<PlanResponse> {
+    const response = await apiClient.patch<PlanResponse>(`/planes/${id}/estado`, { activo });
+    return response.data;
+  },
+
+  async eliminarPlan(id: string): Promise<{ eliminado: boolean; id: string }> {
+    const response = await apiClient.delete<{ eliminado: boolean; id: string }>(`/planes/${id}`);
     return response.data;
   },
 

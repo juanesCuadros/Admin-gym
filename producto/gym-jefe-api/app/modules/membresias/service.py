@@ -369,6 +369,59 @@ class MembresiasService:
 
         return PlanResponse(**plan)
 
+    @classmethod
+    async def eliminar_plan(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        staff_id: UUID,
+        staff_nombre: str,
+        plan_id: UUID,
+    ) -> Dict[str, Any]:
+        q_find = text("SELECT id, nombre FROM platform.planes WHERE id = :id AND gimnasio_id = :gym_id")
+        res_find = await session.execute(q_find, {"id": plan_id, "gym_id": gym_id})
+        plan = res_find.mappings().first()
+        if not plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"codigo": "PLAN_NO_ENCONTRADO", "mensaje": "Plan no encontrado"}
+            )
+
+        q_uso = text("""
+            SELECT EXISTS (
+                SELECT 1 FROM platform.membresias WHERE plan_id = :id AND gimnasio_id = :gym_id
+            ) OR EXISTS (
+                SELECT 1 FROM platform.paquetes WHERE plan_id = :id AND gimnasio_id = :gym_id
+            ) AS en_uso
+        """)
+        res_uso = await session.execute(q_uso, {"id": plan_id, "gym_id": gym_id})
+        if res_uso.scalar():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "codigo": "PLAN_EN_USO",
+                    "mensaje": "No se puede eliminar este plan porque ya tiene membresías registradas. Puedes desactivarlo para que no esté disponible en nuevas ventas."
+                }
+            )
+
+        await session.execute(
+            text("DELETE FROM platform.planes WHERE id = :id AND gimnasio_id = :gym_id"),
+            {"id": plan_id, "gym_id": gym_id}
+        )
+
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=gym_id,
+            actor_id=staff_id,
+            actor_nombre=staff_nombre,
+            accion="ELIMINAR_PLAN",
+            entidad="planes",
+            entidad_id=plan_id,
+            detalle={"nombre": plan["nombre"]}
+        )
+
+        return {"eliminado": True, "id": str(plan_id)}
+
     # =========================================================================
     # 2. GESTIÓN DEL CICLO DE VIDA DE MEMBRESÍAS (RF-25, RF-27, RF-42)
     # =========================================================================

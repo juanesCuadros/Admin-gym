@@ -153,6 +153,27 @@ async def cambiar_estado_plan(
     )
 
 
+@router.delete(
+    "/planes/{id}",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Eliminar plan tarifario sin uso (RF-24)",
+    description="Elimina un plan tarifario si aún no tiene membresías ni paquetes asociados."
+)
+async def eliminar_plan(
+    id: Annotated[UUID, Path(description="UUID del plan a eliminar")],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    staff: Annotated[AuthenticatedStaff, Depends(require_permission("membresias", "editar"))],
+):
+    return await MembresiasService.eliminar_plan(
+        session=session,
+        gym_id=staff.gimnasio_id,
+        staff_id=staff.staff_id,
+        staff_nombre=staff.nombre,
+        plan_id=id,
+    )
+
+
 # =============================================================================
 # 2. GESTIÓN DE MEMBRESÍAS Y CICLO DE VIDA (RF-25, RF-27, RF-42)
 # =============================================================================
