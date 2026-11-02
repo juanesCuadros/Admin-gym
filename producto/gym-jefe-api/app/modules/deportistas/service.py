@@ -925,6 +925,96 @@ class DeportistasService:
         return [MedicionCorporalResponse(**r) for r in res.mappings().all()]
 
     @classmethod
+    def _calcular_medidas_derivadas(
+        cls,
+        *,
+        sexo: Optional[str],
+        altura_cm: Optional[Decimal],
+        edad_anios: int,
+        peso: Optional[Decimal],
+        cintura: Optional[Decimal],
+        cadera: Optional[Decimal],
+        brazo: Optional[Decimal],
+        pierna: Optional[Decimal],
+        grasa_pct_manual: Optional[Decimal] = None,
+        masa_muscular_manual: Optional[Decimal] = None,
+    ) -> tuple[Optional[Decimal], Optional[Decimal]]:
+        """
+        Calcula automáticamente las medidas corporales derivadas (% de grasa corporal y masa muscular en kg)
+        diferenciando el cálculo antropométrico según el género: Hombre ('M') vs Mujer ('F').
+        """
+        es_mujer = (sexo or "M").upper() == "F"
+        alt = float(altura_cm) if altura_cm and altura_cm > 0 else (162.0 if es_mujer else 172.0)
+        peso_f = float(peso) if peso and peso > 0 else None
+        cintura_f = float(cintura) if cintura and cintura > 0 else None
+        cadera_f = float(cadera) if cadera and cadera > 0 else None
+        brazo_f = float(brazo) if brazo and brazo > 0 else None
+        pierna_f = float(pierna) if pierna and pierna > 0 else None
+
+        # 1. % de Grasa Corporal diferenciado por género (Hombre vs Mujer)
+        grasa_res: Optional[Decimal] = grasa_pct_manual
+        if grasa_res is None:
+            rfm_val: Optional[float] = None
+            bmi_val: Optional[float] = None
+
+            if cintura_f and alt > 0:
+                if es_mujer:
+                    # Fórmula RFM mujer + ajuste antropométrico de cadera femenina
+                    ajuste_cadera = 0.0
+                    if cadera_f:
+                        ajuste_cadera = max(-3.0, min(4.0, 0.15 * (cadera_f - cintura_f - 15.0)))
+                    rfm_val = 76.0 - (20.0 * (alt / cintura_f)) + ajuste_cadera
+                else:
+                    # Fórmula RFM hombre
+                    rfm_val = 64.0 - (20.0 * (alt / cintura_f))
+
+            if peso_f and alt > 0:
+                alt_m = alt / 100.0
+                imc = peso_f / (alt_m * alt_m)
+                # Ecuación de Deurenberg diferenciada por sexo (sexo=1 hombre -> -16.2, sexo=0 mujer -> -5.4)
+                bmi_val = (1.20 * imc) + (0.23 * edad_anios) - (5.4 if es_mujer else 16.2)
+
+            grasa_calc: Optional[float] = None
+            if rfm_val is not None and bmi_val is not None:
+                grasa_calc = (0.60 * rfm_val) + (0.40 * bmi_val)
+            elif rfm_val is not None:
+                grasa_calc = rfm_val
+            elif bmi_val is not None:
+                grasa_calc = bmi_val
+
+            if grasa_calc is not None:
+                min_g, max_g = (10.0, 60.0) if es_mujer else (4.0, 55.0)
+                grasa_clamped = max(min_g, min(max_g, grasa_calc))
+                grasa_res = Decimal(f"{grasa_clamped:.1f}")
+
+        # 2. Masa Muscular Esquelética (kg) diferenciada por género (Hombre vs Mujer)
+        musculo_res: Optional[Decimal] = masa_muscular_manual
+        if musculo_res is None and peso_f is not None and grasa_res is not None:
+            grasa_f = float(grasa_res)
+            masa_magra = peso_f * (1.0 - (grasa_f / 100.0))
+            if es_mujer:
+                # Mujer: proporción base de masa muscular sobre masa libre de grasa + ajuste de perímetros
+                ajuste_perim = 0.0
+                if brazo_f:
+                    ajuste_perim += (brazo_f - 27.0) * 0.06
+                if pierna_f:
+                    ajuste_perim += (pierna_f - 52.0) * 0.05
+                musculo_calc = (masa_magra * 0.475) + ajuste_perim
+            else:
+                # Hombre: mayor proporción muscular sobre masa libre de grasa + ajuste de perímetros
+                ajuste_perim = 0.0
+                if brazo_f:
+                    ajuste_perim += (brazo_f - 32.0) * 0.08
+                if pierna_f:
+                    ajuste_perim += (pierna_f - 54.0) * 0.06
+                musculo_calc = (masa_magra * 0.54) + ajuste_perim
+
+            musculo_clamped = max(peso_f * 0.25, min(masa_magra * 0.90, musculo_calc))
+            musculo_res = Decimal(f"{musculo_clamped:.1f}")
+
+        return grasa_res, musculo_res
+
+    @classmethod
     async def registrar_medicion(
         cls,
         session: AsyncSession,
@@ -934,17 +1024,59 @@ class DeportistasService:
         deportista_id: UUID,
         req: RegistrarMedicionRequest,
     ) -> MedicionCorporalResponse:
-        """Registra una nueva medición corporal antropométrica."""
-        # Verificar existencia
-        dep_check = text("SELECT 1 FROM platform.deportistas WHERE id = :id AND gimnasio_id = :gym_id AND deleted_at IS NULL;")
+        """Registra una nueva medición corporal antropométrica y calcula medidas derivadas según el género."""
+        # Verificar existencia y obtener datos antropométricos base del deportista
+        dep_check = text("""
+            SELECT sexo, altura_cm, fecha_nacimiento
+            FROM platform.deportistas
+            WHERE id = :id AND gimnasio_id = :gym_id AND deleted_at IS NULL;
+        """)
         res_check = await session.execute(dep_check, {"id": deportista_id, "gym_id": gym_id})
-        if not res_check.scalar_one_or_none():
+        dep_row = res_check.mappings().one_or_none()
+        if not dep_row:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"codigo": "DEPORTISTA_NO_ENCONTRADO", "mensaje": "Deportista no encontrado."},
             )
 
+        # Actualizar sexo y/o altura_cm en la ficha del deportista si fueron suministrados durante la medición
+        sexo_efectivo = req.sexo or dep_row["sexo"] or "M"
+        altura_efectiva = req.altura_cm or dep_row["altura_cm"]
+        if req.sexo is not None or req.altura_cm is not None:
+            await session.execute(
+                text("""
+                    UPDATE platform.deportistas
+                    SET sexo = COALESCE(:sexo, sexo),
+                        altura_cm = COALESCE(:altura_cm, altura_cm),
+                        updated_at = now()
+                    WHERE id = :id AND gimnasio_id = :gym_id;
+                """),
+                {
+                    "sexo": req.sexo,
+                    "altura_cm": req.altura_cm,
+                    "id": deportista_id,
+                    "gym_id": gym_id,
+                },
+            )
+
         fecha_toma = req.fecha or cls._obtener_fecha_hoy_bogota()
+        fecha_nac = dep_row["fecha_nacimiento"]
+        edad_anios = 28
+        if fecha_nac:
+            edad_anios = max(10, min(95, fecha_toma.year - fecha_nac.year - ((fecha_toma.month, fecha_toma.day) < (fecha_nac.month, fecha_nac.day))))
+
+        grasa_pct_final, masa_muscular_final = cls._calcular_medidas_derivadas(
+            sexo=sexo_efectivo,
+            altura_cm=altura_efectiva,
+            edad_anios=edad_anios,
+            peso=req.peso,
+            cintura=req.cintura,
+            cadera=req.cadera,
+            brazo=req.brazo,
+            pierna=req.pierna,
+            grasa_pct_manual=req.grasa_pct,
+            masa_muscular_manual=req.masa_muscular,
+        )
 
         insert_query = text("""
             INSERT INTO platform.mediciones_corporales (
@@ -966,8 +1098,8 @@ class DeportistasService:
                 "id": deportista_id,
                 "fecha": fecha_toma,
                 "peso": req.peso,
-                "grasa_pct": req.grasa_pct,
-                "masa_muscular": req.masa_muscular,
+                "grasa_pct": grasa_pct_final,
+                "masa_muscular": masa_muscular_final,
                 "cintura": req.cintura,
                 "cadera": req.cadera,
                 "brazo": req.brazo,
@@ -987,7 +1119,11 @@ class DeportistasService:
             accion="REGISTRAR_MEDICION",
             entidad="mediciones_corporales",
             entidad_id=str(row["id"]),
-            detalle={"deportista_id": str(deportista_id), "fecha": fecha_toma.isoformat()},
+            detalle={
+                "deportista_id": str(deportista_id),
+                "fecha": fecha_toma.isoformat(),
+                "sexo_calculo": sexo_efectivo,
+            },
         )
 
         return MedicionCorporalResponse(**row)

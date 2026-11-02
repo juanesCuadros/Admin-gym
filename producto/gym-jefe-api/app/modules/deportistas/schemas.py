@@ -259,6 +259,8 @@ class FichaDeportistaResponse(BaseModel):
 
 class RegistrarMedicionRequest(BaseModel):
     fecha: Optional[date] = Field(None, description="Fecha de la toma (por defecto hoy)")
+    sexo: Optional[Literal["M", "F", "otro"]] = Field(None, description="Género utilizado para el cálculo antropométrico ('M' hombre, 'F' mujer)")
+    altura_cm: Optional[Decimal] = Field(None, gt=0, max_digits=5, decimal_places=2, description="Estatura en cm utilizada para el cálculo antropométrico")
     peso: Optional[Decimal] = Field(None, gt=0, max_digits=6, decimal_places=2, description="Peso en kg")
     grasa_pct: Optional[Decimal] = Field(None, ge=0, le=100, max_digits=5, decimal_places=2, description="% de grasa")
     masa_muscular: Optional[Decimal] = Field(None, gt=0, max_digits=6, decimal_places=2, description="Masa muscular en kg")

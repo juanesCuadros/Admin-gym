@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { UserPlus, Eye, Scale, Edit2, Plus } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { UserPlus, Eye, Scale, Edit2, Plus, Calculator } from 'lucide-react';
 import { deportistasService } from '../../api/deportistas.service';
 import { membresiasService } from '../../api/membresias.service';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { parseApiError } from '../../api/client';
 import { Button } from '../../components/ui/Button';
-import { Input, SearchInput } from '../../components/ui/Input';
+import { Input, SearchInput, Select } from '../../components/ui/Input';
 import { Drawer } from '../../components/ui/Drawer';
 import { Avatar } from '../../components/ui/Avatar';
 import { Table } from '../../components/ui/Table';
@@ -21,7 +21,7 @@ import {
   DeportistaResponse,
 } from '../../types/deportistas.types';
 import { CobroMembresiaModal, DestinoCobro } from '../membresias/CobroMembresiaModal';
-import { FormularioDeportista, PlanAsignacionInicial } from './FormularioDeportista';
+import { FormularioDeportista, PlanAsignacionInicial, edadEnBogota } from './FormularioDeportista';
 
 /** Días de `desde` a `hasta` (fechas de negocio `YYYY-MM-DD`), sin pasar por la zona del navegador. */
 function diasEntre(desde: string, hasta: string): number {
@@ -32,27 +32,184 @@ function diasEntre(desde: string, hasta: string): number {
   return Math.round((utc(hasta) - utc(desde)) / 86400000);
 }
 
-const MEDICION_VACIA: Record<keyof Omit<RegistrarMedicionRequest, 'fecha'>, string> = {
+type ClaveMedicionBase = 'peso' | 'cintura' | 'cadera' | 'pecho' | 'brazo' | 'pierna';
+
+const MEDICION_BASE_VACIA: Record<ClaveMedicionBase, string> = {
   peso: '',
-  grasa_pct: '',
-  masa_muscular: '',
   cintura: '',
   cadera: '',
+  pecho: '',
   brazo: '',
   pierna: '',
-  pecho: '',
 };
 
-const ETIQUETAS_MEDICION: Record<keyof typeof MEDICION_VACIA, string> = {
+const ETIQUETAS_MEDICION_BASE: Record<ClaveMedicionBase, string> = {
   peso: 'Peso (kg)',
-  grasa_pct: '% grasa',
-  masa_muscular: 'Músculo (kg)',
   cintura: 'Cintura (cm)',
   cadera: 'Cadera (cm)',
+  pecho: 'Pecho (cm)',
   brazo: 'Brazo (cm)',
   pierna: 'Pierna (cm)',
-  pecho: 'Pecho (cm)',
 };
+
+interface MedidasDerivadas {
+  grasaPct: number | null;
+  clasificacionGrasa: string | null;
+  masaMuscularKg: number | null;
+  pctMuscular: number | null;
+  masaGrasaKg: number | null;
+  masaMagraKg: number | null;
+  imc: number | null;
+  clasificacionImc: string | null;
+  icc: number | null;
+  riesgoIcc: string | null;
+}
+
+/**
+ * Calcula automáticamente las medidas corporales derivadas a partir de las medidas base,
+ * diferenciando las ecuaciones antropométricas según el género (Hombre 'M' vs Mujer 'F').
+ */
+function calcularMedidasDerivadas(
+  medidas: Record<ClaveMedicionBase, string>,
+  sexo: 'M' | 'F',
+  alturaCmStr: string,
+  edadAnios: number
+): MedidasDerivadas {
+  const esMujer = sexo === 'F';
+  const altNum = Number(alturaCmStr);
+  const alt = altNum > 0 ? altNum : esMujer ? 162 : 172;
+
+  const num = (v: string): number | null => {
+    if (!v || v.trim() === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
+  const peso = num(medidas.peso);
+  const cintura = num(medidas.cintura);
+  const cadera = num(medidas.cadera);
+  const brazo = num(medidas.brazo);
+  const pierna = num(medidas.pierna);
+
+  // 1. IMC y clasificación
+  let imc: number | null = null;
+  let clasificacionImc: string | null = null;
+  if (peso && alt > 0) {
+    const altM = alt / 100;
+    imc = Math.round((peso / (altM * altM)) * 10) / 10;
+    if (imc < 18.5) clasificacionImc = 'Bajo peso';
+    else if (imc < 25) clasificacionImc = 'Normal';
+    else if (imc < 30) clasificacionImc = 'Sobrepeso';
+    else clasificacionImc = 'Obesidad';
+  }
+
+  // 2. % de Grasa Corporal diferenciado por género (Hombre vs Mujer)
+  let rfmVal: number | null = null;
+  let bmiVal: number | null = null;
+
+  if (cintura && alt > 0) {
+    if (esMujer) {
+      let ajusteCadera = 0;
+      if (cadera) {
+        ajusteCadera = Math.max(-3, Math.min(4, 0.15 * (cadera - cintura - 15)));
+      }
+      rfmVal = 76 - 20 * (alt / cintura) + ajusteCadera;
+    } else {
+      rfmVal = 64 - 20 * (alt / cintura);
+    }
+  }
+
+  if (imc !== null) {
+    bmiVal = 1.2 * imc + 0.23 * edadAnios - (esMujer ? 5.4 : 16.2);
+  }
+
+  let grasaCalc: number | null = null;
+  if (rfmVal !== null && bmiVal !== null) {
+    grasaCalc = 0.6 * rfmVal + 0.4 * bmiVal;
+  } else if (rfmVal !== null) {
+    grasaCalc = rfmVal;
+  } else if (bmiVal !== null) {
+    grasaCalc = bmiVal;
+  }
+
+  let grasaPct: number | null = null;
+  let clasificacionGrasa: string | null = null;
+  if (grasaCalc !== null) {
+    const [minG, maxG] = esMujer ? [10, 60] : [4, 55];
+    grasaPct = Math.round(Math.max(minG, Math.min(maxG, grasaCalc)) * 10) / 10;
+    if (esMujer) {
+      if (grasaPct < 14) clasificacionGrasa = 'Esencial';
+      else if (grasaPct < 21) clasificacionGrasa = 'Atlético';
+      else if (grasaPct < 25) clasificacionGrasa = 'Fitness';
+      else if (grasaPct < 32) clasificacionGrasa = 'Saludable';
+      else clasificacionGrasa = 'Elevado';
+    } else {
+      if (grasaPct < 6) clasificacionGrasa = 'Esencial';
+      else if (grasaPct < 14) clasificacionGrasa = 'Atlético';
+      else if (grasaPct < 18) clasificacionGrasa = 'Fitness';
+      else if (grasaPct < 25) clasificacionGrasa = 'Saludable';
+      else clasificacionGrasa = 'Elevado';
+    }
+  }
+
+  // 3. Masa Grasa, Masa Magra y Masa Muscular Esquelética diferenciada por género
+  let masaGrasaKg: number | null = null;
+  let masaMagraKg: number | null = null;
+  let masaMuscularKg: number | null = null;
+  let pctMuscular: number | null = null;
+
+  if (peso !== null && grasaPct !== null) {
+    masaGrasaKg = Math.round(peso * (grasaPct / 100) * 10) / 10;
+    const magraRaw = peso * (1 - grasaPct / 100);
+    masaMagraKg = Math.round(magraRaw * 10) / 10;
+
+    let musculoCalc: number;
+    if (esMujer) {
+      let ajustePerim = 0;
+      if (brazo) ajustePerim += (brazo - 27) * 0.06;
+      if (pierna) ajustePerim += (pierna - 52) * 0.05;
+      musculoCalc = magraRaw * 0.475 + ajustePerim;
+    } else {
+      let ajustePerim = 0;
+      if (brazo) ajustePerim += (brazo - 32) * 0.08;
+      if (pierna) ajustePerim += (pierna - 54) * 0.06;
+      musculoCalc = magraRaw * 0.54 + ajustePerim;
+    }
+
+    const musculoClamped = Math.max(peso * 0.25, Math.min(magraRaw * 0.9, musculoCalc));
+    masaMuscularKg = Math.round(musculoClamped * 10) / 10;
+    pctMuscular = Math.round((masaMuscularKg / peso) * 1000) / 10;
+  }
+
+  // 4. Índice Cintura-Cadera (ICC) diferenciado por género
+  let icc: number | null = null;
+  let riesgoIcc: string | null = null;
+  if (cintura && cadera) {
+    icc = Math.round((cintura / cadera) * 100) / 100;
+    if (esMujer) {
+      if (icc < 0.8) riesgoIcc = 'Riesgo bajo';
+      else if (icc <= 0.85) riesgoIcc = 'Riesgo moderado';
+      else riesgoIcc = 'Riesgo alto';
+    } else {
+      if (icc < 0.9) riesgoIcc = 'Riesgo bajo';
+      else if (icc <= 0.99) riesgoIcc = 'Riesgo moderado';
+      else riesgoIcc = 'Riesgo alto';
+    }
+  }
+
+  return {
+    grasaPct,
+    clasificacionGrasa,
+    masaMuscularKg,
+    pctMuscular,
+    masaGrasaKg,
+    masaMagraKg,
+    imc,
+    clasificacionImc,
+    icc,
+    riesgoIcc,
+  };
+}
 
 /** Fila etiqueta / valor de la ficha. */
 const Dato: React.FC<{ etiqueta: string; children: React.ReactNode }> = ({ etiqueta, children }) => (
@@ -91,7 +248,9 @@ export const DeportistasPage: React.FC = () => {
   // Medición
   const [medicionAbierta, setMedicionAbierta] = useState(false);
   const medicionRef = useRef<HTMLDivElement>(null);
-  const [medicion, setMedicion] = useState(MEDICION_VACIA);
+  const [medicionBase, setMedicionBase] = useState<Record<ClaveMedicionBase, string>>(MEDICION_BASE_VACIA);
+  const [sexoMedicion, setSexoMedicion] = useState<'M' | 'F'>('M');
+  const [alturaMedicion, setAlturaMedicion] = useState('');
   const [errorMedicion, setErrorMedicion] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -206,23 +365,61 @@ export const DeportistasPage: React.FC = () => {
     if (data) setEditando(data.deportista);
   };
 
+  const dep = ficha?.deportista;
+
+  const edadDeportista = useMemo(() => {
+    if (!dep?.fecha_nacimiento) return 28;
+    const e = edadEnBogota(dep.fecha_nacimiento);
+    return e !== null && e > 0 ? e : 28;
+  }, [dep?.fecha_nacimiento]);
+
+  const derivadas = useMemo(
+    () => calcularMedidasDerivadas(medicionBase, sexoMedicion, alturaMedicion, edadDeportista),
+    [medicionBase, sexoMedicion, alturaMedicion, edadDeportista]
+  );
+
   const handleRegistrarMedicion = async () => {
     if (!selectedDeportistaId || isProcessing) return;
-    const data: RegistrarMedicionRequest = {};
-    for (const [k, val] of Object.entries(medicion)) {
-      if (val.trim() !== '') (data as Record<string, number>)[k] = Number(val);
+    const data: RegistrarMedicionRequest = {
+      sexo: sexoMedicion,
+    };
+    const altNum = Number(alturaMedicion);
+    if (alturaMedicion.trim() !== '' && Number.isFinite(altNum) && altNum > 0) {
+      data.altura_cm = altNum;
     }
-    if (Object.keys(data).length === 0) {
-      setErrorMedicion('Escribe al menos una medida.');
+
+    let tieneMedidaBase = false;
+    for (const [k, val] of Object.entries(medicionBase) as Array<[ClaveMedicionBase, string]>) {
+      if (val.trim() !== '') {
+        const n = Number(val);
+        if (!Number.isFinite(n) || n <= 0) {
+          setErrorMedicion(`El valor de "${ETIQUETAS_MEDICION_BASE[k]}" debe ser mayor a 0.`);
+          return;
+        }
+        data[k] = n;
+        tieneMedidaBase = true;
+      }
+    }
+
+    if (!tieneMedidaBase) {
+      setErrorMedicion('Ingresa al menos una medida corporal base (ej. Peso o Cintura) para calcular las medidas derivadas.');
       return;
     }
+
+    if (derivadas.grasaPct !== null) {
+      data.grasa_pct = derivadas.grasaPct;
+    }
+    if (derivadas.masaMuscularKg !== null) {
+      data.masa_muscular = derivadas.masaMuscularKg;
+    }
+
     setIsProcessing(true);
     setErrorMedicion(null);
     try {
       await deportistasService.registrarMedicion(selectedDeportistaId, data);
-      showToast('success', 'Medición guardada', 'Quedó en la ficha del deportista.');
+      showToast('success', 'Medición guardada', 'Las medidas base y derivadas quedaron registradas en la ficha.');
       setMedicionAbierta(false);
-      setMedicion(MEDICION_VACIA);
+      setMedicionBase(MEDICION_BASE_VACIA);
       cargarFicha(selectedDeportistaId);
     } catch (err) {
       setErrorMedicion(parseApiError(err));
@@ -234,10 +431,10 @@ export const DeportistasPage: React.FC = () => {
   const detalleEstado = (d: DeportistaResumenResponse) =>
     d.fecha_vencimiento ? { dias: diasEntre(hoyBogota(), d.fecha_vencimiento) } : {};
 
-  const dep = ficha?.deportista;
-
   const abrirMedicion = () => {
-    setMedicion(MEDICION_VACIA);
+    setMedicionBase(MEDICION_BASE_VACIA);
+    setSexoMedicion(dep?.sexo === 'F' ? 'F' : 'M');
+    setAlturaMedicion(dep?.altura_cm ? String(dep.altura_cm) : '');
     setErrorMedicion(null);
     setMedicionAbierta(true);
   };
@@ -442,6 +639,16 @@ export const DeportistasPage: React.FC = () => {
               </div>
               <div className="dato-lista">
                 <Dato etiqueta="Tipo de documento">{dep.tipo_documento}</Dato>
+                <Dato etiqueta="Género">
+                  {dep.sexo === 'M'
+                    ? 'Hombre (Masculino)'
+                    : dep.sexo === 'F'
+                    ? 'Mujer (Femenino)'
+                    : dep.sexo === 'otro'
+                    ? 'Otro'
+                    : '—'}
+                </Dato>
+                <Dato etiqueta="Estatura">{dep.altura_cm ? `${dep.altura_cm} cm` : '—'}</Dato>
                 <Dato etiqueta="Correo">{dep.correo || '—'}</Dato>
                 <Dato etiqueta="Teléfono">{dep.telefono || '—'}</Dato>
                 <Dato etiqueta="Fecha de nacimiento">{formatFechaNegocio(dep.fecha_nacimiento)}</Dato>
@@ -496,22 +703,211 @@ export const DeportistasPage: React.FC = () => {
                     <Scale size={16} />
                     <span>Nueva medición · {formatFechaNegocio(hoyBogota())}</span>
                   </div>
+
+                  {/* 1. Parámetros antropométricos base (Género y Estatura) */}
+                  <div
+                    style={{
+                      fontSize: 'var(--fs-xs)',
+                      fontWeight: 600,
+                      color: 'var(--text-secondary)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      marginBottom: 8,
+                    }}
+                  >
+                    1. Parámetros para el cálculo según género
+                  </div>
+                  <div className="form-grid form-grid-movil-2" style={{ marginBottom: 14 }}>
+                    <div className="col-2">
+                      <Select
+                        id="medicion-sexo"
+                        label="Género para el cálculo"
+                        value={sexoMedicion}
+                        onChange={(e) => setSexoMedicion(e.target.value as 'M' | 'F')}
+                        options={[
+                          { value: 'M', label: 'Hombre (Masculino)' },
+                          { value: 'F', label: 'Mujer (Femenino)' },
+                        ]}
+                        hint={
+                          sexoMedicion === 'F'
+                            ? 'Fórmula antropométrica femenina (ajuste cintura-cadera y masa magra mujer)'
+                            : 'Fórmula antropométrica masculina (ajuste abdominal y masa magra hombre)'
+                        }
+                      />
+                    </div>
+                    <div className="col-2">
+                      <Input
+                        id="medicion-altura"
+                        label="Estatura base (cm)"
+                        type="number"
+                        inputMode="decimal"
+                        min={80}
+                        max={250}
+                        step="0.5"
+                        placeholder={sexoMedicion === 'F' ? '162' : '172'}
+                        value={alturaMedicion}
+                        onChange={(e) => setAlturaMedicion(e.target.value)}
+                        hint="Usada para calcular IMC y % de grasa"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 2. Medidas corporales base (ingreso manual) */}
+                  <div
+                    style={{
+                      fontSize: 'var(--fs-xs)',
+                      fontWeight: 600,
+                      color: 'var(--text-secondary)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      marginBottom: 8,
+                    }}
+                  >
+                    2. Medidas corporales base (ingreso manual)
+                  </div>
                   <div className="form-grid form-grid-movil-2">
-                    {(Object.keys(MEDICION_VACIA) as Array<keyof typeof MEDICION_VACIA>).map((k) => (
+                    {(Object.keys(MEDICION_BASE_VACIA) as ClaveMedicionBase[]).map((k) => (
                       <div className="col-2" key={k}>
                         <Input
                           id={`medicion-${k}`}
-                          label={ETIQUETAS_MEDICION[k]}
+                          label={ETIQUETAS_MEDICION_BASE[k]}
                           type="number"
                           inputMode="decimal"
                           min={0}
                           step="0.1"
-                          value={medicion[k]}
-                          onChange={(e) => setMedicion((m) => ({ ...m, [k]: e.target.value }))}
+                          value={medicionBase[k]}
+                          onChange={(e) => setMedicionBase((m) => ({ ...m, [k]: e.target.value }))}
                         />
                       </div>
                     ))}
                   </div>
+
+                  {/* 3. Medidas derivadas calculadas automáticamente según género */}
+                  <div
+                    style={{
+                      marginTop: 16,
+                      padding: '12px 14px',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'var(--bg-elevated)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                        marginBottom: 10,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontSize: 'var(--fs-xs)',
+                          fontWeight: 600,
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        <Calculator size={14} />
+                        <span>
+                          Medidas derivadas (cálculo automático · {sexoMedicion === 'F' ? 'Mujer' : 'Hombre'})
+                        </span>
+                      </div>
+                      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+                        Calculadas automáticamente
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))',
+                        gap: 10,
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>% Grasa corporal</div>
+                        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                          {derivadas.grasaPct !== null ? `${derivadas.grasaPct} %` : '—'}
+                        </div>
+                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
+                          {derivadas.clasificacionGrasa
+                            ? `${derivadas.clasificacionGrasa}${derivadas.masaGrasaKg !== null ? ` · ${derivadas.masaGrasaKg} kg` : ''}`
+                            : 'Ingresa peso o cintura'}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>Masa muscular</div>
+                        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                          {derivadas.masaMuscularKg !== null ? `${derivadas.masaMuscularKg} kg` : '—'}
+                        </div>
+                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
+                          {derivadas.pctMuscular !== null
+                            ? `${derivadas.pctMuscular}% del peso total`
+                            : 'Requiere peso corporal'}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>IMC (kg/m²)</div>
+                        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                          {derivadas.imc !== null ? derivadas.imc : '—'}
+                        </div>
+                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
+                          {derivadas.clasificacionImc ?? 'Peso / estatura²'}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>Masa magra / ICC</div>
+                        <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                          {derivadas.masaMagraKg !== null
+                            ? `${derivadas.masaMagraKg} kg`
+                            : derivadas.icc !== null
+                            ? `ICC ${derivadas.icc}`
+                            : '—'}
+                        </div>
+                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
+                          {derivadas.icc !== null
+                            ? `ICC ${derivadas.icc} · ${derivadas.riesgoIcc}`
+                            : 'Libre de grasa / Cintura-Cadera'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {errorMedicion && (
                     <MensajeFijo tono="error" style={{ marginTop: 12 }}>
                       {errorMedicion}
@@ -537,8 +933,10 @@ export const DeportistasPage: React.FC = () => {
                       <tr>
                         <th>Fecha</th>
                         <th>Peso</th>
-                        <th>Grasa</th>
-                        <th>Músculo</th>
+                        <th>% Grasa (calc.)</th>
+                        <th>Músculo (calc.)</th>
+                        <th>Cintura / Cadera</th>
+                        <th>Brazo / Pierna / Pecho</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -548,6 +946,16 @@ export const DeportistasPage: React.FC = () => {
                           <td>{numero(m.peso, 'kg')}</td>
                           <td>{numero(m.grasa_pct, '%')}</td>
                           <td>{numero(m.masa_muscular, 'kg')}</td>
+                          <td>
+                            {m.cintura || m.cadera
+                              ? `${m.cintura ?? '—'} / ${m.cadera ?? '—'} cm`
+                              : '—'}
+                          </td>
+                          <td>
+                            {m.brazo || m.pierna || m.pecho
+                              ? `${m.brazo ?? '—'} / ${m.pierna ?? '—'} / ${m.pecho ?? '—'} cm`
+                              : '—'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

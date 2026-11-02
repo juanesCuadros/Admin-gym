@@ -179,6 +179,8 @@ export interface FichaDeportistaResponse {
 
 export interface RegistrarMedicionRequest {
   fecha?: string;
+  sexo?: 'M' | 'F' | 'otro';
+  altura_cm?: number;
   peso?: number;
   grasa_pct?: number;
   masa_muscular?: number;
