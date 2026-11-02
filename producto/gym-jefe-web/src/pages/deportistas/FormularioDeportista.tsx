@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { deportistasService } from '../../api/deportistas.service';
+import { membresiasService } from '../../api/membresias.service';
 import { ApiError, toApiError } from '../../api/client';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { Drawer } from '../../components/ui/Drawer';
@@ -8,6 +9,9 @@ import { Input, Select } from '../../components/ui/Input';
 import { MensajeFijo, Conflicto } from '../../components/estados/Estados';
 import { Info } from 'lucide-react';
 import { hoyBogota } from '../../utils/fechasBogota';
+import { formatCOP } from '../../utils/formato';
+import { useAuth } from '../../contexts/AuthContext';
+import type { PlanResponse } from '../../types/membresias.types';
 import {
   AcudienteDto,
   CrearDeportistaRequest,
@@ -102,12 +106,17 @@ function camposDelServidor(err: ApiError): Record<string, string> {
   return campos;
 }
 
+export interface PlanAsignacionInicial {
+  plan: PlanResponse;
+  fechaInicio?: string;
+}
+
 interface FormularioDeportistaProps {
   isOpen: boolean;
   /** Sin `inicial` se crea; con `inicial` se edita (con su `version`). */
   inicial?: DeportistaResponse | null;
   onCerrar: () => void;
-  onGuardado: (d: DeportistaResponse) => void;
+  onGuardado: (d: DeportistaResponse, seleccionPlan?: PlanAsignacionInicial) => void;
   /** 409 de concurrencia: el padre recarga el registro. */
   onRecargar?: () => void;
 }
@@ -123,9 +132,14 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
   onGuardado,
   onRecargar,
 }) => {
+  const { hasPermission } = useAuth();
+  const puedeAsignarPlan = hasPermission('membresias', 'crear') && hasPermission('caja', 'crear');
   const editando = !!inicial;
   const base = useMemo(() => (inicial ? desdeDeportista(inicial) : VACIO), [inicial]);
   const [v, setV] = useState<Valores>(base);
+  const [planes, setPlanes] = useState<PlanResponse[]>([]);
+  const [planId, setPlanId] = useState('');
+  const [fechaInicioPlan, setFechaInicioPlan] = useState(hoyBogota());
   const [tocados, setTocados] = useState<Record<string, boolean>>({});
   const [intentoEnviar, setIntentoEnviar] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -138,13 +152,23 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setV(base);
+    setPlanId('');
+    setFechaInicioPlan(hoyBogota());
     setTocados({});
     setIntentoEnviar(false);
     setErroresServidor({});
     setErrorGeneral(null);
     setLimite(null);
     setConflicto(false);
-  }, [isOpen, base]);
+    if (!inicial && puedeAsignarPlan) {
+      membresiasService
+        .getPlanes({ solo_activos: true })
+        .then((res) => setPlanes(res.items))
+        .catch(() => setPlanes([]));
+    }
+  }, [isOpen, base, inicial, puedeAsignarPlan]);
+
+  const planSeleccionado = !editando ? planes.find((p) => p.id === planId) ?? null : null;
 
   const edad = edadEnBogota(v.fecha_nacimiento);
   const esMenor = edad !== null && edad < 18;
@@ -247,7 +271,12 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
         };
         res = await deportistasService.crear(data);
       }
-      onGuardado(res);
+      onGuardado(
+        res,
+        !editando && planSeleccionado
+          ? { plan: planSeleccionado, fechaInicio: fechaInicioPlan || undefined }
+          : undefined
+      );
     } catch (e) {
       // Lo escrito se conserva (§A6): solo se pintan los errores.
       const err = toApiError(e);
@@ -319,7 +348,7 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
               Cancelar
             </Button>
             <Button variant="primary" onClick={guardar} isLoading={enviando}>
-              {editando ? 'Guardar cambios' : 'Registrar deportista'}
+              {editando ? 'Guardar cambios' : planSeleccionado ? 'Registrar y asignar plan' : 'Registrar deportista'}
             </Button>
           </>
         }
@@ -561,6 +590,60 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
               </div>
             )}
           </section>
+
+          {/* Plan o membresía inicial: disponible al registrar */}
+          {!editando && puedeAsignarPlan && (
+            <section className="form-section">
+              <div className="form-section-head">
+                <div>
+                  <div className="form-section-title">Plan o membresía</div>
+                  <div className="form-section-desc">
+                    Selecciona un plan si deseas asignarle su membresía de inmediato durante el registro.
+                  </div>
+                </div>
+              </div>
+              <div className="form-grid">
+                <div className={planSeleccionado ? 'col-4' : 'col-6'}>
+                  <Select
+                    id="dep-plan"
+                    label="Plan tarifario"
+                    options={[
+                      {
+                        value: '',
+                        label:
+                          planes.length > 0
+                            ? 'Sin asignar por ahora (solo registrar deportista)'
+                            : 'No hay planes activos disponibles',
+                      },
+                      ...planes.map((p) => ({
+                        value: p.id,
+                        label: `${p.nombre} · ${formatCOP(p.precio)} · ${p.duracion_dias} días`,
+                      })),
+                    ]}
+                    value={planId}
+                    onChange={(e) => setPlanId(e.target.value)}
+                  />
+                </div>
+                {planSeleccionado && (
+                  <div className="col-2">
+                    <Input
+                      id="dep-plan-fecha-inicio"
+                      label="Fecha de inicio"
+                      type="date"
+                      value={fechaInicioPlan}
+                      onChange={(e) => setFechaInicioPlan(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+              {planSeleccionado && (
+                <div className="dato-nota" style={{ marginTop: 6 }}>
+                  Al guardar el registro se abrirá el cobro del plan <strong>{planSeleccionado.nombre}</strong> (
+                  {formatCOP(planSeleccionado.precio)} · {planSeleccionado.duracion_dias} días).
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Tratamiento de datos: solo al registrar */}
           {!editando && (

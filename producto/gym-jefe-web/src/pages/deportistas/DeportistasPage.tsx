@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { UserPlus, Eye, Scale, Edit2, Plus } from 'lucide-react';
 import { deportistasService } from '../../api/deportistas.service';
+import { membresiasService } from '../../api/membresias.service';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { parseApiError } from '../../api/client';
@@ -19,7 +20,8 @@ import {
   RegistrarMedicionRequest,
   DeportistaResponse,
 } from '../../types/deportistas.types';
-import { FormularioDeportista } from './FormularioDeportista';
+import { CobroMembresiaModal, DestinoCobro } from '../membresias/CobroMembresiaModal';
+import { FormularioDeportista, PlanAsignacionInicial } from './FormularioDeportista';
 
 /** Días de `desde` a `hasta` (fechas de negocio `YYYY-MM-DD`), sin pasar por la zona del navegador. */
 function diasEntre(desde: string, hasta: string): number {
@@ -79,6 +81,7 @@ export const DeportistasPage: React.FC = () => {
   // Formulario (crear o editar)
   const [formAbierto, setFormAbierto] = useState(false);
   const [editando, setEditando] = useState<DeportistaResponse | null>(null);
+  const [cobro, setCobro] = useState<DestinoCobro | null>(null);
 
   // Ficha 360°
   const [selectedDeportistaId, setSelectedDeportistaId] = useState<string | null>(null);
@@ -165,13 +168,36 @@ export const DeportistasPage: React.FC = () => {
     setFormAbierto(true);
   };
 
-  const trasGuardar = (d: DeportistaResponse) => {
+  const trasGuardar = (d: DeportistaResponse, seleccionPlan?: PlanAsignacionInicial) => {
     const eraEdicion = !!editando;
     setFormAbierto(false);
     setEditando(null);
-    showToast('success', eraEdicion ? 'Deportista actualizado' : 'Deportista registrado', d.nombre);
     loadDeportistas();
     if (selectedDeportistaId === d.id) cargarFicha(d.id);
+
+    if (!eraEdicion && seleccionPlan) {
+      showToast('success', 'Deportista registrado', 'Completa el cobro para activar su membresía');
+      setCobro({
+        tipo: 'venta',
+        titulo: d.nombre,
+        detalle: `${seleccionPlan.plan.nombre} · ${seleccionPlan.plan.duracion_dias} días desde ${formatFechaNegocio(seleccionPlan.fechaInicio ?? hoyBogota())}`,
+        precioLista: Math.round(Number(seleccionPlan.plan.precio)),
+        registrar: async (pago, clave) => {
+          const nueva = await membresiasService.asignarPlan(
+            {
+              deportista_id: d.id,
+              plan_id: seleccionPlan.plan.id,
+              fecha_inicio: seleccionPlan.fechaInicio,
+              pago,
+            },
+            clave
+          );
+          return nueva.pago!;
+        },
+      });
+    } else {
+      showToast('success', eraEdicion ? 'Deportista actualizado' : 'Deportista registrado', d.nombre);
+    }
   };
 
   const recargarEdicion = async () => {
@@ -320,6 +346,16 @@ export const DeportistasPage: React.FC = () => {
         }}
         onGuardado={trasGuardar}
         onRecargar={recargarEdicion}
+      />
+
+      <CobroMembresiaModal
+        destino={cobro}
+        onCerrar={() => setCobro(null)}
+        onCobrado={() => {
+          showToast('success', 'Membresía asignada', cobro?.titulo ?? '');
+          loadDeportistas();
+          if (selectedDeportistaId) cargarFicha(selectedDeportistaId);
+        }}
       />
 
       {/* Ficha 360° en panel lateral */}
