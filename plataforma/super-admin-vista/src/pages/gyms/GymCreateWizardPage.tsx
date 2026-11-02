@@ -656,12 +656,9 @@ export const GymCreateWizardPage: React.FC = () => {
               }
             >
               <TextInput
-                type="number"
-                inputMode="numeric"
+                moneda
                 value={valorMensual}
                 onChange={(e) => setValorMensual(e.target.value)}
-                min={0}
-                step={1000}
                 leftElement={<DollarSign size={16} />}
                 hasError={!!errors.valorMensual}
               />

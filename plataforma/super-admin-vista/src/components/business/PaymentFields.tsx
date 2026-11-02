@@ -78,12 +78,9 @@ export const PaymentFields: React.FC<PaymentFieldsProps> = ({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
         <FormField label="Monto (COP)" required error={errors.monto}>
           <TextInput
-            type="number"
-            inputMode="numeric"
+            moneda
             value={form.monto}
             onChange={set('monto')}
-            min={1}
-            step={1000}
             disabled={disabled}
             hasError={!!errors.monto}
             leftElement={<span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)' }}>$</span>}

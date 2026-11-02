@@ -1,11 +1,14 @@
-import React, { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes, ReactNode } from 'react';
+import React, { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes, ReactNode, useLayoutEffect, useRef } from 'react';
 import { Search } from 'lucide-react';
+import { formatMiles, limpiarMiles } from '../../utils/formato';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
   leftIcon?: ReactNode;
   rightIcon?: ReactNode;
+  /** Si es true, aplica y muestra el punto separador de miles en tiempo real y entrega dígitos limpios en onChange. */
+  moneda?: boolean;
 }
 
 export const Input: React.FC<InputProps> = ({
@@ -13,11 +16,81 @@ export const Input: React.FC<InputProps> = ({
   error,
   leftIcon,
   rightIcon,
+  moneda = false,
   id,
   className = '',
+  type,
+  inputMode,
+  value,
+  onChange,
+  onKeyDown,
   ...props
 }) => {
   const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const caretRef = useRef<number | null>(null);
+
+  const valorMostrado = moneda ? formatMiles(value as string | number | null | undefined) : value;
+
+  useLayoutEffect(() => {
+    if (moneda && caretRef.current !== null && inputRef.current && document.activeElement === inputRef.current) {
+      const pos = caretRef.current;
+      caretRef.current = null;
+      inputRef.current.setSelectionRange(pos, pos);
+    }
+  }, [moneda, valorMostrado]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (moneda) {
+      const el = e.currentTarget;
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      if (start !== null && end !== null && start === end) {
+        if (e.key === 'Backspace' && start > 0 && el.value[start - 1] === '.') {
+          el.setSelectionRange(Math.max(0, start - 2), start);
+        } else if (e.key === 'Delete' && start < el.value.length && el.value[start] === '.') {
+          el.setSelectionRange(start, Math.min(el.value.length, start + 2));
+        }
+      }
+    }
+    onKeyDown?.(e);
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!moneda) {
+      onChange?.(e);
+      return;
+    }
+    const el = e.currentTarget;
+    const raw = el.value;
+    const cursor = el.selectionStart ?? raw.length;
+    const digitosRaw = raw.replace(/\D/g, '');
+    const digitosAntes = raw.slice(0, cursor).replace(/\D/g, '').length;
+    const limpio = limpiarMiles(raw);
+    const formateado = formatMiles(limpio);
+    const cerosQuitados = digitosRaw.length - limpio.length;
+    const digitosObjetivo = Math.max(0, digitosAntes - cerosQuitados);
+
+    let pos = 0;
+    let contados = 0;
+    while (pos < formateado.length && contados < digitosObjetivo) {
+      if (/\d/.test(formateado[pos])) contados++;
+      pos++;
+    }
+    caretRef.current = pos;
+
+    const eventoSintetico = {
+      ...e,
+      target: { ...e.target, value: limpio },
+      currentTarget: { ...e.currentTarget, value: limpio },
+    } as React.ChangeEvent<HTMLInputElement>;
+    onChange?.(eventoSintetico);
+
+    if (el.value !== formateado) {
+      el.value = formateado;
+      el.setSelectionRange(pos, pos);
+    }
+  };
 
   return (
     <div className="form-group">
@@ -41,7 +114,13 @@ export const Input: React.FC<InputProps> = ({
           </span>
         )}
         <input
+          ref={inputRef}
           id={inputId}
+          type={moneda ? 'text' : type}
+          inputMode={moneda ? 'numeric' : inputMode}
+          value={valorMostrado}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
           className={`form-input ${className}`}
           style={{
             paddingLeft: leftIcon ? 38 : 14,

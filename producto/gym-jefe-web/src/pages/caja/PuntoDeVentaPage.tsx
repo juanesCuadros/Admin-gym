@@ -13,7 +13,7 @@ import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { BuscadorDeportista } from '../../components/ui/BuscadorDeportista';
 import { Cargando, ErrorCarga, MensajeFijo } from '../../components/estados/Estados';
-import { formatCOP, formatFechaHora } from '../../utils/formato';
+import { formatCOP, formatFechaHora, formatMiles } from '../../utils/formato';
 import type { ProductoResponse } from '../../types/inventario.types';
 import type { InfoGymResponse } from '../../types/myGym.types';
 import type { VentaItemRequest, VentaResponseDto } from '../../types/caja.types';
@@ -529,10 +529,7 @@ export const PuntoDeVentaPage: React.FC = () => {
                         <div className="linea-extra uno">
                           <Input
                             label="Precio del pase (COP)"
-                            type="number"
-                            inputMode="numeric"
-                            min={0}
-                            step={100}
+                            moneda
                             value={l.precio ? String(l.precio) : ''}
                             onChange={(e) => actualizarLinea(l.clave, { precio: entero(e.target.value) ?? 0 })}
                           />
@@ -543,11 +540,8 @@ export const PuntoDeVentaPage: React.FC = () => {
                         <div className="linea-extra">
                           <Input
                             label="Precio cobrado"
-                            type="number"
-                            inputMode="numeric"
-                            min={0}
-                            step={100}
-                            placeholder={String(l.precio)}
+                            moneda
+                            placeholder={formatMiles(l.precio)}
                             value={l.precioCobrado}
                             onChange={(e) => actualizarLinea(l.clave, { precioCobrado: e.target.value })}
                           />
@@ -642,10 +636,7 @@ export const PuntoDeVentaPage: React.FC = () => {
                 <>
                   <Input
                     label="Valor recibido (opcional)"
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    step={100}
+                    moneda
                     value={valorRecibido}
                     onChange={(e) => setValorRecibido(e.target.value)}
                     error={errorRecibido ?? undefined}

@@ -20,6 +20,21 @@ export function formatCOP(valor: number | string | null | undefined): string {
   return formatoCOP.format(Math.round(n)).replace(/\s/g, '');
 }
 
+/** Extrae solo los dígitos de un valor monetario y normaliza ceros a la izquierda (`"00500"` → `"500"`, `"0"` → `"0"`). */
+export function limpiarMiles(valor: string | number | null | undefined): string {
+  if (valor === null || valor === undefined) return '';
+  const digitos = String(valor).replace(/\D/g, '');
+  if (!digitos) return '';
+  return digitos.replace(/^0+(?=\d)/, '');
+}
+
+/** Aplica el punto separador de miles en tiempo real (`"90000"` → `"90.000"`, `1250000` → `"1.250.000"`). */
+export function formatMiles(valor: string | number | null | undefined): string {
+  const limpio = limpiarMiles(valor);
+  if (!limpio) return '';
+  return limpio.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
 function aDate(valor: string | Date | null | undefined): Date | null {
   if (!valor) return null;
   const d = valor instanceof Date ? valor : new Date(valor);

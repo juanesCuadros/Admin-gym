@@ -363,13 +363,10 @@ export const PlanFormModal: React.FC<PlanFormModalProps> = ({ isOpen, onClose, p
             }
           >
             <TextInput
-              type="number"
-              inputMode="numeric"
+              moneda
               value={esPrueba ? '0' : form.precio}
               onChange={(e) => set('precio', e.target.value)}
               onBlur={tocar('precio')}
-              min={0}
-              step={1000}
               disabled={esPrueba || bloqueado}
               hasError={!!errorDe('precio')}
               leftElement={<span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)' }}>$</span>}

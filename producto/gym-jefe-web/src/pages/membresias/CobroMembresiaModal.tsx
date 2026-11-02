@@ -285,9 +285,7 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
             <Input
               id="cobro-precio-cobrado"
               label="Valor a cobrar (COP)"
-              type="number"
-              min={1}
-              step={100}
+              moneda
               value={precioCobrado}
               disabled={descuentosApagados || enviando}
               onChange={(e) => setPrecioCobrado(e.target.value)}
@@ -353,9 +351,7 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
               <Input
                 id="cobro-valor-recibido"
                 label="Valor recibido (opcional)"
-                type="number"
-                min={0}
-                step={100}
+                moneda
                 value={valorRecibido}
                 onChange={(e) => setValorRecibido(e.target.value)}
                 error={errorRecibido ?? undefined}

@@ -61,6 +61,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
 
   // Modals
   const [showCrearPlanModal, setShowCrearPlanModal] = useState(false);
+  const [precioPlan, setPrecioPlan] = useState('90000');
   const [newPlan, setNewPlan] = useState<CrearPlanRequest>({
     nombre: '',
     precio: 90000,
@@ -151,6 +152,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
       await membresiasService.crearPlan(newPlan);
       showToast('success', 'Plan creado', 'Nuevo plan tarifario agregado al catálogo');
       setShowCrearPlanModal(false);
+      setPrecioPlan('90000');
       setNewPlan({ nombre: '', precio: 90000, duracion_dias: 30, tipo: 'individual', cupo_personas: 1 });
       loadPlanes();
     } catch (err) {
@@ -496,9 +498,12 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Input
               label="Precio ($ COP) *"
-              type="number"
-              value={newPlan.precio}
-              onChange={(e) => setNewPlan({ ...newPlan, precio: Number(e.target.value) })}
+              moneda
+              value={precioPlan}
+              onChange={(e) => {
+                setPrecioPlan(e.target.value);
+                setNewPlan({ ...newPlan, precio: Number(e.target.value) });
+              }}
               required
             />
             <Input

@@ -452,9 +452,7 @@ export const CajaPage: React.FC = () => {
         <Input
           id="caja-base-inicial"
           label="Base inicial en efectivo (COP)"
-          type="number"
-          min={0}
-          step={100}
+          moneda
           value={baseInicial}
           onChange={(e) => setBaseInicial(e.target.value)}
           leftIcon={<DollarSign size={16} />}
@@ -494,9 +492,7 @@ export const CajaPage: React.FC = () => {
         <Input
           id="caja-efectivo-contado"
           label="Efectivo contado (COP)"
-          type="number"
-          min={0}
-          step={100}
+          moneda
           value={efectivoContado}
           onChange={(e) => setEfectivoContado(e.target.value)}
           autoFocus
@@ -552,9 +548,7 @@ export const CajaPage: React.FC = () => {
         <Input
           id="caja-conteo-ajeno"
           label="Efectivo contado (COP)"
-          type="number"
-          min={0}
-          step={100}
+          moneda
           value={conteoAjeno}
           onChange={(e) => setConteoAjeno(e.target.value)}
           error={errorConteoAjeno ?? undefined}
@@ -600,9 +594,7 @@ export const CajaPage: React.FC = () => {
         <Input
           id="caja-egreso-monto"
           label="Monto (COP)"
-          type="number"
-          min={1}
-          step={100}
+          moneda
           value={egresoMonto}
           onChange={(e) => setEgresoMonto(e.target.value)}
         />

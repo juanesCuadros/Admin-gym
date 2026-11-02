@@ -498,9 +498,7 @@ export const ProductosPage: React.FC = () => {
               />
               <Input
                 label="Precio de venta (COP)"
-                type="number"
-                min={0}
-                step={100}
+                moneda
                 value={precio}
                 onChange={(e) => setPrecio(e.target.value)}
                 onBlur={() => tocar('precio')}

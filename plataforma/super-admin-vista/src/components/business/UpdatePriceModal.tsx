@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { formatCOP, hoyBogota } from '@/utils/format';
 import { Modal } from '@/components/feedback/Modal';
 import { Button } from '@/components/actions/Button';
@@ -29,16 +29,25 @@ export const UpdatePriceModal: React.FC<UpdatePriceModalProps> = ({
   const { updatePrice } = usePayments(gymId);
   const { success, error: toastError } = useToast();
 
-  const [nuevoValor, setNuevoValor] = useState<number>(currentPrice);
+  const [nuevoValor, setNuevoValor] = useState<string>(String(Math.round(currentPrice)));
   const [vigenteDesde, setVigenteDesde] = useState<string>(
     hoyBogota()
   );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (isOpen) {
+      setNuevoValor(String(Math.round(currentPrice)));
+      setVigenteDesde(hoyBogota());
+      setErrorMsg(null);
+    }
+  }, [isOpen, currentPrice]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (nuevoValor < 0) {
+    const valorNum = Number(nuevoValor);
+    if (nuevoValor.trim() === '' || !Number.isInteger(valorNum) || valorNum < 0) {
       setErrorMsg('El valor mensual no puede ser negativo.');
       return;
     }
@@ -46,8 +55,8 @@ export const UpdatePriceModal: React.FC<UpdatePriceModalProps> = ({
     setIsSubmitting(true);
     setErrorMsg(null);
     try {
-      await updatePrice(nuevoValor, vigenteDesde);
-      success(`Tarifa mensual para "${gymNombre}" actualizada a ${formatCOP(nuevoValor)}. Se preservó el historial de precios.`);
+      await updatePrice(valorNum, vigenteDesde);
+      success(`Tarifa mensual para "${gymNombre}" actualizada a ${formatCOP(valorNum)}. Se preservó el historial de precios.`);
       if (onSuccess) onSuccess();
       onClose();
     } catch (err) {
@@ -90,11 +99,9 @@ export const UpdatePriceModal: React.FC<UpdatePriceModalProps> = ({
           helperText={`Valor actual: ${formatCOP(currentPrice)}/mes`}
         >
           <TextInput
-            type="number"
+            moneda
             value={nuevoValor}
-            onChange={(e) => setNuevoValor(Number(e.target.value))}
-            min={0}
-            step="1000"
+            onChange={(e) => setNuevoValor(e.target.value)}
             leftElement={<span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)' }}>$</span>}
           />
         </FormField>
