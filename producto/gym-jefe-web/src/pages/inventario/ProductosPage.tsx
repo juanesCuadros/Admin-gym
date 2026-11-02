@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Plus, Pencil, PackagePlus, SlidersHorizontal, History, Power } from 'lucide-react';
+import { Plus, Pencil, PackagePlus, SlidersHorizontal, History, Power, DollarSign, TrendingUp, Percent, Wallet } from 'lucide-react';
 import { inventarioService } from '../../api/inventario.service';
 import { ApiError, toApiError } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { Card } from '../../components/ui/Card';
+import { Card, KpiCard } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input, Select, Textarea, SearchInput } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
@@ -15,6 +15,7 @@ import { Table } from '../../components/ui/Table';
 import { Cargando, Conflicto, ErrorCarga, MensajeFijo, VacioFiltro, VacioInicial } from '../../components/estados/Estados';
 import { FILAS_POR_PAGINA, formatCOP, formatFechaHora } from '../../utils/formato';
 import type { ProductoResponse, StockMovimientoResponse } from '../../types/inventario.types';
+import { ExportarReporte } from '../reportes/ExportarReporte';
 import { ETIQUETA_MOVIMIENTO, VARIANTE_MOVIMIENTO } from './movimientos';
 
 /** Umbral de "stock crítico" del backend (`bajo_stock`: stock menor o igual a 5). */
@@ -165,6 +166,7 @@ export const ProductosPage: React.FC = () => {
   // Diálogos
   const [dialogo, setDialogo] = useState<Dialogo>(null);
   const [nombre, setNombre] = useState('');
+  const [precioCompra, setPrecioCompra] = useState('');
   const [precio, setPrecio] = useState('');
   const [stockInicial, setStockInicial] = useState('0');
   const [cantidad, setCantidad] = useState('');
@@ -183,10 +185,12 @@ export const ProductosPage: React.FC = () => {
     setSentidoAjuste('restar');
     if (d.tipo === 'crear') {
       setNombre('');
+      setPrecioCompra('');
       setPrecio('');
       setStockInicial('0');
     } else if (d.tipo === 'editar') {
       setNombre(d.p.nombre);
+      setPrecioCompra(String(Math.round(Number(d.p.precio_compra ?? 0))));
       setPrecio(String(Math.round(Number(d.p.precio))));
     }
     setDialogo(d);
@@ -200,7 +204,9 @@ export const ProductosPage: React.FC = () => {
     const n = nombre.trim();
     if (n.length < 2) errores.nombre = 'El nombre debe tener al menos 2 caracteres.';
     else if (n.length > 150) errores.nombre = 'Máximo 150 caracteres.';
-    if (!esEntero(precio) || Number(precio) < 0) errores.precio = 'Escribe el precio en pesos, sin decimales.';
+    if (!esEntero(precioCompra) || Number(precioCompra) < 0)
+      errores.precio_compra = 'Escribe el precio de compra en pesos, sin decimales.';
+    if (!esEntero(precio) || Number(precio) < 0) errores.precio = 'Escribe el precio de venta en pesos, sin decimales.';
     if (dialogo.tipo === 'crear' && (!esEntero(stockInicial) || Number(stockInicial) < 0))
       errores.stock_inicial = 'El stock inicial debe ser 0 o más.';
   }
@@ -221,7 +227,7 @@ export const ProductosPage: React.FC = () => {
   const guardar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!dialogo) return;
-    setTocados({ nombre: true, precio: true, stock_inicial: true, cantidad: true, motivo: true });
+    setTocados({ nombre: true, precio_compra: true, precio: true, stock_inicial: true, cantidad: true, motivo: true });
     if (Object.keys(errores).length > 0 || guardando) return;
     setGuardando(true);
     setErrorGuardar(null);
@@ -229,6 +235,7 @@ export const ProductosPage: React.FC = () => {
       if (dialogo.tipo === 'crear') {
         const p = await inventarioService.crearProducto({
           nombre: nombre.trim(),
+          precio_compra: Number(precioCompra),
           precio: Number(precio),
           stock_inicial: Number(stockInicial),
         });
@@ -236,6 +243,7 @@ export const ProductosPage: React.FC = () => {
       } else if (dialogo.tipo === 'editar') {
         await inventarioService.actualizarProducto(dialogo.p.id, {
           nombre: nombre.trim(),
+          precio_compra: Number(precioCompra),
           precio: Number(precio),
           version: dialogo.p.version,
         });
@@ -302,7 +310,28 @@ export const ProductosPage: React.FC = () => {
           }}
           columns={[
             { header: 'Producto', render: (p) => <span style={{ fontWeight: 500 }}>{p.nombre}</span> },
-            { header: 'Precio', align: 'right', render: (p) => formatCOP(p.precio) },
+            { header: 'Precio compra', align: 'right', render: (p) => formatCOP(p.precio_compra ?? 0) },
+            { header: 'Precio venta', align: 'right', render: (p) => formatCOP(p.precio) },
+            {
+              header: 'Ganancia / Margen',
+              align: 'right',
+              render: (p) => {
+                const compra = Number(p.precio_compra ?? 0);
+                const venta = Number(p.precio ?? 0);
+                const ganancia = venta - compra;
+                const margen = venta > 0 ? (ganancia / venta) * 100 : 0;
+                return (
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+                    <span style={{ color: ganancia < 0 ? 'var(--danger)' : 'var(--text-primary)', fontWeight: 500 }}>
+                      {formatCOP(ganancia)}
+                    </span>
+                    <Badge variant={ganancia < 0 ? 'danger' : margen >= 20 ? 'success' : 'neutral'}>
+                      {margen.toFixed(1)}%
+                    </Badge>
+                  </div>
+                );
+              },
+            },
             {
               header: 'Stock',
               align: 'right',
@@ -386,19 +415,66 @@ export const ProductosPage: React.FC = () => {
       ? dialogo.p.stock + Number(cantidad) * (sentidoAjuste === 'restar' ? -1 : 1)
       : null;
 
+  const costoTotalStock = items.reduce((acc, p) => acc + Number(p.precio_compra ?? 0) * p.stock, 0);
+  const valorVentaStock = items.reduce((acc, p) => acc + Number(p.precio ?? 0) * p.stock, 0);
+  const gananciaEstimadaStock = valorVentaStock - costoTotalStock;
+  const margenPromedioPct =
+    items.length > 0
+      ? items.reduce((acc, p) => {
+          const v = Number(p.precio ?? 0);
+          const c = Number(p.precio_compra ?? 0);
+          return acc + (v > 0 ? ((v - c) / v) * 100 : 0);
+        }, 0) / items.length
+      : 0;
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Productos</h1>
-          <p className="page-subtitle">Catálogo de lo que se vende en recepción, con precio y stock</p>
+          <p className="page-subtitle">Catálogo de inventario con precios de compra, venta, margen de ganancia y stock</p>
         </div>
-        {puedeCrear && (
-          <Button variant="primary" leftIcon={<Plus size={16} />} onClick={() => abrir({ tipo: 'crear' })}>
-            Crear producto
-          </Button>
-        )}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <ExportarReporte
+            parametros={{ tipo_reporte: 'inventario_rentabilidad' }}
+            disabled={cargando || items.length === 0}
+          />
+          {puedeCrear && (
+            <Button variant="primary" leftIcon={<Plus size={16} />} onClick={() => abrir({ tipo: 'crear' })}>
+              Crear producto
+            </Button>
+          )}
+        </div>
       </div>
+
+      {items.length > 0 && (
+        <div className="kpi-grid" style={{ marginBottom: 20 }}>
+          <KpiCard
+            label="Costo en inventario"
+            value={formatCOP(costoTotalStock)}
+            icon={<Wallet size={18} />}
+            subtext="Valor de compra del stock actual"
+          />
+          <KpiCard
+            label="Valor de venta en stock"
+            value={formatCOP(valorVentaStock)}
+            icon={<DollarSign size={18} />}
+            subtext="Ingreso proyectado del stock"
+          />
+          <KpiCard
+            label="Ganancia estimada"
+            value={formatCOP(gananciaEstimadaStock)}
+            icon={<TrendingUp size={18} />}
+            subtext="Utilidad bruta potencial en stock"
+          />
+          <KpiCard
+            label="Margen promedio"
+            value={`${margenPromedioPct.toFixed(1)}%`}
+            icon={<Percent size={18} />}
+            subtext="Rentabilidad media del catálogo"
+          />
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
         <SearchInput
@@ -496,15 +572,60 @@ export const ProductosPage: React.FC = () => {
                 error={err('nombre')}
                 disabled={guardando}
               />
-              <Input
-                label="Precio de venta (COP)"
-                moneda
-                value={precio}
-                onChange={(e) => setPrecio(e.target.value)}
-                onBlur={() => tocar('precio')}
-                error={err('precio')}
-                disabled={guardando}
-              />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Input
+                  label="Precio de compra (COP)"
+                  moneda
+                  value={precioCompra}
+                  onChange={(e) => setPrecioCompra(e.target.value)}
+                  onBlur={() => tocar('precio_compra')}
+                  error={err('precio_compra')}
+                  disabled={guardando}
+                />
+                <Input
+                  label="Precio de venta (COP)"
+                  moneda
+                  value={precio}
+                  onChange={(e) => setPrecio(e.target.value)}
+                  onBlur={() => tocar('precio')}
+                  error={err('precio')}
+                  disabled={guardando}
+                />
+              </div>
+              {esEntero(precioCompra) && esEntero(precio) && (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    marginBottom: 14,
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-surface)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '0.88rem',
+                  }}
+                >
+                  <div>
+                    <span style={{ color: 'var(--text-secondary)' }}>Ganancia unitaria: </span>
+                    <strong
+                      style={{
+                        color: Number(precio) - Number(precioCompra) < 0 ? 'var(--danger)' : 'var(--success)',
+                      }}
+                    >
+                      {formatCOP(Number(precio) - Number(precioCompra))}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-secondary)' }}>Margen: </span>
+                    <strong>
+                      {Number(precio) > 0
+                        ? `${(((Number(precio) - Number(precioCompra)) / Number(precio)) * 100).toFixed(1)}%`
+                        : '0.0%'}
+                    </strong>
+                  </div>
+                </div>
+              )}
               {dialogo.tipo === 'crear' ? (
                 <Input
                   label="Stock inicial"

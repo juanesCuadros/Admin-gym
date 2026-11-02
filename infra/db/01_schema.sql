@@ -559,15 +559,16 @@ CREATE UNIQUE INDEX ux_turno_abierto_por_staff
 CREATE INDEX ix_turno_gym ON platform.turnos_caja(gimnasio_id, abierto_en DESC);
 
 CREATE TABLE platform.productos (
-  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  gimnasio_id  uuid        NOT NULL REFERENCES platform.tenant(id) ON DELETE CASCADE,
-  nombre       text        NOT NULL,
-  precio       numeric(12,2) NOT NULL CHECK (precio >= 0),
-  stock        integer     NOT NULL DEFAULT 0 CHECK (stock >= 0),  -- no se vende bajo cero
-  activo       boolean     NOT NULL DEFAULT true,
-  version      integer     NOT NULL DEFAULT 1,
-  created_at   timestamptz NOT NULL DEFAULT now(),
-  updated_at   timestamptz NOT NULL DEFAULT now(),
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  gimnasio_id   uuid        NOT NULL REFERENCES platform.tenant(id) ON DELETE CASCADE,
+  nombre        text        NOT NULL,
+  precio_compra numeric(12,2) NOT NULL DEFAULT 0 CHECK (precio_compra >= 0),
+  precio        numeric(12,2) NOT NULL CHECK (precio >= 0),
+  stock         integer     NOT NULL DEFAULT 0 CHECK (stock >= 0),  -- no se vende bajo cero
+  activo        boolean     NOT NULL DEFAULT true,
+  version       integer     NOT NULL DEFAULT 1,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
   UNIQUE (gimnasio_id, nombre)
 );
 

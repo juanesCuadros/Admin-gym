@@ -5,7 +5,10 @@ export interface ProductoResponse {
   id: string;
   gimnasio_id: string;
   nombre: string;
+  precio_compra: Monto;
   precio: Monto;
+  ganancia_unitaria: Monto;
+  margen_ganancia_pct: Monto;
   stock: number;
   activo: boolean;
   version: number;
@@ -22,6 +25,7 @@ export interface PaginatedProductosResponse {
 
 export interface CrearProductoRequest {
   nombre: string;
+  precio_compra: number;
   precio: number;
   stock_inicial: number;
   activo?: boolean;
@@ -29,6 +33,7 @@ export interface CrearProductoRequest {
 
 export interface ActualizarProductoRequest {
   nombre: string;
+  precio_compra: number;
   precio: number;
   version: number;
 }

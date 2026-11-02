@@ -3,7 +3,7 @@ import csv
 import io
 import math
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -20,6 +20,7 @@ from app.modules.reportes.schemas import (
     AfluenciaHoraDto,
     DeportistaInactivoItemDto,
     MembresiaPorVencerItemDto,
+    RentabilidadProductoDto,
     ReporteAsistenciaResponse,
     ReporteDeportistasInactivosResponse,
     ReporteIngresosResponse,
@@ -68,7 +69,11 @@ class ReportesService:
                    s.nombre as staff_nombre,
                    COALESCE((
                        SELECT jsonb_agg(jsonb_build_object(
-                           'tipo', vi.tipo, 'descripcion', vi.descripcion, 'cantidad', vi.cantidad, 'subtotal', vi.subtotal
+                           'tipo', vi.tipo,
+                           'producto_id', vi.producto_id,
+                           'descripcion', vi.descripcion,
+                           'cantidad', vi.cantidad,
+                           'subtotal', vi.subtotal
                        ))
                        FROM platform.venta_items vi
                        WHERE vi.venta_id = v.id
@@ -80,6 +85,29 @@ class ReportesService:
         """)
         res_ventas = await session.execute(q_ventas, {"gym_id": gym_id, "inicio_utc": inicio_utc, "fin_utc": fin_utc})
         ventas_rows = res_ventas.mappings().all()
+
+        # Catálogo de productos para cálculo de costo y margen de ganancia
+        q_prods = text("""
+            SELECT id, nombre, precio_compra, precio, stock
+            FROM platform.productos
+            WHERE gimnasio_id = :gym_id
+            ORDER BY nombre ASC
+        """)
+        res_prods = await session.execute(q_prods, {"gym_id": gym_id})
+        prods_rows = res_prods.mappings().all()
+        prods_map: Dict[str, Dict[str, Any]] = {
+            str(r["id"]): {
+                "producto_id": r["id"],
+                "nombre": r["nombre"],
+                "precio_compra": Decimal(str(r["precio_compra"] or 0)),
+                "precio_venta": Decimal(str(r["precio"] or 0)),
+                "stock": int(r["stock"] or 0),
+                "unidades_vendidas": 0,
+                "ingresos_ventas": Decimal("0.00"),
+                "costo_ventas": Decimal("0.00"),
+            }
+            for r in prods_rows
+        }
 
         # 2. Consultar pagos de membresía
         q_pagos = text("""
@@ -137,11 +165,18 @@ class ReportesService:
                 total_ingresos_bruto += total_v
                 desglose_por_metodo[metodo_v] = desglose_por_metodo.get(metodo_v, Decimal("0.00")) + total_v
 
-                # Categorizar ítems por fuente
+                # Categorizar ítems por fuente y acumular rentabilidad por producto
                 for it in items_list:
                     sub_it = Decimal(str(it["subtotal"]))
                     if it["tipo"] == "producto":
                         desglose_por_fuente["productos"] += sub_it
+                        pid_str = str(it.get("producto_id") or "")
+                        cant_it = int(it.get("cantidad") or 0)
+                        if pid_str in prods_map:
+                            entry = prods_map[pid_str]
+                            entry["unidades_vendidas"] += cant_it
+                            entry["ingresos_ventas"] += sub_it
+                            entry["costo_ventas"] += entry["precio_compra"] * Decimal(cant_it)
                     else:
                         desglose_por_fuente["otros_mostrador"] += sub_it
 
@@ -219,6 +254,40 @@ class ReportesService:
         # Ordenar transacciones por fecha desc
         transacciones.sort(key=lambda t: t.fecha_hora, reverse=True)
 
+        total_costo_productos = Decimal("0.00")
+        rentabilidad_productos: List[RentabilidadProductoDto] = []
+        for entry in prods_map.values():
+            compra = entry["precio_compra"]
+            venta = entry["precio_venta"]
+            ganancia_unit = (venta - compra).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            margen_pct = (
+                ((ganancia_unit / venta) * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                if venta > 0
+                else Decimal("0.00")
+            )
+            ing_v = entry["ingresos_ventas"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            costo_v = entry["costo_ventas"].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            ganancia_neta_v = (ing_v - costo_v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            total_costo_productos += costo_v
+            rentabilidad_productos.append(
+                RentabilidadProductoDto(
+                    producto_id=entry["producto_id"],
+                    nombre=entry["nombre"],
+                    precio_compra=compra,
+                    precio_venta=venta,
+                    ganancia_unitaria=ganancia_unit,
+                    margen_pct=margen_pct,
+                    stock=entry["stock"],
+                    unidades_vendidas=entry["unidades_vendidas"],
+                    ingresos_ventas=ing_v,
+                    costo_ventas=costo_v,
+                    ganancia_neta_ventas=ganancia_neta_v,
+                )
+            )
+        total_ganancia_productos = (desglose_por_fuente["productos"] - total_costo_productos).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
         return ReporteIngresosResponse(
             fecha_inicio=fecha_inicio,
             fecha_fin=fecha_fin,
@@ -228,6 +297,9 @@ class ReportesService:
             total_anulado=total_anulado,
             desglose_por_metodo=desglose_por_metodo,
             desglose_por_fuente=desglose_por_fuente,
+            total_costo_productos=total_costo_productos,
+            total_ganancia_productos=total_ganancia_productos,
+            rentabilidad_productos=rentabilidad_productos,
             transacciones=transacciones
         )
 
@@ -691,6 +763,49 @@ class ReportesService:
                     it.dias_sin_asistir
                 ])
             titulo_hoja = "Deportistas Inactivos"
+
+        elif tipo_reporte == "inventario_rentabilidad":
+            reporte_ing = await cls.obtener_reporte_ingresos(
+                session=session,
+                gym_id=gym_id,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
+            )
+            headers_cols = [
+                "Producto",
+                "Precio Compra (COP)",
+                "Precio Venta (COP)",
+                "Ganancia Unitaria (COP)",
+                "Margen (%)",
+                "Stock Actual",
+                "Costo en Stock (COP)",
+                "Valor Venta en Stock (COP)",
+                "Ganancia Estimada Stock (COP)",
+                "Unidades Vendidas Periodo",
+                "Ingresos Ventas (COP)",
+                "Costo Ventas (COP)",
+                "Ganancia Neta Ventas (COP)",
+            ]
+            for rp in reporte_ing.rentabilidad_productos:
+                costo_stock = float(rp.precio_compra) * rp.stock
+                valor_stock = float(rp.precio_venta) * rp.stock
+                gan_stock = float(rp.ganancia_unitaria) * rp.stock
+                rows_data.append([
+                    rp.nombre,
+                    float(rp.precio_compra),
+                    float(rp.precio_venta),
+                    float(rp.ganancia_unitaria),
+                    float(rp.margen_pct),
+                    rp.stock,
+                    costo_stock,
+                    valor_stock,
+                    gan_stock,
+                    rp.unidades_vendidas,
+                    float(rp.ingresos_ventas),
+                    float(rp.costo_ventas),
+                    float(rp.ganancia_neta_ventas),
+                ])
+            titulo_hoja = "Rentabilidad Inventario"
 
         else:
             raise HTTPException(

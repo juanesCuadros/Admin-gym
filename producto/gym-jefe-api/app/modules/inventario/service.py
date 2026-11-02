@@ -155,16 +155,17 @@ class InventarioService:
         # 2. Insertar producto protegido contra condición de carrera TOCTOU en concurrencia
         insert_query = text("""
             INSERT INTO platform.productos (
-                gimnasio_id, nombre, precio, stock, activo, version, created_at, updated_at
+                gimnasio_id, nombre, precio_compra, precio, stock, activo, version, created_at, updated_at
             ) VALUES (
-                :gym_id, :nombre, :precio, :stock, :activo, 1, now(), now()
-            ) RETURNING id, gimnasio_id, nombre, precio, stock, activo, version, created_at, updated_at
+                :gym_id, :nombre, :precio_compra, :precio, :stock, :activo, 1, now(), now()
+            ) RETURNING id, gimnasio_id, nombre, precio_compra, precio, stock, activo, version, created_at, updated_at
         """)
         try:
             async with session.begin_nested():
                 res_ins = await session.execute(insert_query, {
                     "gym_id": gym_id,
                     "nombre": nombre_limpio,
+                    "precio_compra": data.precio_compra,
                     "precio": data.precio,
                     "stock": data.stock_inicial,
                     "activo": data.activo
@@ -226,7 +227,7 @@ class InventarioService:
         total = (await session.execute(count_query, params)).scalar() or 0
 
         data_query = text(f"""
-            SELECT id, gimnasio_id, nombre, precio, stock, activo, version, created_at, updated_at
+            SELECT id, gimnasio_id, nombre, precio_compra, precio, stock, activo, version, created_at, updated_at
             FROM platform.productos
             WHERE {where_clause}
             ORDER BY nombre ASC
@@ -251,7 +252,7 @@ class InventarioService:
     ) -> ProductoResponse:
         """Obtiene el detalle completo de un producto por su ID asegurando aislamiento tenant."""
         query = text("""
-            SELECT id, gimnasio_id, nombre, precio, stock, activo, version, created_at, updated_at
+            SELECT id, gimnasio_id, nombre, precio_compra, precio, stock, activo, version, created_at, updated_at
             FROM platform.productos
             WHERE id = :pid AND gimnasio_id = :gym_id
         """)
@@ -282,7 +283,7 @@ class InventarioService:
 
         # 1. Bloqueo pesimista y verificación de existencia
         check_query = text("""
-            SELECT id, nombre, stock, precio, activo, version
+            SELECT id, nombre, stock, precio_compra, precio, activo, version
             FROM platform.productos
             WHERE id = :pid AND gimnasio_id = :gym_id
             FOR UPDATE
@@ -325,14 +326,19 @@ class InventarioService:
         # 4. Actualizar registro con cláusula de versión y protección contra colisión de nombre
         update_query = text("""
             UPDATE platform.productos
-            SET nombre = :nombre, precio = :precio, version = version + 1, updated_at = now()
+            SET nombre = :nombre,
+                precio_compra = COALESCE(:precio_compra, precio_compra),
+                precio = :precio,
+                version = version + 1,
+                updated_at = now()
             WHERE id = :pid AND gimnasio_id = :gym_id AND version = :version_esperada
-            RETURNING id, gimnasio_id, nombre, precio, stock, activo, version, created_at, updated_at
+            RETURNING id, gimnasio_id, nombre, precio_compra, precio, stock, activo, version, created_at, updated_at
         """)
         try:
             async with session.begin_nested():
                 res_up = await session.execute(update_query, {
                     "nombre": nombre_limpio,
+                    "precio_compra": data.precio_compra,
                     "precio": data.precio,
                     "pid": producto_id,
                     "gym_id": gym_id,
@@ -369,7 +375,7 @@ class InventarioService:
             UPDATE platform.productos
             SET activo = :activo, version = version + 1, updated_at = now()
             WHERE id = :pid AND gimnasio_id = :gym_id
-            RETURNING id, gimnasio_id, nombre, precio, stock, activo, version, created_at, updated_at
+            RETURNING id, gimnasio_id, nombre, precio_compra, precio, stock, activo, version, created_at, updated_at
         """)
         res = await session.execute(update_query, {
             "activo": data.activo,

@@ -9,7 +9,7 @@ import { Table } from '../../components/ui/Table';
 import { Cargando, ErrorCarga, MensajeFijo, VacioInicial } from '../../components/estados/Estados';
 import { FILAS_POR_PAGINA, formatCOP, formatFechaHora } from '../../utils/formato';
 import { formatFechaNegocio, hoyBogota, inicioMesBogota } from '../../utils/fechasBogota';
-import type { FiltrosIngresos, ReporteIngresosResponse, TransaccionReporte } from '../../types/reportes.types';
+import type { FiltrosIngresos, RentabilidadProducto, ReporteIngresosResponse, TransaccionReporte } from '../../types/reportes.types';
 import { ExportarReporte } from './ExportarReporte';
 
 const ETIQUETA_FUENTE: Record<string, string> = {
@@ -223,6 +223,72 @@ export const ReporteIngresosPage: React.FC = () => {
             <Desglose titulo="Por fuente" datos={reporte.desglose_por_fuente} etiquetas={ETIQUETA_FUENTE} />
             <Desglose titulo="Por método" datos={reporte.desglose_por_metodo} />
           </div>
+
+          {reporte.rentabilidad_productos && reporte.rentabilidad_productos.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <Card
+                title={`Rentabilidad y margen por producto (${reporte.rentabilidad_productos.length})`}
+                action={
+                  <ExportarReporte
+                    parametros={{
+                      tipo_reporte: 'inventario_rentabilidad',
+                      fecha_inicio: aplicados.fecha_inicio,
+                      fecha_fin: aplicados.fecha_fin,
+                    }}
+                    disabled={cargando || !!error}
+                  />
+                }
+              >
+                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12, fontSize: '0.9rem' }}>
+                  <div>
+                    <span style={{ color: 'var(--text-secondary)' }}>Costo productos vendidos: </span>
+                    <strong>{formatCOP(reporte.total_costo_productos ?? 0)}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-secondary)' }}>Ganancia neta en productos: </span>
+                    <strong style={{ color: 'var(--success)' }}>{formatCOP(reporte.total_ganancia_productos ?? 0)}</strong>
+                  </div>
+                </div>
+                <Table<RentabilidadProducto>
+                  data={reporte.rentabilidad_productos}
+                  keyExtractor={(rp) => rp.producto_id}
+                  columns={[
+                    { header: 'Producto', render: (rp) => <span style={{ fontWeight: 500 }}>{rp.nombre}</span> },
+                    { header: 'Precio compra', align: 'right', render: (rp) => formatCOP(rp.precio_compra) },
+                    { header: 'Precio venta', align: 'right', render: (rp) => formatCOP(rp.precio_venta) },
+                    {
+                      header: 'Ganancia / Margen unit.',
+                      align: 'right',
+                      render: (rp) => (
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <span>{formatCOP(rp.ganancia_unitaria)}</span>
+                          <Badge variant={Number(rp.ganancia_unitaria) < 0 ? 'danger' : 'success'}>
+                            {Number(rp.margen_pct).toFixed(1)}%
+                          </Badge>
+                        </div>
+                      ),
+                    },
+                    { header: 'Vendidos', align: 'right', render: (rp) => rp.unidades_vendidas },
+                    { header: 'Ingresos ventas', align: 'right', render: (rp) => formatCOP(rp.ingresos_ventas) },
+                    { header: 'Costo ventas', align: 'right', render: (rp) => formatCOP(rp.costo_ventas) },
+                    {
+                      header: 'Ganancia neta',
+                      align: 'right',
+                      render: (rp) => (
+                        <strong
+                          style={{
+                            color: Number(rp.ganancia_neta_ventas) < 0 ? 'var(--danger)' : 'var(--success)',
+                          }}
+                        >
+                          {formatCOP(rp.ganancia_neta_ventas)}
+                        </strong>
+                      ),
+                    },
+                  ]}
+                />
+              </Card>
+            </div>
+          )}
 
           <Card title={`Transacciones (${transacciones.length})`}>
             {transacciones.length === 0 ? (

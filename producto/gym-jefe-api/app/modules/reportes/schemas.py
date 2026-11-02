@@ -6,8 +6,31 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-TipoReporteExportar = Literal["ingresos", "membresias_por_vencer", "asistencia", "deportistas_inactivos"]
+TipoReporteExportar = Literal[
+    "ingresos",
+    "membresias_por_vencer",
+    "asistencia",
+    "deportistas_inactivos",
+    "inventario_rentabilidad",
+]
 FormatoExportar = Literal["csv", "excel"]
+
+
+class RentabilidadProductoDto(BaseModel):
+    """Rentabilidad y margen de ganancia asociado a cada producto."""
+    model_config = ConfigDict(from_attributes=True)
+
+    producto_id: UUID
+    nombre: str
+    precio_compra: Decimal = Decimal("0.00")
+    precio_venta: Decimal = Decimal("0.00")
+    ganancia_unitaria: Decimal = Decimal("0.00")
+    margen_pct: Decimal = Decimal("0.00")
+    stock: int = 0
+    unidades_vendidas: int = 0
+    ingresos_ventas: Decimal = Decimal("0.00")
+    costo_ventas: Decimal = Decimal("0.00")
+    ganancia_neta_ventas: Decimal = Decimal("0.00")
 
 
 class TransaccionReporteDto(BaseModel):
@@ -36,6 +59,9 @@ class ReporteIngresosResponse(BaseModel):
     total_anulado: Decimal = Field(..., description="Total de transacciones anuladas en el periodo (trazable, no suma al neto)")
     desglose_por_metodo: Dict[str, Decimal] = Field(..., description="Sumatoria de ingresos netos por método (efectivo, nequi, etc.)")
     desglose_por_fuente: Dict[str, Decimal] = Field(..., description="Sumatoria por fuente (membresias, productos, otros_mostrador)")
+    total_costo_productos: Decimal = Field(Decimal("0.00"), description="Costo total de adquisición de los productos vendidos en el periodo")
+    total_ganancia_productos: Decimal = Field(Decimal("0.00"), description="Ganancia neta obtenida por venta de productos en el periodo")
+    rentabilidad_productos: List[RentabilidadProductoDto] = Field(default_factory=list, description="Cálculo de margen y ganancias por producto en el periodo")
     transacciones: List[TransaccionReporteDto] = Field(default_factory=list, description="Listado detallado de transacciones del periodo")
 
 

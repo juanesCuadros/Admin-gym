@@ -2,8 +2,27 @@ import type { Monto } from './comun.types';
 
 /** Módulo 10 · Reportes (`/reportes`). Formas de `app/modules/reportes/schemas.py`. */
 
-export type TipoReporteExportar = 'ingresos' | 'membresias_por_vencer' | 'asistencia' | 'deportistas_inactivos';
+export type TipoReporteExportar =
+  | 'ingresos'
+  | 'membresias_por_vencer'
+  | 'asistencia'
+  | 'deportistas_inactivos'
+  | 'inventario_rentabilidad';
 export type FormatoExportar = 'csv' | 'excel';
+
+export interface RentabilidadProducto {
+  producto_id: string;
+  nombre: string;
+  precio_compra: Monto;
+  precio_venta: Monto;
+  ganancia_unitaria: Monto;
+  margen_pct: Monto;
+  stock: number;
+  unidades_vendidas: number;
+  ingresos_ventas: Monto;
+  costo_ventas: Monto;
+  ganancia_neta_ventas: Monto;
+}
 
 export interface TransaccionReporte {
   id: string;
@@ -28,6 +47,9 @@ export interface ReporteIngresosResponse {
   total_anulado: Monto;
   desglose_por_metodo: Record<string, Monto>;
   desglose_por_fuente: Record<string, Monto>;
+  total_costo_productos?: Monto;
+  total_ganancia_productos?: Monto;
+  rentabilidad_productos?: RentabilidadProducto[];
   transacciones: TransaccionReporte[];
 }
 
