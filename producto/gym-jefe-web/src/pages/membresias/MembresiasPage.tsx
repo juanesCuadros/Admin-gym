@@ -62,6 +62,8 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
   // Modals
   const [showCrearPlanModal, setShowCrearPlanModal] = useState(false);
   const [precioPlan, setPrecioPlan] = useState('90000');
+  const [duracionPlan, setDuracionPlan] = useState('30');
+  const [cupoPlan, setCupoPlan] = useState('1');
   const [newPlan, setNewPlan] = useState<CrearPlanRequest>({
     nombre: '',
     precio: 90000,
@@ -147,12 +149,30 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
 
   const handleCrearPlan = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newPlan.nombre.trim() || newPlan.nombre.trim().length < 2) {
+      showToast('error', 'Nombre inválido', 'Ingresa un nombre para el plan (mínimo 2 caracteres).');
+      return;
+    }
+    if (precioPlan === '' || newPlan.precio < 0) {
+      showToast('error', 'Precio inválido', 'Ingresa un precio válido para el plan.');
+      return;
+    }
+    if (!duracionPlan || newPlan.duracion_dias < 1) {
+      showToast('error', 'Duración inválida', 'La duración en días debe ser mayor a 0.');
+      return;
+    }
+    if (!cupoPlan || !newPlan.cupo_personas || newPlan.cupo_personas < 1) {
+      showToast('error', 'Cupo inválido', 'El cupo máximo debe ser de al menos 1 persona.');
+      return;
+    }
     setIsProcessing(true);
     try {
       await membresiasService.crearPlan(newPlan);
       showToast('success', 'Plan creado', 'Nuevo plan tarifario agregado al catálogo');
       setShowCrearPlanModal(false);
       setPrecioPlan('90000');
+      setDuracionPlan('30');
+      setCupoPlan('1');
       setNewPlan({ nombre: '', precio: 90000, duracion_dias: 30, tipo: 'individual', cupo_personas: 1 });
       loadPlanes();
     } catch (err) {
@@ -508,9 +528,14 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
             />
             <Input
               label="Duración en días *"
-              type="number"
-              value={newPlan.duracion_dias}
-              onChange={(e) => setNewPlan({ ...newPlan, duracion_dias: Number(e.target.value) })}
+              type="text"
+              inputMode="numeric"
+              value={duracionPlan}
+              onChange={(e) => {
+                const limpio = e.target.value.replace(/\D/g, '').replace(/^0+/, '');
+                setDuracionPlan(limpio);
+                setNewPlan({ ...newPlan, duracion_dias: limpio === '' ? 0 : Number(limpio) });
+              }}
               required
             />
           </div>
@@ -524,13 +549,28 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                 { value: 'familiar', label: 'Familiar' },
               ]}
               value={newPlan.tipo}
-              onChange={(e) => setNewPlan({ ...newPlan, tipo: e.target.value as any })}
+              onChange={(e) => {
+                const tipo = e.target.value as CrearPlanRequest['tipo'];
+                const cupoSugerido =
+                  tipo === 'individual'
+                    ? 1
+                    : tipo === 'pareja'
+                      ? 2
+                      : Math.max(3, newPlan.cupo_personas || 3);
+                setCupoPlan(String(cupoSugerido));
+                setNewPlan({ ...newPlan, tipo, cupo_personas: cupoSugerido });
+              }}
             />
             <Input
               label="Cupo máximo de personas"
-              type="number"
-              value={newPlan.cupo_personas || 1}
-              onChange={(e) => setNewPlan({ ...newPlan, cupo_personas: Number(e.target.value) })}
+              type="text"
+              inputMode="numeric"
+              value={cupoPlan}
+              onChange={(e) => {
+                const limpio = e.target.value.replace(/\D/g, '').replace(/^0+/, '');
+                setCupoPlan(limpio);
+                setNewPlan({ ...newPlan, cupo_personas: limpio === '' ? 0 : Number(limpio) });
+              }}
             />
           </div>
         </form>
