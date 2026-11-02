@@ -25,7 +25,18 @@ import {
   TipoInicio,
 } from '@/types/gym.types';
 import { Plan } from '@/types/plan.types';
-import { formatCOP, validarDireccionSede } from '@/utils/format';
+import {
+  formatCOP,
+  validarDireccionSede,
+  validarNit,
+  validarCiudad,
+  validarTelefono,
+  validarCorreo,
+  validarWhatsApp,
+  validarUrl,
+  validarRedSocial,
+  validarDescripcion,
+} from '@/utils/format';
 import {
   Building2,
   CheckCircle2,
@@ -242,8 +253,21 @@ export const GymCreateWizardPage: React.FC = () => {
       } else if (subdomainCheck && subdomainCheck.subdominio === subdominio && (!subdomainCheck.valido || !subdomainCheck.disponible)) {
         errs.subdominio = subdomainCheck.mensaje || 'El subdominio no está disponible.';
       }
-      if (correo.trim() && !RE_CORREO.test(correo.trim())) {
-        errs.correo = 'Ingresa un correo válido.';
+      if (nit.trim()) {
+        const eNit = validarNit(nit);
+        if (eNit) errs.nit = eNit;
+      }
+      if (ciudad.trim()) {
+        const eCiudad = validarCiudad(ciudad);
+        if (eCiudad) errs.ciudad = eCiudad;
+      }
+      if (telefono.trim()) {
+        const eTel = validarTelefono(telefono);
+        if (eTel) errs.telefono = eTel;
+      }
+      if (correo.trim()) {
+        const eCorreo = validarCorreo(correo);
+        if (eCorreo) errs.correo = eCorreo;
       }
       if (direccion.trim()) {
         const errDir = validarDireccionSede(direccion);
@@ -252,8 +276,29 @@ export const GymCreateWizardPage: React.FC = () => {
         }
       }
     } else if (paso === 2) {
-      if (descripcion.length > 300) {
-        errs.descripcion = 'La descripción admite máximo 300 caracteres.';
+      if (logoUrl.trim()) {
+        const eLogo = validarUrl(logoUrl, 'El logo');
+        if (eLogo) errs.logoUrl = eLogo;
+      }
+      if (bannerUrl.trim()) {
+        const eBanner = validarUrl(bannerUrl, 'El banner');
+        if (eBanner) errs.bannerUrl = eBanner;
+      }
+      if (descripcion.trim()) {
+        const eDesc = validarDescripcion(descripcion);
+        if (eDesc) errs.descripcion = eDesc;
+      }
+      if (instagram.trim()) {
+        const eInsta = validarRedSocial(instagram, 'Instagram');
+        if (eInsta) errs.instagram = eInsta;
+      }
+      if (facebook.trim()) {
+        const eFb = validarRedSocial(facebook, 'Facebook');
+        if (eFb) errs.facebook = eFb;
+      }
+      if (whatsapp.trim()) {
+        const eWa = validarWhatsApp(whatsapp);
+        if (eWa) errs.whatsapp = eWa;
       }
     } else if (paso === 3) {
       if (jefeNombre.trim().length < 2) {
@@ -502,18 +547,18 @@ export const GymCreateWizardPage: React.FC = () => {
             </FormField>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
-              <FormField label="NIT" optional helperText="Puede repetirse: un dueño puede tener varias sedes.">
-                <TextInput value={nit} onChange={(e) => setNit(e.target.value)} placeholder="ej. 900123456-1" maxLength={50} leftElement={<FileText size={16} />} />
+              <FormField label="NIT" optional error={errors.nit} helperText="Puede repetirse: un dueño puede tener varias sedes.">
+                <TextInput value={nit} onChange={(e) => setNit(e.target.value)} hasError={!!errors.nit} placeholder="ej. 900123456-1" maxLength={50} leftElement={<FileText size={16} />} />
               </FormField>
 
-              <FormField label="Ciudad" optional>
-                <TextInput value={ciudad} onChange={(e) => setCiudad(e.target.value)} placeholder="ej. Bogotá" maxLength={100} leftElement={<MapPin size={16} />} />
+              <FormField label="Ciudad" optional error={errors.ciudad}>
+                <TextInput value={ciudad} onChange={(e) => setCiudad(e.target.value)} hasError={!!errors.ciudad} placeholder="ej. Bogotá" maxLength={100} leftElement={<MapPin size={16} />} />
               </FormField>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
-              <FormField label="Teléfono del gimnasio" optional>
-                <TextInput value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="ej. +573001234567" maxLength={50} leftElement={<Phone size={16} />} />
+              <FormField label="Teléfono del gimnasio" optional error={errors.telefono}>
+                <TextInput value={telefono} onChange={(e) => setTelefono(e.target.value)} hasError={!!errors.telefono} placeholder="ej. +573001234567" maxLength={50} leftElement={<Phone size={16} />} />
               </FormField>
 
               <FormField label="Correo del gimnasio" optional error={errors.correo}>
@@ -542,12 +587,12 @@ export const GymCreateWizardPage: React.FC = () => {
               Lo que verán los visitantes en la página pública del gimnasio. Todo es opcional.
             </p>
 
-            <FormField label="URL del logo" optional>
-              <TextInput value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://…/logo.png" />
+            <FormField label="URL del logo" optional error={errors.logoUrl}>
+              <TextInput value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} hasError={!!errors.logoUrl} placeholder="https://…/logo.png" />
             </FormField>
 
-            <FormField label="URL del banner" optional>
-              <TextInput value={bannerUrl} onChange={(e) => setBannerUrl(e.target.value)} placeholder="https://…/banner.jpg" />
+            <FormField label="URL del banner" optional error={errors.bannerUrl}>
+              <TextInput value={bannerUrl} onChange={(e) => setBannerUrl(e.target.value)} hasError={!!errors.bannerUrl} placeholder="https://…/banner.jpg" />
             </FormField>
 
             <FormField label="Descripción" optional error={errors.descripcion} helperText={`${descripcion.length}/300 caracteres`}>
@@ -555,14 +600,14 @@ export const GymCreateWizardPage: React.FC = () => {
             </FormField>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-              <FormField label="Instagram" optional>
-                <TextInput value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@gimnasio" />
+              <FormField label="Instagram" optional error={errors.instagram}>
+                <TextInput value={instagram} onChange={(e) => setInstagram(e.target.value)} hasError={!!errors.instagram} placeholder="@gimnasio" />
               </FormField>
-              <FormField label="WhatsApp" optional>
-                <TextInput value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="+573001234567" />
+              <FormField label="WhatsApp" optional error={errors.whatsapp}>
+                <TextInput value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} hasError={!!errors.whatsapp} placeholder="+573001234567" />
               </FormField>
-              <FormField label="Facebook" optional>
-                <TextInput value={facebook} onChange={(e) => setFacebook(e.target.value)} placeholder="facebook.com/gimnasio" />
+              <FormField label="Facebook" optional error={errors.facebook}>
+                <TextInput value={facebook} onChange={(e) => setFacebook(e.target.value)} hasError={!!errors.facebook} placeholder="facebook.com/gimnasio" />
               </FormField>
             </div>
           </div>

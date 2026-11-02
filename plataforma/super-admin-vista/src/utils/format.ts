@@ -163,3 +163,118 @@ export function validarDireccionSede(direccion?: string | null): string | null {
   }
   return null;
 }
+
+export function validarNombreGym(nombre?: string | null): string | null {
+  if (!nombre || nombre.trim() === '') {
+    return 'El nombre del gimnasio es obligatorio.';
+  }
+  const val = nombre.trim();
+  if (val.length < 2) {
+    return 'El nombre del gimnasio debe tener al menos 2 caracteres.';
+  }
+  if (val.length > 150) {
+    return 'El nombre del gimnasio no puede superar los 150 caracteres.';
+  }
+  if (!/[a-zA-ZáéíóúñÁÉÍÓÚÑ]/.test(val)) {
+    return 'El nombre del gimnasio debe contener letras.';
+  }
+  return null;
+}
+
+const PATRON_NIT = /^[0-9\.\-]{5,20}$/;
+
+export function validarNit(nit?: string | null): string | null {
+  if (!nit || nit.trim() === '') return null;
+  const val = nit.trim();
+  const digitos = val.replace(/\D/g, '');
+  if (digitos.length < 5 || val.length > 20 || !PATRON_NIT.test(val)) {
+    return 'El NIT / RUT debe tener al menos 5 dígitos numéricos (ej. 900123456-1).';
+  }
+  return null;
+}
+
+const PATRON_CIUDAD = /^[a-zA-ZáéíóúñÁÉÍÓÚÑ\s\.\-]{3,100}$/;
+
+export function validarCiudad(ciudad?: string | null): string | null {
+  if (!ciudad || ciudad.trim() === '') return null;
+  const val = ciudad.trim();
+  if (val.length < 3) {
+    return 'La ciudad debe tener al menos 3 caracteres (ej. Bogotá).';
+  }
+  if (val.length > 100 || !PATRON_CIUDAD.test(val) || !/[a-zA-ZáéíóúñÁÉÍÓÚÑ]/.test(val)) {
+    return 'Ingresa una ciudad válida con letras (ej. Bogotá, Medellín).';
+  }
+  return null;
+}
+
+const PATRON_TELEFONO = /^\+?[0-9\s\-\(\)]{7,20}$/;
+
+export function validarTelefono(telefono?: string | null): string | null {
+  if (!telefono || telefono.trim() === '') return null;
+  const val = telefono.trim();
+  const digitos = val.replace(/\D/g, '');
+  if (digitos.length < 7 || digitos.length > 15 || !PATRON_TELEFONO.test(val)) {
+    return 'Ingresa un teléfono válido de entre 7 y 15 dígitos (ej. +573001234567 o 6012345678).';
+  }
+  return null;
+}
+
+const PATRON_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+export function validarCorreo(correo?: string | null): string | null {
+  if (!correo || correo.trim() === '') return null;
+  const val = correo.trim();
+  if (!PATRON_CORREO.test(val)) {
+    return 'Ingresa un correo electrónico válido (ej. contacto@gimnasio.com).';
+  }
+  return null;
+}
+
+const PATRON_WHATSAPP = /^\+?[0-9\s\-]{10,20}$/;
+
+export function validarWhatsApp(whatsapp?: string | null): string | null {
+  if (!whatsapp || whatsapp.trim() === '') return null;
+  const val = whatsapp.trim();
+  const digitos = val.replace(/\D/g, '');
+  if (digitos.length < 10 || digitos.length > 15 || !PATRON_WHATSAPP.test(val)) {
+    return 'Ingresa un número de WhatsApp válido de al menos 10 dígitos (ej. +573001234567).';
+  }
+  return null;
+}
+
+export function validarUrl(url?: string | null, etiqueta = 'La URL'): string | null {
+  if (!url || url.trim() === '') return null;
+  const val = url.trim();
+  if (val.length < 8 || !val.toLowerCase().startsWith('http://') && !val.toLowerCase().startsWith('https://')) {
+    return `${etiqueta} debe ser una dirección web válida que inicie con https:// o http://.`;
+  }
+  return null;
+}
+
+export function validarRedSocial(usuario?: string | null, red = 'red social'): string | null {
+  if (!usuario || usuario.trim() === '') return null;
+  const val = usuario.trim();
+  if (val.length < 2) {
+    return `Ingresa un usuario o enlace válido de ${red}.`;
+  }
+  if (val.toLowerCase().startsWith('http://') || val.toLowerCase().startsWith('https://')) {
+    return null;
+  }
+  const limpio = val.replace(/^@/, '');
+  if (!/^[a-zA-Z0-9_\.]{2,50}$/.test(limpio)) {
+    return `Ingresa un usuario válido de ${red} (ej. @gimnasio).`;
+  }
+  return null;
+}
+
+export function validarDescripcion(desc?: string | null): string | null {
+  if (!desc || desc.trim() === '') return null;
+  const val = desc.trim();
+  if (val.length < 5) {
+    return 'La descripción debe tener al menos 5 caracteres.';
+  }
+  if (val.length > 300) {
+    return 'La descripción no puede superar los 300 caracteres.';
+  }
+  return null;
+}

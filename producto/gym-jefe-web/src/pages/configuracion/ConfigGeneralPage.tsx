@@ -9,7 +9,17 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Cargando, Conflicto, ErrorCarga, MensajeFijo } from '../../components/estados/Estados';
 import { useCambiosSinGuardar } from '../../hooks/useCambiosSinGuardar';
-import { formatFechaHora, validarDireccionSede } from '../../utils/formato';
+import {
+  formatFechaHora,
+  validarDireccionSede,
+  validarNombreGym,
+  validarCiudad,
+  validarTelefono,
+  validarCorreo,
+  validarWhatsApp,
+  validarUrl,
+  validarRedSocial,
+} from '../../utils/formato';
 import type { InfoGymResponse } from '../../types/myGym.types';
 
 const REDES_BASE = ['instagram', 'facebook', 'whatsapp', 'tiktok'];
@@ -147,15 +157,39 @@ export const ConfigGeneralPage: React.FC = () => {
 
   // ---- Validación ----
   const erroresInfo: Record<string, string> = {};
-  if (form.nombre.trim().length < 2) erroresInfo.nombre = 'El nombre debe tener al menos 2 caracteres.';
-  if (form.nombre.trim().length > 150) erroresInfo.nombre = 'Máximo 150 caracteres.';
-  if (form.correo.trim() && !CORREO_RE.test(form.correo.trim())) erroresInfo.correo = 'Escribe un correo válido.';
+  const eNombre = validarNombreGym(form.nombre);
+  if (eNombre) erroresInfo.nombre = eNombre;
+
+  const eCiudad = validarCiudad(form.ciudad);
+  if (eCiudad) erroresInfo.ciudad = eCiudad;
+
   const errDireccion = validarDireccionSede(form.direccion);
   if (errDireccion) erroresInfo.direccion = errDireccion;
+
+  const eTelefono = validarTelefono(form.telefono);
+  if (eTelefono) erroresInfo.telefono = eTelefono;
+
+  const eCorreo = validarCorreo(form.correo);
+  if (eCorreo) erroresInfo.correo = eCorreo;
+
+  for (const [k, v] of Object.entries(form.redes)) {
+    if (v.trim()) {
+      const eRed = k === 'whatsapp' ? validarWhatsApp(v) : validarRedSocial(v, ETIQUETA_RED[k] || k);
+      if (eRed) erroresInfo[`redes.${k}`] = eRed;
+    }
+  }
 
   const erroresBranding: Record<string, string> = {};
   for (const k of ['primary_color', 'secondary_color', 'accent_color'] as const) {
     if (branding[k].trim() && !COLOR_RE.test(branding[k].trim())) erroresBranding[k] = 'Usa un color hexadecimal, p. ej. #4f46e5.';
+  }
+  if (branding.logo_url.trim()) {
+    const eLogo = validarUrl(branding.logo_url, 'El logo');
+    if (eLogo) erroresBranding.logo_url = eLogo;
+  }
+  if (branding.banner_url.trim()) {
+    const eBanner = validarUrl(branding.banner_url, 'El banner');
+    if (eBanner) erroresBranding.banner_url = eBanner;
   }
 
   const errorDe = (campo: string) => (tocados[campo] ? erroresInfo[campo] : undefined) ?? errorInfo?.campos[campo];
@@ -163,11 +197,17 @@ export const ConfigGeneralPage: React.FC = () => {
 
   const guardarInfo = async (e: React.FormEvent) => {
     e.preventDefault();
-    setTocados({ nombre: true, correo: true, direccion: true });
+    setTocados({
+      nombre: true,
+      ciudad: true,
+      telefono: true,
+      correo: true,
+      direccion: true,
+      ...Object.keys(form.redes).reduce((acc, k) => ({ ...acc, [`redes.${k}`]: true }), {}),
+    });
     if (Object.keys(erroresInfo).length > 0 || guardandoInfo) {
-      if (erroresInfo.direccion) {
-        showToast('error', 'Dirección de la sede no válida', erroresInfo.direccion);
-      }
+      const primerError = Object.values(erroresInfo)[0];
+      showToast('error', 'Revisa los campos', primerError);
       return;
     }
     setGuardandoInfo(true);
@@ -200,7 +240,11 @@ export const ConfigGeneralPage: React.FC = () => {
 
   const guardarBranding = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (Object.keys(erroresBranding).length > 0 || guardandoBranding) return;
+    if (Object.keys(erroresBranding).length > 0 || guardandoBranding) {
+      const primerError = Object.values(erroresBranding)[0];
+      showToast('error', 'Revisa los campos de identidad visual', primerError);
+      return;
+    }
     setGuardandoBranding(true);
     setErrorBranding(null);
     try {
@@ -292,7 +336,9 @@ export const ConfigGeneralPage: React.FC = () => {
               label="Ciudad"
               value={form.ciudad}
               maxLength={100}
+              placeholder="ej. Bogotá"
               onChange={(e) => setForm({ ...form, ciudad: e.target.value })}
+              onBlur={() => tocar('ciudad')}
               error={errorDe('ciudad')}
               disabled={disabled}
             />
@@ -300,7 +346,9 @@ export const ConfigGeneralPage: React.FC = () => {
               label="Teléfono"
               value={form.telefono}
               maxLength={50}
+              placeholder="ej. +573001234567"
               onChange={(e) => setForm({ ...form, telefono: e.target.value })}
+              onBlur={() => tocar('telefono')}
               error={errorDe('telefono')}
               disabled={disabled}
             />
@@ -308,6 +356,7 @@ export const ConfigGeneralPage: React.FC = () => {
               label="Correo de contacto"
               type="email"
               value={form.correo}
+              placeholder="contacto@gimnasio.com"
               onChange={(e) => setForm({ ...form, correo: e.target.value })}
               onBlur={() => tocar('correo')}
               error={errorDe('correo')}
@@ -322,8 +371,10 @@ export const ConfigGeneralPage: React.FC = () => {
                   key={red}
                   label={ETIQUETA_RED[red] ?? red}
                   value={form.redes[red]}
-                  placeholder={red === 'whatsapp' ? 'Número o enlace' : 'Usuario o enlace'}
+                  placeholder={red === 'whatsapp' ? 'ej. +573001234567' : 'ej. @gimnasio'}
                   onChange={(e) => setForm({ ...form, redes: { ...form.redes, [red]: e.target.value } })}
+                  onBlur={() => tocar(`redes.${red}`)}
+                  error={errorDe(`redes.${red}`)}
                   disabled={disabled}
                 />
               ))}
@@ -451,7 +502,7 @@ export const ConfigGeneralPage: React.FC = () => {
             value={branding.logo_url}
             placeholder="https://..."
             onChange={(e) => setBranding({ ...branding, logo_url: e.target.value })}
-            error={errorBranding?.campos.logo_url}
+            error={erroresBranding.logo_url ?? errorBranding?.campos.logo_url}
             disabled={!puedeEditar || guardandoBranding}
           />
           <Input
@@ -459,7 +510,7 @@ export const ConfigGeneralPage: React.FC = () => {
             value={branding.banner_url}
             placeholder="https://..."
             onChange={(e) => setBranding({ ...branding, banner_url: e.target.value })}
-            error={errorBranding?.campos.banner_url}
+            error={erroresBranding.banner_url ?? errorBranding?.campos.banner_url}
             disabled={!puedeEditar || guardandoBranding}
           />
           {branding.logo_url.trim() && (

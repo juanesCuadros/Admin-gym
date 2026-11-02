@@ -10,6 +10,10 @@ PATRON_NOMENCLATURA_DIRECCION = re.compile(
     re.IGNORECASE,
 )
 PATRON_CARACTERES_DIRECCION = re.compile(r"^[a-zA-Z0-9áéíóúñÁÉÍÓÚÑ\s\#\-\.\,\/\°\º]+$")
+PATRON_NIT = re.compile(r"^[0-9\.\-]{5,20}$")
+PATRON_CIUDAD = re.compile(r"^[a-zA-ZáéíóúñÁÉÍÓÚÑ\s\.\-]{3,100}$")
+PATRON_TELEFONO = re.compile(r"^\+?[0-9\s\-\(\)]{7,20}$")
+PATRON_WHATSAPP = re.compile(r"^\+?[0-9\s\-]{10,20}$")
 
 def validar_direccion_sede(v: Optional[str]) -> Optional[str]:
     """
@@ -38,6 +42,100 @@ def validar_direccion_sede(v: Optional[str]) -> Optional[str]:
     tiene_nomenclatura = bool(PATRON_NOMENCLATURA_DIRECCION.search(val))
     if not (tiene_numero or tiene_nomenclatura):
         raise ValueError("Ingresa un formato coherente de dirección con nomenclatura y numeración (ej. Carrera 15 # 85-30 o Calle 72 # 10-34).")
+    return val
+
+def validar_nombre_gym(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    val = v.strip()
+    if len(val) < 2:
+        raise ValueError("El nombre del gimnasio debe tener al menos 2 caracteres.")
+    if len(val) > 150:
+        raise ValueError("El nombre del gimnasio no puede superar los 150 caracteres.")
+    if not re.search(r"[a-zA-ZáéíóúñÁÉÍÓÚÑ]", val):
+        raise ValueError("El nombre del gimnasio debe contener letras.")
+    return val
+
+def validar_nit_gym(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    val = v.strip()
+    if not val:
+        return None
+    digitos = re.sub(r"\D", "", val)
+    if len(digitos) < 5 or len(val) > 20 or not PATRON_NIT.match(val):
+        raise ValueError("El NIT / RUT debe tener al menos 5 dígitos numéricos (ej. 900123456-1).")
+    return val
+
+def validar_ciudad_gym(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    val = v.strip()
+    if not val:
+        return None
+    if len(val) < 3:
+        raise ValueError("La ciudad debe tener al menos 3 caracteres (ej. Bogotá).")
+    if len(val) > 100 or not PATRON_CIUDAD.match(val) or not re.search(r"[a-zA-ZáéíóúñÁÉÍÓÚÑ]", val):
+        raise ValueError("Ingresa una ciudad válida con letras (ej. Bogotá, Medellín).")
+    return val
+
+def validar_telefono_gym(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    val = v.strip()
+    if not val:
+        return None
+    digitos = re.sub(r"\D", "", val)
+    if len(digitos) < 7 or len(digitos) > 15 or not PATRON_TELEFONO.match(val):
+        raise ValueError("Ingresa un teléfono válido de entre 7 y 15 dígitos (ej. +573001234567 o 6012345678).")
+    return val
+
+def validar_whatsapp_gym(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    val = v.strip()
+    if not val:
+        return None
+    digitos = re.sub(r"\D", "", val)
+    if len(digitos) < 10 or len(digitos) > 15 or not PATRON_WHATSAPP.match(val):
+        raise ValueError("Ingresa un número de WhatsApp válido de al menos 10 dígitos (ej. +573001234567).")
+    return val
+
+def validar_url_gym(v: Optional[str], campo: str = "La URL") -> Optional[str]:
+    if v is None:
+        return None
+    val = v.strip()
+    if not val:
+        return None
+    if len(val) < 8 or not val.lower().startswith(("http://", "https://")):
+        raise ValueError(f"{campo} debe ser una dirección web válida que inicie con https:// o http://.")
+    return val
+
+def validar_red_social_gym(v: Optional[str], red: str = "red social") -> Optional[str]:
+    if v is None:
+        return None
+    val = v.strip()
+    if not val:
+        return None
+    if len(val) < 2:
+        raise ValueError(f"Ingresa un usuario o enlace válido de {red}.")
+    if val.lower().startswith(("http://", "https://")):
+        return val
+    limpio = val.lstrip("@")
+    if not re.match(r"^[a-zA-Z0-9_\.]{2,50}$", limpio):
+        raise ValueError(f"Ingresa un usuario válido de {red} (ej. @gimnasio).")
+    return val
+
+def validar_descripcion_gym(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    val = v.strip()
+    if not val:
+        return None
+    if len(val) < 5:
+        raise ValueError("La descripción debe tener al menos 5 caracteres.")
+    if len(val) > 300:
+        raise ValueError("La descripción no puede superar los 300 caracteres.")
     return val
 
 class JefeAccountCreate(BaseModel):
@@ -74,10 +172,60 @@ class GymCreateStepByStep(BaseModel):
     # Paso 4: Suscripción
     suscripcion: SubscriptionCreate
 
+    @field_validator("nombre", mode="before")
+    @classmethod
+    def validar_campo_nombre(cls, v: Optional[str]) -> Optional[str]:
+        return validar_nombre_gym(v)
+
+    @field_validator("nit", mode="before")
+    @classmethod
+    def validar_campo_nit(cls, v: Optional[str]) -> Optional[str]:
+        return validar_nit_gym(v)
+
+    @field_validator("ciudad", mode="before")
+    @classmethod
+    def validar_campo_ciudad(cls, v: Optional[str]) -> Optional[str]:
+        return validar_ciudad_gym(v)
+
     @field_validator("direccion", mode="before")
     @classmethod
     def validar_campo_direccion(cls, v: Optional[str]) -> Optional[str]:
         return validar_direccion_sede(v)
+
+    @field_validator("telefono", mode="before")
+    @classmethod
+    def validar_campo_telefono(cls, v: Optional[str]) -> Optional[str]:
+        return validar_telefono_gym(v)
+
+    @field_validator("whatsapp", mode="before")
+    @classmethod
+    def validar_campo_whatsapp(cls, v: Optional[str]) -> Optional[str]:
+        return validar_whatsapp_gym(v)
+
+    @field_validator("logo_url", mode="before")
+    @classmethod
+    def validar_campo_logo(cls, v: Optional[str]) -> Optional[str]:
+        return validar_url_gym(v, "El logo")
+
+    @field_validator("banner_url", mode="before")
+    @classmethod
+    def validar_campo_banner(cls, v: Optional[str]) -> Optional[str]:
+        return validar_url_gym(v, "El banner")
+
+    @field_validator("instagram", mode="before")
+    @classmethod
+    def validar_campo_instagram(cls, v: Optional[str]) -> Optional[str]:
+        return validar_red_social_gym(v, "Instagram")
+
+    @field_validator("facebook", mode="before")
+    @classmethod
+    def validar_campo_facebook(cls, v: Optional[str]) -> Optional[str]:
+        return validar_red_social_gym(v, "Facebook")
+
+    @field_validator("descripcion", mode="before")
+    @classmethod
+    def validar_campo_descripcion(cls, v: Optional[str]) -> Optional[str]:
+        return validar_descripcion_gym(v)
 
 class GymUpdate(BaseModel):
     # Subdominio is immutable (RF-08)
@@ -94,10 +242,60 @@ class GymUpdate(BaseModel):
     facebook: Optional[str] = None
     whatsapp: Optional[str] = None
 
+    @field_validator("nombre", mode="before")
+    @classmethod
+    def validar_campo_nombre(cls, v: Optional[str]) -> Optional[str]:
+        return validar_nombre_gym(v)
+
+    @field_validator("nit", mode="before")
+    @classmethod
+    def validar_campo_nit(cls, v: Optional[str]) -> Optional[str]:
+        return validar_nit_gym(v)
+
+    @field_validator("ciudad", mode="before")
+    @classmethod
+    def validar_campo_ciudad(cls, v: Optional[str]) -> Optional[str]:
+        return validar_ciudad_gym(v)
+
     @field_validator("direccion", mode="before")
     @classmethod
     def validar_campo_direccion(cls, v: Optional[str]) -> Optional[str]:
         return validar_direccion_sede(v)
+
+    @field_validator("telefono", mode="before")
+    @classmethod
+    def validar_campo_telefono(cls, v: Optional[str]) -> Optional[str]:
+        return validar_telefono_gym(v)
+
+    @field_validator("whatsapp", mode="before")
+    @classmethod
+    def validar_campo_whatsapp(cls, v: Optional[str]) -> Optional[str]:
+        return validar_whatsapp_gym(v)
+
+    @field_validator("logo_url", mode="before")
+    @classmethod
+    def validar_campo_logo(cls, v: Optional[str]) -> Optional[str]:
+        return validar_url_gym(v, "El logo")
+
+    @field_validator("banner_url", mode="before")
+    @classmethod
+    def validar_campo_banner(cls, v: Optional[str]) -> Optional[str]:
+        return validar_url_gym(v, "El banner")
+
+    @field_validator("instagram", mode="before")
+    @classmethod
+    def validar_campo_instagram(cls, v: Optional[str]) -> Optional[str]:
+        return validar_red_social_gym(v, "Instagram")
+
+    @field_validator("facebook", mode="before")
+    @classmethod
+    def validar_campo_facebook(cls, v: Optional[str]) -> Optional[str]:
+        return validar_red_social_gym(v, "Facebook")
+
+    @field_validator("descripcion", mode="before")
+    @classmethod
+    def validar_campo_descripcion(cls, v: Optional[str]) -> Optional[str]:
+        return validar_descripcion_gym(v)
 
 class GymStateChangeRequest(BaseModel):
     nuevo_estado: str = Field(..., pattern="^(prueba|activo|suspendido|cancelado)$")

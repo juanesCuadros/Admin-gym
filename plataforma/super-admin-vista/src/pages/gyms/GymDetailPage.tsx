@@ -31,6 +31,15 @@ import {
   sumarDias,
   textoDiasRestantes,
   validarDireccionSede,
+  validarNombreGym,
+  validarNit,
+  validarCiudad,
+  validarTelefono,
+  validarCorreo,
+  validarWhatsApp,
+  validarUrl,
+  validarRedSocial,
+  validarDescripcion,
 } from '@/utils/format';
 import { DIAS_RETENCION_CANCELADO, etiquetaEstadoCalculado } from '@/utils/estados';
 import { ExportLinkModal } from '@/components/business/ExportLinkModal';
@@ -89,7 +98,6 @@ export const GymDetailPage: React.FC = () => {
   const [nombre, setNombre] = useState('');
   const [nit, setNit] = useState('');
   const [direccion, setDireccion] = useState('');
-  const [direccionError, setDireccionError] = useState<string | null>(null);
   const [ciudad, setCiudad] = useState('');
   const [telefono, setTelefono] = useState('');
   const [correo, setCorreo] = useState('');
@@ -99,6 +107,7 @@ export const GymDetailPage: React.FC = () => {
   const [instagram, setInstagram] = useState('');
   const [facebook, setFacebook] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSavingGeneral, setIsSavingGeneral] = useState(false);
 
   // Initialize editable fields when gym loads
@@ -107,7 +116,6 @@ export const GymDetailPage: React.FC = () => {
       setNombre(gym.nombre);
       setNit(gym.nit || '');
       setDireccion(gym.direccion || '');
-      setDireccionError(null);
       setCiudad(gym.ciudad || '');
       setTelefono(gym.telefono || '');
       setCorreo(gym.correo || '');
@@ -117,8 +125,19 @@ export const GymDetailPage: React.FC = () => {
       setInstagram(gym.instagram || '');
       setFacebook(gym.facebook || '');
       setWhatsapp(gym.whatsapp || '');
+      setFormErrors({});
     }
   }, [gym]);
+
+  const limpiarError = (campo: string) => {
+    if (formErrors[campo]) {
+      setFormErrors((prev) => {
+        const copia = { ...prev };
+        delete copia[campo];
+        return copia;
+      });
+    }
+  };
 
   const cancelarEdicionGeneral = () => {
     if (gym) {
@@ -135,8 +154,49 @@ export const GymDetailPage: React.FC = () => {
       setFacebook(gym.facebook || '');
       setWhatsapp(gym.whatsapp || '');
     }
-    setDireccionError(null);
+    setFormErrors({});
     setIsEditingGeneral(false);
+  };
+
+  const validarFormularioGeneral = (): Record<string, string> => {
+    const errs: Record<string, string> = {};
+    const eNombre = validarNombreGym(nombre);
+    if (eNombre) errs.nombre = eNombre;
+
+    const eNit = validarNit(nit);
+    if (eNit) errs.nit = eNit;
+
+    const eCiudad = validarCiudad(ciudad);
+    if (eCiudad) errs.ciudad = eCiudad;
+
+    const eDireccion = validarDireccionSede(direccion);
+    if (eDireccion) errs.direccion = eDireccion;
+
+    const eTelefono = validarTelefono(telefono);
+    if (eTelefono) errs.telefono = eTelefono;
+
+    const eCorreo = validarCorreo(correo);
+    if (eCorreo) errs.correo = eCorreo;
+
+    const eWhatsapp = validarWhatsApp(whatsapp);
+    if (eWhatsapp) errs.whatsapp = eWhatsapp;
+
+    const eLogo = validarUrl(logoUrl, 'El logo');
+    if (eLogo) errs.logoUrl = eLogo;
+
+    const eBanner = validarUrl(bannerUrl, 'El banner');
+    if (eBanner) errs.bannerUrl = eBanner;
+
+    const eInstagram = validarRedSocial(instagram, 'Instagram');
+    if (eInstagram) errs.instagram = eInstagram;
+
+    const eFacebook = validarRedSocial(facebook, 'Facebook');
+    if (eFacebook) errs.facebook = eFacebook;
+
+    const eDesc = validarDescripcion(descripcion);
+    if (eDesc) errs.descripcion = eDesc;
+
+    return errs;
   };
 
   if (isLoading && !gym) {
@@ -176,13 +236,14 @@ export const GymDetailPage: React.FC = () => {
 
   const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
-    const errorDir = validarDireccionSede(direccion);
-    if (errorDir) {
-      setDireccionError(errorDir);
-      toastError(errorDir);
+    const errs = validarFormularioGeneral();
+    if (Object.keys(errs).length > 0) {
+      setFormErrors(errs);
+      const primerError = Object.values(errs)[0];
+      toastError(primerError);
       return;
     }
-    setDireccionError(null);
+    setFormErrors({});
     setIsSavingGeneral(true);
     try {
       await updateGym({
@@ -204,10 +265,10 @@ export const GymDetailPage: React.FC = () => {
       refetch();
     } catch (err) {
       const parsed = parseApiError(err);
-      if (parsed.fieldErrors?.direccion) {
-        setDireccionError(parsed.fieldErrors.direccion);
+      if (parsed.fieldErrors) {
+        setFormErrors(parsed.fieldErrors);
       }
-      toastError(parsed.fieldErrors?.direccion || parsed.message);
+      toastError(parsed.message);
     } finally {
       setIsSavingGeneral(false);
     }
@@ -731,7 +792,7 @@ export const GymDetailPage: React.FC = () => {
                   size="sm"
                   onClick={handleSaveGeneral}
                   isLoading={isSavingGeneral}
-                  disabled={!!direccionError}
+                  disabled={Object.keys(formErrors).length > 0}
                 >
                   Guardar Cambios
                 </Button>
@@ -741,10 +802,18 @@ export const GymDetailPage: React.FC = () => {
         >
           <form onSubmit={handleSaveGeneral}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-              <FormField label="Nombre Comercial">
+              <FormField label="Nombre Comercial" required error={formErrors.nombre}>
                 <TextInput
                   value={nombre}
-                  onChange={(e) => setNombre(e.target.value)}
+                  onChange={(e) => {
+                    setNombre(e.target.value);
+                    limpiarError('nombre');
+                  }}
+                  onBlur={() => {
+                    const e = validarNombreGym(nombre);
+                    if (e) setFormErrors((prev) => ({ ...prev, nombre: e }));
+                  }}
+                  hasError={!!formErrors.nombre}
                   disabled={!isEditingGeneral}
                   leftElement={<Building2 size={16} />}
                 />
@@ -762,20 +831,36 @@ export const GymDetailPage: React.FC = () => {
                 />
               </FormField>
 
-              <FormField label="NIT / RUT">
+              <FormField label="NIT / RUT" error={formErrors.nit}>
                 <TextInput
                   value={nit}
-                  onChange={(e) => setNit(e.target.value)}
+                  onChange={(e) => {
+                    setNit(e.target.value);
+                    limpiarError('nit');
+                  }}
+                  onBlur={() => {
+                    const e = validarNit(nit);
+                    if (e) setFormErrors((prev) => ({ ...prev, nit: e }));
+                  }}
+                  hasError={!!formErrors.nit}
                   disabled={!isEditingGeneral}
                   placeholder="ej. 900123456-1"
                   leftElement={<FileText size={16} />}
                 />
               </FormField>
 
-              <FormField label="Ciudad">
+              <FormField label="Ciudad" error={formErrors.ciudad}>
                 <TextInput
                   value={ciudad}
-                  onChange={(e) => setCiudad(e.target.value)}
+                  onChange={(e) => {
+                    setCiudad(e.target.value);
+                    limpiarError('ciudad');
+                  }}
+                  onBlur={() => {
+                    const e = validarCiudad(ciudad);
+                    if (e) setFormErrors((prev) => ({ ...prev, ciudad: e }));
+                  }}
+                  hasError={!!formErrors.ciudad}
                   disabled={!isEditingGeneral}
                   placeholder="ej. Bogotá"
                   leftElement={<MapPin size={16} />}
@@ -784,55 +869,75 @@ export const GymDetailPage: React.FC = () => {
 
               <FormField
                 label="Dirección de la Sede"
-                error={direccionError || undefined}
-                helperText={!direccionError ? 'Debe incluir nomenclatura y numeración (ej. Carrera 15 # 85-30).' : undefined}
+                error={formErrors.direccion}
+                helperText={!formErrors.direccion ? 'Debe incluir nomenclatura y numeración (ej. Carrera 15 # 85-30).' : undefined}
               >
                 <TextInput
                   value={direccion}
                   onChange={(e) => {
-                    const val = e.target.value;
-                    setDireccion(val);
-                    if (direccionError) {
-                      setDireccionError(validarDireccionSede(val));
-                    }
+                    setDireccion(e.target.value);
+                    limpiarError('direccion');
                   }}
                   onBlur={() => {
-                    if (isEditingGeneral && direccion.trim().length > 0) {
-                      setDireccionError(validarDireccionSede(direccion));
-                    }
+                    const e = validarDireccionSede(direccion);
+                    if (e) setFormErrors((prev) => ({ ...prev, direccion: e }));
                   }}
-                  hasError={!!direccionError}
+                  hasError={!!formErrors.direccion}
                   disabled={!isEditingGeneral}
                   placeholder="ej. Carrera 15 # 85-30"
                   leftElement={<MapPin size={16} />}
                 />
               </FormField>
 
-              <FormField label="Teléfono de Contacto">
+              <FormField label="Teléfono de Contacto" error={formErrors.telefono}>
                 <TextInput
                   value={telefono}
-                  onChange={(e) => setTelefono(e.target.value)}
+                  onChange={(e) => {
+                    setTelefono(e.target.value);
+                    limpiarError('telefono');
+                  }}
+                  onBlur={() => {
+                    const e = validarTelefono(telefono);
+                    if (e) setFormErrors((prev) => ({ ...prev, telefono: e }));
+                  }}
+                  hasError={!!formErrors.telefono}
                   disabled={!isEditingGeneral}
                   placeholder="ej. +573001234567"
                   leftElement={<Phone size={16} />}
                 />
               </FormField>
 
-              <FormField label="Correo Institucional">
+              <FormField label="Correo Institucional" error={formErrors.correo}>
                 <TextInput
                   type="email"
                   value={correo}
-                  onChange={(e) => setCorreo(e.target.value)}
+                  onChange={(e) => {
+                    setCorreo(e.target.value);
+                    limpiarError('correo');
+                  }}
+                  onBlur={() => {
+                    const e = validarCorreo(correo);
+                    if (e) setFormErrors((prev) => ({ ...prev, correo: e }));
+                  }}
+                  hasError={!!formErrors.correo}
                   disabled={!isEditingGeneral}
                   placeholder="contacto@gimnasio.com"
                   leftElement={<Mail size={16} />}
                 />
               </FormField>
 
-              <FormField label="WhatsApp Comercial">
+              <FormField label="WhatsApp Comercial" error={formErrors.whatsapp}>
                 <TextInput
                   value={whatsapp}
-                  onChange={(e) => setWhatsapp(e.target.value)}
+                  onChange={(e) => {
+                    setWhatsapp(e.target.value);
+                    limpiarError('whatsapp');
+                  }}
+                  onBlur={() => {
+                    const e = validarWhatsApp(whatsapp);
+                    if (e) setFormErrors((prev) => ({ ...prev, whatsapp: e }));
+                  }}
+                  hasError={!!formErrors.whatsapp}
                   disabled={!isEditingGeneral}
                   placeholder="+573001234567"
                 />
@@ -850,38 +955,72 @@ export const GymDetailPage: React.FC = () => {
                 gap: '20px',
               }}
             >
-              <FormField label="URL del Logo">
+              <FormField label="URL del Logo" error={formErrors.logoUrl || formErrors.logo_url}>
                 <TextInput
                   value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
+                  onChange={(e) => {
+                    setLogoUrl(e.target.value);
+                    limpiarError('logoUrl');
+                    limpiarError('logo_url');
+                  }}
+                  onBlur={() => {
+                    const e = validarUrl(logoUrl, 'El logo');
+                    if (e) setFormErrors((prev) => ({ ...prev, logoUrl: e }));
+                  }}
+                  hasError={!!(formErrors.logoUrl || formErrors.logo_url)}
                   disabled={!isEditingGeneral}
                   placeholder="https://cdn.gymos.io/logo.png"
                 />
               </FormField>
 
-              <FormField label="URL del Banner">
+              <FormField label="URL del Banner" error={formErrors.bannerUrl || formErrors.banner_url}>
                 <TextInput
                   value={bannerUrl}
-                  onChange={(e) => setBannerUrl(e.target.value)}
+                  onChange={(e) => {
+                    setBannerUrl(e.target.value);
+                    limpiarError('bannerUrl');
+                    limpiarError('banner_url');
+                  }}
+                  onBlur={() => {
+                    const e = validarUrl(bannerUrl, 'El banner');
+                    if (e) setFormErrors((prev) => ({ ...prev, bannerUrl: e }));
+                  }}
+                  hasError={!!(formErrors.bannerUrl || formErrors.banner_url)}
                   disabled={!isEditingGeneral}
                   placeholder="https://cdn.gymos.io/banner.jpg"
                 />
               </FormField>
 
-              <FormField label="Instagram">
+              <FormField label="Instagram" error={formErrors.instagram}>
                 <TextInput
                   value={instagram}
-                  onChange={(e) => setInstagram(e.target.value)}
+                  onChange={(e) => {
+                    setInstagram(e.target.value);
+                    limpiarError('instagram');
+                  }}
+                  onBlur={() => {
+                    const e = validarRedSocial(instagram, 'Instagram');
+                    if (e) setFormErrors((prev) => ({ ...prev, instagram: e }));
+                  }}
+                  hasError={!!formErrors.instagram}
                   disabled={!isEditingGeneral}
                   placeholder="@gimnasio"
                   leftElement={<Share2 size={16} />}
                 />
               </FormField>
 
-              <FormField label="Facebook">
+              <FormField label="Facebook" error={formErrors.facebook}>
                 <TextInput
                   value={facebook}
-                  onChange={(e) => setFacebook(e.target.value)}
+                  onChange={(e) => {
+                    setFacebook(e.target.value);
+                    limpiarError('facebook');
+                  }}
+                  onBlur={() => {
+                    const e = validarRedSocial(facebook, 'Facebook');
+                    if (e) setFormErrors((prev) => ({ ...prev, facebook: e }));
+                  }}
+                  hasError={!!formErrors.facebook}
                   disabled={!isEditingGeneral}
                   placeholder="fb.com/gimnasio"
                   leftElement={<Globe size={16} />}
@@ -889,10 +1028,18 @@ export const GymDetailPage: React.FC = () => {
               </FormField>
             </div>
 
-            <FormField label="Descripción de la Marca" style={{ marginTop: '16px' }}>
+            <FormField label="Descripción de la Marca" error={formErrors.descripcion} style={{ marginTop: '16px' }}>
               <TextInput
                 value={descripcion}
-                onChange={(e) => setDescripcion(e.target.value)}
+                onChange={(e) => {
+                  setDescripcion(e.target.value);
+                  limpiarError('descripcion');
+                }}
+                onBlur={() => {
+                  const e = validarDescripcion(descripcion);
+                  if (e) setFormErrors((prev) => ({ ...prev, descripcion: e }));
+                }}
+                hasError={!!formErrors.descripcion}
                 disabled={!isEditingGeneral}
                 placeholder="Breve reseña sobre los servicios y especialidad del gimnasio"
               />
