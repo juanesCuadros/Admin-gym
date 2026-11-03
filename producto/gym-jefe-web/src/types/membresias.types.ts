@@ -101,6 +101,7 @@ export interface MembresiaListItemResponse {
   deportista_documento: string;
   deportista_correo?: string | null;
   deportista_telefono?: string | null;
+  deportista_activo?: boolean;
   plan_id: string;
   plan_nombre: string;
   fecha_inicio: string;

@@ -18,4 +18,8 @@ export interface DeportistaBusquedaItem {
   activo: boolean;
   tipo_documento?: string;
   estado?: string;
+  plan_nombre?: string | null;
+  fecha_vencimiento?: string | null;
+  esta_congelada?: boolean;
+  cancelada?: boolean;
 }

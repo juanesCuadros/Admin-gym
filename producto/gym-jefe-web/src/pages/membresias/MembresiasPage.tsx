@@ -395,7 +395,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
               nombre: actual.deportista_nombre,
               correo: actual.deportista_correo ?? null,
               telefono: actual.deportista_telefono ?? null,
-              activo: actual.deportista_activo,
+              activo: actual.deportista_activo ?? true,
               plan_nombre: actual.plan_nombre,
               fecha_vencimiento: actual.fecha_vencimiento,
               esta_congelada: actual.congelamiento_activo,

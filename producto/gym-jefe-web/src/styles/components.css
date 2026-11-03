@@ -1039,6 +1039,13 @@
   color: var(--danger);
 }
 
+.form-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  display: block;
+  margin-top: 4px;
+}
+
 /* Evita el zoom automático de iOS al enfocar inputs */
 @media (max-width: 560px) {
   .form-input,

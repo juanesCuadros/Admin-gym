@@ -135,6 +135,7 @@ class MembresiaListItemResponse(BaseModel):
     deportista_documento: str
     deportista_correo: Optional[str] = None
     deportista_telefono: Optional[str] = None
+    deportista_activo: Optional[bool] = True
     plan_id: UUID
     plan_nombre: str
     fecha_inicio: date

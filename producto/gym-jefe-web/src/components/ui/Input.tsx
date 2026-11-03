@@ -5,6 +5,7 @@ import { formatMiles, limpiarMiles } from '../../utils/formato';
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
+  hint?: ReactNode;
   leftIcon?: ReactNode;
   rightIcon?: ReactNode;
   /** Si es true, aplica y muestra el punto separador de miles en tiempo real y entrega dígitos limpios en onChange. */
@@ -14,6 +15,7 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 export const Input: React.FC<InputProps> = ({
   label,
   error,
+  hint,
   leftIcon,
   rightIcon,
   moneda = false,
@@ -143,6 +145,7 @@ export const Input: React.FC<InputProps> = ({
         )}
       </div>
       {error && <span className="form-error-msg">{error}</span>}
+      {!error && hint && <span className="form-hint">{hint}</span>}
     </div>
   );
 };
@@ -150,12 +153,14 @@ export const Input: React.FC<InputProps> = ({
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
+  hint?: ReactNode;
   options: Array<{ value: string | number; label: string }>;
 }
 
 export const Select: React.FC<SelectProps> = ({
   label,
   error,
+  hint,
   options,
   id,
   className = '',
@@ -183,6 +188,7 @@ export const Select: React.FC<SelectProps> = ({
         ))}
       </select>
       {error && <span className="form-error-msg">{error}</span>}
+      {!error && hint && <span className="form-hint">{hint}</span>}
     </div>
   );
 };
@@ -190,11 +196,13 @@ export const Select: React.FC<SelectProps> = ({
 interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
   error?: string;
+  hint?: ReactNode;
 }
 
 export const Textarea: React.FC<TextareaProps> = ({
   label,
   error,
+  hint,
   id,
   className = '',
   rows = 3,
@@ -217,6 +225,7 @@ export const Textarea: React.FC<TextareaProps> = ({
         {...props}
       />
       {error && <span className="form-error-msg">{error}</span>}
+      {!error && hint && <span className="form-hint">{hint}</span>}
     </div>
   );
 };
