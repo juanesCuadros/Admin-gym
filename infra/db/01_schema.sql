@@ -1785,6 +1785,48 @@ UPDATE platform.pagos_membresia pm
 
 
 -- =====================================================================
+-- 041 · Precio del pase de día y del pase de clase como parámetro del gimnasio
+-- =====================================================================
+-- Idempotente. Aplicar como superusuario (postgres):
+--   docker exec -i gymos-dev-db-1 psql -U postgres -d <base> < infra/db/migrations/041_precio_pases.sql
+--
+-- COP enteros. NULL = el gimnasio no lo ha configurado: el punto de venta sigue pidiendo el precio a mano.
+-- Configurado, es el precio de lista de la venta (igual que platform.productos.precio); cobrar menos pasa
+-- por la regla de descuentos (GW-RF-53).
+-- =====================================================================
+
+
+ALTER TABLE platform.tenant
+  ADD COLUMN IF NOT EXISTS precio_pase_dia   numeric(12,0),
+  ADD COLUMN IF NOT EXISTS precio_pase_clase numeric(12,0);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tenant_precio_pases_rango') THEN
+    ALTER TABLE platform.tenant ADD CONSTRAINT tenant_precio_pases_rango CHECK (
+      (precio_pase_dia IS NULL OR precio_pase_dia >= 0)
+      AND (precio_pase_clase IS NULL OR precio_pase_clase >= 0)
+    );
+  END IF;
+END$$;
+
+
+-- =====================================================================
+-- 042 · Super-Admin: cerrar todas las sesiones de un usuario interno
+-- =====================================================================
+-- Idempotente. Aplicar como superusuario (postgres):
+--   docker exec -i gymos-dev-db-1 psql -U postgres -d <base> < infra/db/migrations/042_sa_sesiones_desde.sql
+--
+-- El SA usa tokens JWT sin estado: para "cerrar todas las sesiones" (SA-RF-00.2 CA3) se guarda desde
+-- cuándo valen. Un token emitido antes de `sesiones_desde` se rechaza con 401.
+-- =====================================================================
+
+
+ALTER TABLE superadmin.usuarios_internos
+  ADD COLUMN IF NOT EXISTS sesiones_desde timestamptz;
+
+
+-- =====================================================================
 -- PERMISOS POR USUARIO DE BD (aislamiento entre esquemas)
 -- =====================================================================
 
