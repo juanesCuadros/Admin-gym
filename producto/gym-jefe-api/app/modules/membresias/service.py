@@ -138,6 +138,7 @@ class MembresiasService:
                 monto=pago.monto,
                 metodo=pago.metodo,
                 tipo_medio=pago.tipo_medio,
+                pagos=pago.pagos,
                 dias_agregados=0,
                 valor_recibido=pago.valor_recibido,
                 precio_cobrado=pago.precio_cobrado,

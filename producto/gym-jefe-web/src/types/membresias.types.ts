@@ -44,7 +44,8 @@ export interface EditarPlanRequest {
 export interface PagoVenta {
   monto: number;
   metodo: string;
-  tipo_medio: 'efectivo' | 'otro';
+  tipo_medio: 'efectivo' | 'otro' | 'mixto';
+  pagos?: { metodo: string; tipo_medio: 'efectivo' | 'otro'; monto: number }[];
   precio_cobrado?: number;
   motivo_descuento?: string;
   valor_recibido?: number;

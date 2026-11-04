@@ -4,7 +4,7 @@ import io
 import math
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 from fastapi import HTTPException, Response, status
@@ -141,6 +141,28 @@ class ReportesService:
         total_anulado = Decimal("0.00")
         total_devoluciones = Decimal("0.00")
         desglose_por_metodo: Dict[str, Decimal] = {}
+
+        # Pagos mixtos: el desglose reparte cada cobro entre sus medios.
+        ids_ventas = [v["id"] for v in ventas_rows if v["tipo_medio"] == "mixto"]
+        ids_pagos = [p["id"] for p in pagos_rows if p["tipo_medio"] == "mixto"]
+        medios_por_cobro: Dict[str, List[Tuple[str, Decimal]]] = {}
+        if ids_ventas or ids_pagos:
+            res_medios = await session.execute(
+                text("""
+                    SELECT COALESCE(venta_id, pago_membresia_id) AS cobro_id, metodo, monto
+                    FROM platform.cobro_medios
+                    WHERE venta_id = ANY(:ventas) OR pago_membresia_id = ANY(:pagos)
+                """),
+                {"ventas": ids_ventas, "pagos": ids_pagos},
+            )
+            for fila in res_medios.mappings():
+                medios_por_cobro.setdefault(str(fila["cobro_id"]), []).append(
+                    (str(fila["metodo"]).lower().strip(), Decimal(str(fila["monto"])))
+                )
+
+        def sumar_al_desglose(cobro_id, metodo_cobro: str, monto: Decimal) -> None:
+            for metodo_parte, monto_parte in medios_por_cobro.get(str(cobro_id), [(metodo_cobro, monto)]):
+                desglose_por_metodo[metodo_parte] = desglose_por_metodo.get(metodo_parte, Decimal("0.00")) + monto_parte
         desglose_por_fuente: Dict[str, Decimal] = {
             "membresias": Decimal("0.00"),
             "productos": Decimal("0.00"),
@@ -163,7 +185,7 @@ class ReportesService:
                 total_anulado += total_v
             else:
                 total_ingresos_bruto += total_v
-                desglose_por_metodo[metodo_v] = desglose_por_metodo.get(metodo_v, Decimal("0.00")) + total_v
+                sumar_al_desglose(v["id"], metodo_v, total_v)
 
                 # Categorizar ítems por fuente y acumular rentabilidad por producto
                 for it in items_list:
@@ -204,7 +226,7 @@ class ReportesService:
                 total_anulado += monto_p
             else:
                 total_ingresos_bruto += monto_p
-                desglose_por_metodo[metodo_p] = desglose_por_metodo.get(metodo_p, Decimal("0.00")) + monto_p
+                sumar_al_desglose(p["id"], metodo_p, monto_p)
                 desglose_por_fuente["membresias"] += monto_p
 
             transacciones.append(TransaccionReporteDto(
@@ -242,7 +264,10 @@ class ReportesService:
         # Filtrar transacciones en memoria si se especificó método o fuente
         if metodo:
             filtro_m = metodo.lower().strip()
-            transacciones = [t for t in transacciones if t.metodo == filtro_m]
+            transacciones = [
+                t for t in transacciones
+                if t.metodo == filtro_m or any(m == filtro_m for m, _ in medios_por_cobro.get(str(t.id), []))
+            ]
 
         if fuente:
             filtro_f = fuente.lower().strip()

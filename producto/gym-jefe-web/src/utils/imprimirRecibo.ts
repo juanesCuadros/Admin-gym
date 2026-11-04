@@ -33,7 +33,9 @@ export function imprimirRecibo(venta: VentaResponseDto, gimnasio: string, client
     <table><tbody>${filas}
       <tr class="total"><td>Total</td><td class="n">${escapar(formatCOP(venta.total))}</td></tr>
     </tbody></table>
-    <p>Pago: ${escapar(venta.metodo)}</p>
+    <p>Pago: ${escapar(
+      venta.medios?.length ? venta.medios.map((m) => `${m.metodo} ${formatCOP(m.monto)}`).join(' + ') : venta.metodo
+    )}</p>
     ${recibido !== null && recibido !== undefined ? `<p>Recibido: ${escapar(formatCOP(recibido))}</p>` : ''}
     ${cambio > 0 ? `<p>Cambio: ${escapar(formatCOP(cambio))}</p>` : ''}
     </body></html>`);

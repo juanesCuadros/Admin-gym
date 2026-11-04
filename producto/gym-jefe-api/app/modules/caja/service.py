@@ -14,6 +14,7 @@ from app.core.audit import AuditService
 from app.core.timezone import get_local_day_range_utc, now_local, today_local
 from app.modules.caja.reglas import calcular_vencimiento_renovacion_c2
 from app.modules.caja.schemas import (
+    MedioPagoDto,
     ListadoTurnosResponse,
     TurnoHistorialDto,
     AbrirTurnoRequest,
@@ -749,7 +750,9 @@ class CajaService:
 
         # 5. Validación de Pago en Efectivo y Cambio
         cambio_devuelto = None
-        if data.tipo_medio == "efectivo" and data.valor_recibido is not None:
+        if data.tipo_medio == "mixto":
+            cambio_devuelto = cls._validar_pago_mixto(data.pagos, total_calculado, data.valor_recibido)
+        elif data.tipo_medio == "efectivo" and data.valor_recibido is not None:
             if data.valor_recibido < total_calculado:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -789,6 +792,8 @@ class CajaService:
             if existente_carrera:
                 return existente_carrera
             raise
+
+        await cls._guardar_medios(session, gym_id, data.pagos, venta_id=venta_id)
 
         # 7. Inserción de ítems y Descuento de Stock en Kardex
         items_response = []
@@ -862,6 +867,7 @@ class CajaService:
             total=total_calculado,
             metodo=data.metodo.strip(),
             tipo_medio=data.tipo_medio,
+            medios=data.pagos,
             valor_recibido=data.valor_recibido,
             cambio_devuelto=cambio_devuelto,
             anulada=False,
@@ -963,25 +969,29 @@ class CajaService:
                     "staff_id": staff_id
                 })
 
-        # 5. Insertar registro contable en platform.devoluciones
-        await session.execute(text("""
-            INSERT INTO platform.devoluciones (
-                gimnasio_id, venta_original_id, turno_venta_original_id, turno_devolucion_id,
-                monto, tipo_medio_reembolso, motivo, registrada_por, created_at
-            ) VALUES (
-                :gym_id, :venta_id, :turno_orig_id, :turno_dev_id,
-                :monto, :tipo_medio_reembolso, :motivo, :staff_id, now()
-            )
-        """), {
-            "gym_id": gym_id,
-            "venta_id": venta_id,
-            "turno_orig_id": venta["turno_id"],
-            "turno_dev_id": turno_devolucion_id,
-            "monto": venta["total"],
-            "tipo_medio_reembolso": data.tipo_medio_reembolso,
-            "motivo": data.motivo.strip(),
-            "staff_id": staff_id
-        })
+        # 5. Insertar registro contable en platform.devoluciones.
+        # Un pago mixto devuelve a cada medio lo que se pagó con él: así el arqueo sigue cuadrando.
+        medios = await cls._medios_del_cobro(session, venta_id=venta_id)
+        reembolsos = medios or [{"monto": venta["total"], "tipo_medio": data.tipo_medio_reembolso}]
+        for reembolso in reembolsos:
+            await session.execute(text("""
+                INSERT INTO platform.devoluciones (
+                    gimnasio_id, venta_original_id, turno_venta_original_id, turno_devolucion_id,
+                    monto, tipo_medio_reembolso, motivo, registrada_por, created_at
+                ) VALUES (
+                    :gym_id, :venta_id, :turno_orig_id, :turno_dev_id,
+                    :monto, :tipo_medio_reembolso, :motivo, :staff_id, now()
+                )
+            """), {
+                "gym_id": gym_id,
+                "venta_id": venta_id,
+                "turno_orig_id": venta["turno_id"],
+                "turno_dev_id": turno_devolucion_id,
+                "monto": reembolso["monto"],
+                "tipo_medio_reembolso": reembolso["tipo_medio"],
+                "motivo": data.motivo.strip(),
+                "staff_id": staff_id
+            })
 
         # 6. Marcar venta como anulada
         now_dt = now_local()
@@ -1009,7 +1019,7 @@ class CajaService:
             detalle={
                 "total_reversado": float(venta["total"]),
                 "turno_devolucion_id": str(turno_devolucion_id),
-                "tipo_medio_reembolso": data.tipo_medio_reembolso,
+                "tipo_medio_reembolso": "mixto" if medios else data.tipo_medio_reembolso,
                 "motivo": data.motivo.strip(),
                 "productos_reintegrados": len(items_prod)
             }
@@ -1245,7 +1255,9 @@ class CajaService:
 
         # 5. Cálculo de cambio
         cambio_devuelto = None
-        if data.tipo_medio == "efectivo" and data.valor_recibido is not None:
+        if data.tipo_medio == "mixto":
+            cambio_devuelto = cls._validar_pago_mixto(data.pagos, monto_a_cobrar, data.valor_recibido)
+        elif data.tipo_medio == "efectivo" and data.valor_recibido is not None:
             if data.valor_recibido < monto_a_cobrar:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -1296,6 +1308,8 @@ class CajaService:
                     raise _clave_idempotencia_en_uso()
                 return existente_carrera
             raise
+
+        await cls._guardar_medios(session, gym_id, data.pagos, pago_membresia_id=pago_id)
 
         return PagoMembresiaResponseDto(
             id=pago_id,
@@ -1544,24 +1558,26 @@ class CajaService:
         })
 
         # 4. Registrar reverso contable en platform.devoluciones ligado al turno actual (GW-RF-16 CA3)
-        await session.execute(text("""
-            INSERT INTO platform.devoluciones (
-                gimnasio_id, pago_membresia_id, turno_pago_original_id, turno_devolucion_id,
-                monto, tipo_medio_reembolso, motivo, registrada_por, created_at
-            ) VALUES (
-                :gym_id, :pago_id, :turno_orig_id, :turno_dev_id,
-                :monto, :tipo_medio_reembolso, :motivo, :staff_id, now()
-            )
-        """), {
-            "gym_id": gym_id,
-            "pago_id": pago_id,
-            "turno_orig_id": pago["turno_id"],
-            "turno_dev_id": turno_actual_id,
-            "monto": pago["monto"],
-            "tipo_medio_reembolso": pago["tipo_medio"],
-            "motivo": data.motivo.strip(),
-            "staff_id": staff_id
-        })
+        medios = await cls._medios_del_cobro(session, pago_membresia_id=pago_id)
+        for reembolso in medios or [{"monto": pago["monto"], "tipo_medio": pago["tipo_medio"]}]:
+            await session.execute(text("""
+                INSERT INTO platform.devoluciones (
+                    gimnasio_id, pago_membresia_id, turno_pago_original_id, turno_devolucion_id,
+                    monto, tipo_medio_reembolso, motivo, registrada_por, created_at
+                ) VALUES (
+                    :gym_id, :pago_id, :turno_orig_id, :turno_dev_id,
+                    :monto, :tipo_medio_reembolso, :motivo, :staff_id, now()
+                )
+            """), {
+                "gym_id": gym_id,
+                "pago_id": pago_id,
+                "turno_orig_id": pago["turno_id"],
+                "turno_dev_id": turno_actual_id,
+                "monto": reembolso["monto"],
+                "tipo_medio_reembolso": reembolso["tipo_medio"],
+                "motivo": data.motivo.strip(),
+                "staff_id": staff_id
+            })
 
         # 5. Recalcular fecha de vencimiento desde el historial (GW-RF-16 CA1)
         membresias_a_recalcular: List[UUID] = []
@@ -1690,7 +1706,7 @@ class CajaService:
                 monto=v["total"],
                 metodo=v["metodo"],
                 tipo_medio=v["tipo_medio"],
-                concepto=f"Venta POS ({v['metodo']})",
+                concepto=f"Venta POS ({await cls._describir_medios(session, v, venta_id=v['id'])})",
                 anulado=v["anulada"],
                 ts=v["created_at"]
             ))
@@ -1708,7 +1724,7 @@ class CajaService:
                 monto=p["monto"],
                 metodo=p["metodo"],
                 tipo_medio=p["tipo_medio"],
-                concepto=f"Pago Membresía ({p['metodo']})",
+                concepto=f"Pago Membresía ({await cls._describir_medios(session, p, pago_membresia_id=p['id'])})",
                 anulado=p["anulado"],
                 ts=p["created_at"]
             ))
@@ -1803,11 +1819,26 @@ class CajaService:
         d_res = await session.execute(d_query, {"turno_id": turno_id})
         devoluciones_total = Decimal(str(d_res.scalar() or 0))
 
+        # Pagos mixtos: cada parte suma en su medio. Solo la parte en efectivo llega al efectivo esperado.
+        m_query = text("""
+            SELECT
+                COALESCE(SUM(m.monto) FILTER (WHERE m.tipo_medio = 'efectivo' AND v.id IS NOT NULL), 0) AS v_efectivo,
+                COALESCE(SUM(m.monto) FILTER (WHERE m.tipo_medio = 'otro' AND v.id IS NOT NULL), 0) AS v_otro,
+                COALESCE(SUM(m.monto) FILTER (WHERE m.tipo_medio = 'efectivo' AND p.id IS NOT NULL), 0) AS p_efectivo,
+                COALESCE(SUM(m.monto) FILTER (WHERE m.tipo_medio = 'otro' AND p.id IS NOT NULL), 0) AS p_otro
+            FROM platform.cobro_medios m
+            LEFT JOIN platform.ventas v
+              ON v.id = m.venta_id AND v.turno_id = :turno_id AND v.anulada = false
+            LEFT JOIN platform.pagos_membresia p
+              ON p.id = m.pago_membresia_id AND p.turno_id = :turno_id AND p.anulado = false
+        """)
+        m_st = (await session.execute(m_query, {"turno_id": turno_id})).mappings().one()
+
         base = Decimal(str(turno["base_inicial"]))
-        v_efectivo = Decimal(str(v_st["v_efectivo"]))
-        v_otro = Decimal(str(v_st["v_otro"]))
-        p_efectivo = Decimal(str(p_st["p_efectivo"]))
-        p_otro = Decimal(str(p_st["p_otro"]))
+        v_efectivo = Decimal(str(v_st["v_efectivo"])) + Decimal(str(m_st["v_efectivo"]))
+        v_otro = Decimal(str(v_st["v_otro"])) + Decimal(str(m_st["v_otro"]))
+        p_efectivo = Decimal(str(p_st["p_efectivo"])) + Decimal(str(m_st["p_efectivo"]))
+        p_otro = Decimal(str(p_st["p_otro"])) + Decimal(str(m_st["p_otro"]))
 
         total_esperado = base + v_efectivo + p_efectivo - egresos_total - devoluciones_total
 
@@ -1835,6 +1866,83 @@ class CajaService:
             cerrado_por_nombre=turno.get("cerrado_por_nombre"),
             descuadre_atribuido_a_nombre=turno.get("descuadre_atribuido_a_nombre")
         )
+
+    @staticmethod
+    def _validar_pago_mixto(
+        pagos: Optional[List[MedioPagoDto]],
+        total: Decimal,
+        valor_recibido: Optional[Decimal],
+    ) -> Optional[Decimal]:
+        """El reparto debe sumar el total exacto. Devuelve el cambio, que solo sale de la parte en efectivo."""
+        medios = pagos or []
+        suma = sum((m.monto for m in medios), Decimal("0"))
+        if suma != Decimal(str(total)):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "codigo": "MEDIOS_NO_SUMAN_TOTAL",
+                    "mensaje": f"Los medios de pago suman {suma} y el total a cobrar es {total}.",
+                },
+            )
+        en_efectivo = sum((m.monto for m in medios if m.tipo_medio == "efectivo"), Decimal("0"))
+        if valor_recibido is None or en_efectivo == 0:
+            return None
+        if valor_recibido < en_efectivo:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "codigo": "PAGO_INSUFICIENTE",
+                    "mensaje": f"El efectivo recibido ({valor_recibido}) es menor a la parte en efectivo ({en_efectivo}).",
+                },
+            )
+        return valor_recibido - en_efectivo
+
+    @staticmethod
+    async def _guardar_medios(
+        session: AsyncSession,
+        gym_id: UUID,
+        pagos: Optional[List[MedioPagoDto]],
+        venta_id: Optional[UUID] = None,
+        pago_membresia_id: Optional[UUID] = None,
+    ) -> None:
+        for medio in pagos or []:
+            await session.execute(
+                text("""
+                    INSERT INTO platform.cobro_medios (gimnasio_id, venta_id, pago_membresia_id, metodo, tipo_medio, monto)
+                    VALUES (:gym_id, :venta_id, :pago_id, :metodo, :tipo_medio, :monto)
+                """),
+                {
+                    "gym_id": gym_id,
+                    "venta_id": venta_id,
+                    "pago_id": pago_membresia_id,
+                    "metodo": medio.metodo.strip(),
+                    "tipo_medio": medio.tipo_medio,
+                    "monto": medio.monto,
+                },
+            )
+
+    @staticmethod
+    async def _medios_del_cobro(
+        session: AsyncSession,
+        venta_id: Optional[UUID] = None,
+        pago_membresia_id: Optional[UUID] = None,
+    ) -> List[dict]:
+        if venta_id is not None:
+            filtro, valor = "venta_id = :id", venta_id
+        else:
+            filtro, valor = "pago_membresia_id = :id", pago_membresia_id
+        res = await session.execute(
+            text(f"SELECT metodo, tipo_medio, monto FROM platform.cobro_medios WHERE {filtro} ORDER BY tipo_medio, monto DESC"),
+            {"id": valor},
+        )
+        return [dict(fila) for fila in res.mappings().all()]
+
+    @classmethod
+    async def _describir_medios(cls, session: AsyncSession, fila, **destino) -> str:
+        if fila["tipo_medio"] != "mixto":
+            return fila["metodo"]
+        medios = await cls._medios_del_cobro(session, **destino)
+        return " + ".join(f"{m['metodo']} ${int(m['monto']):,}".replace(",", ".") for m in medios)
 
     @classmethod
     async def _consultar_venta_existente_por_idempotency_key(

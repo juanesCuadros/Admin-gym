@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
+from app.modules.caja.schemas import MedioPagoDto
+
 from app.modules.caja.schemas import PagoMembresiaResponseDto
 
 
@@ -78,7 +80,8 @@ class PagoVentaDto(BaseModel):
     """
     monto: Decimal = Field(..., gt=0, description="Valor cobrado")
     metodo: str = Field(..., min_length=2, max_length=50, description="Texto libre (efectivo, nequi, tarjeta)")
-    tipo_medio: Literal["efectivo", "otro"] = Field(..., description="Categoría de medio de pago")
+    tipo_medio: Literal["efectivo", "otro", "mixto"] = Field(..., description="Categoría de medio de pago")
+    pagos: Optional[List[MedioPagoDto]] = Field(None, description="Reparto entre medios si el pago es mixto")
     precio_cobrado: Optional[Decimal] = Field(None, ge=0, description="Precio cobrado si tiene descuento")
     motivo_descuento: Optional[str] = Field(None, max_length=255, description="Obligatorio si hay descuento")
     valor_recibido: Optional[Decimal] = Field(None, ge=0, description="Valor recibido en efectivo, para el cambio")

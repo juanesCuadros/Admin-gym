@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Literal, Optional
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # --- Turnos de Caja ---
@@ -87,12 +87,32 @@ class PreciosPasesResponse(BaseModel):
     pase_clase: Optional[int] = None
 
 
+class MedioPagoDto(BaseModel):
+    """Una parte de un pago mixto."""
+    metodo: str = Field(..., min_length=2, max_length=50, description="Método (efectivo, nequi, datáfono...)")
+    tipo_medio: Literal["efectivo", "otro"] = Field(..., description="Solo la parte en efectivo entra al arqueo")
+    monto: Decimal = Field(..., gt=0, description="Valor pagado con este medio")
+
+
+def validar_pago_mixto(tipo_medio: str, pagos: Optional[List[MedioPagoDto]]) -> None:
+    if tipo_medio == "mixto" and (not pagos or len(pagos) < 2):
+        raise ValueError("Un pago mixto necesita al menos dos medios de pago.")
+    if tipo_medio != "mixto" and pagos:
+        raise ValueError("El reparto entre medios solo aplica a un pago mixto.")
+
+
 class RegistrarVentaRequest(BaseModel):
     deportista_id: Optional[UUID] = Field(None, description="UUID del deportista registrado (NULL si es cliente walk-in/anónimo)")
     metodo: str = Field(..., min_length=2, max_length=50, description="Método en texto libre (efectivo, nequi, daviplata, datáfono)")
-    tipo_medio: Literal["efectivo", "otro"] = Field(..., description="Categoría base del medio de pago")
+    tipo_medio: Literal["efectivo", "otro", "mixto"] = Field(..., description="Categoría base del medio de pago")
+    pagos: Optional[List[MedioPagoDto]] = Field(None, description="Reparto entre medios; obligatorio si tipo_medio es mixto")
     valor_recibido: Optional[Decimal] = Field(None, ge=0, description="Valor entregado por el cliente en pagos en efectivo")
     items: List[VentaItemRequest] = Field(..., min_length=1, description="Lista de ítems cobrados")
+
+    @model_validator(mode="after")
+    def _validar_medios(self):
+        validar_pago_mixto(self.tipo_medio, self.pagos)
+        return self
 
 
 class VentaItemResponseDto(BaseModel):
@@ -123,6 +143,7 @@ class VentaResponseDto(BaseModel):
     idempotency_key: str
     items: List[VentaItemResponseDto]
     created_at: datetime
+    medios: Optional[List[MedioPagoDto]] = None
     idempotente_reintento: bool = False
 
 
@@ -140,11 +161,17 @@ class RegistrarPagoMembresiaRequest(BaseModel):
     paquete_id: Optional[UUID] = Field(None, description="UUID del paquete a cobrar (un solo pago cubre N membresías)")
     monto: Decimal = Field(..., gt=0, description="Valor pagado")
     metodo: str = Field(..., min_length=2, max_length=50, description="Texto libre (efectivo, nequi, tarjeta)")
-    tipo_medio: Literal["efectivo", "otro"] = Field(..., description="Categoría de medio de pago")
+    tipo_medio: Literal["efectivo", "otro", "mixto"] = Field(..., description="Categoría de medio de pago")
+    pagos: Optional[List[MedioPagoDto]] = Field(None, description="Reparto entre medios; obligatorio si tipo_medio es mixto")
     dias_agregados: int = Field(0, ge=0, description="Días de vigencia a sumar a la membresía")
     valor_recibido: Optional[Decimal] = Field(None, ge=0, description="Valor recibido si paga en efectivo para cálculo de cambio")
     precio_cobrado: Optional[Decimal] = Field(None, ge=0, description="Precio cobrado si tiene descuento")
     motivo_descuento: Optional[str] = Field(None, max_length=255, description="Motivo obligatorio si precio_cobrado < precio_lista")
+
+    @model_validator(mode="after")
+    def _validar_medios(self):
+        validar_pago_mixto(self.tipo_medio, self.pagos)
+        return self
 
 
 class PagoMembresiaResponseDto(BaseModel):

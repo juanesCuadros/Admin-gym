@@ -72,10 +72,18 @@ export interface VentaItemRequest {
   motivo_descuento?: string;
 }
 
+/** Una parte de un pago mixto. */
+export interface MedioPago {
+  metodo: string;
+  tipo_medio: 'efectivo' | 'otro';
+  monto: number;
+}
+
 export interface RegistrarVentaRequest {
   deportista_id?: string;
   metodo: string;
-  tipo_medio: 'efectivo' | 'otro';
+  tipo_medio: 'efectivo' | 'otro' | 'mixto';
+  pagos?: MedioPago[];
   valor_recibido?: number;
   items: VentaItemRequest[];
 }
@@ -106,6 +114,7 @@ export interface VentaResponseDto {
   anulada: boolean;
   motivo_anulacion?: string | null;
   items: VentaItemResponseDto[];
+  medios?: MedioPago[] | null;
   created_at: string;
   idempotency_key?: string;
   idempotente_reintento?: boolean;
@@ -119,7 +128,8 @@ export interface RegistrarPagoMembresiaRequest {
   /** Valor que se cobra (COP enteros). */
   monto: number;
   metodo: string;
-  tipo_medio: 'efectivo' | 'otro';
+  tipo_medio: 'efectivo' | 'otro' | 'mixto';
+  pagos?: MedioPago[];
   /** 0 = la duración del plan. */
   dias_agregados: number;
   valor_recibido?: number;

@@ -6,6 +6,7 @@ import { myGymService } from '../../api/myGym.service';
 import { ApiError, toApiError } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCajaTurno } from '../../contexts/CajaTurnoContext';
+import { FilaMedio, PagoDividido, efectivoDeFilas, filasIniciales, mediosDeFilas, repartoCompleto, tipoMedioDe } from '../../components/ui/PagoDividido';
 import { Drawer } from '../../components/ui/Drawer';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
@@ -51,9 +52,6 @@ function entero(valor: string): number | null {
   return Number.isFinite(n) ? Math.round(n) : null;
 }
 
-function tipoMedioDe(metodo: string): 'efectivo' | 'otro' {
-  return metodo.trim().toLowerCase() === 'efectivo' ? 'efectivo' : 'otro';
-}
 
 /** Mensaje claro para los errores de descuento del contrato 1.2. */
 function mensajeError(err: ApiError): string {
@@ -99,6 +97,8 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
   const [error, setError] = useState<ApiError | null>(null);
   const [errorMotivo, setErrorMotivo] = useState<string | null>(null);
   const [recibo, setRecibo] = useState<PagoMembresiaResponseDto | null>(null);
+  // Pago mixto: `null` = un solo medio.
+  const [filasMedio, setFilasMedio] = useState<FilaMedio[] | null>(null);
 
   // Configuración del gimnasio (métodos de pago y regla de descuentos). Sin permiso, decide el backend.
   useEffect(() => {
@@ -117,6 +117,7 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
     setPrecioCobrado(String(destino.precioLista));
     setMotivo('');
     setValorRecibido('');
+    setFilasMedio(null);
     setIdempotencyKey(null);
     setError(null);
     setErrorMotivo(null);
@@ -126,7 +127,7 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
   // Cualquier cambio en lo que se cobra es otra operación: la clave anterior deja de servir.
   useEffect(() => {
     setIdempotencyKey(null);
-  }, [precioCobrado, motivo, metodo, tipoMedioManual, valorRecibido]);
+  }, [precioCobrado, motivo, metodo, tipoMedioManual, valorRecibido, filasMedio]);
 
   if (!destino) return null;
 
@@ -147,13 +148,18 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
   else if (hayDescuento && descuentosApagados) errorPrecio = 'Este gimnasio no permite descuentos.';
   else if (hayDescuento && tope !== undefined && pct > tope) errorPrecio = `El descuento supera el tope del gimnasio (${tope} %).`;
   const motivoFaltante = hayDescuento && !motivo.trim();
+  // Lo que debe entregarse en efectivo: todo, o solo la parte en efectivo de un pago mixto.
+  const aCobrarEnEfectivo = filasMedio ? efectivoDeFilas(filasMedio) : tipoMedio === 'efectivo' ? cobrado ?? 0 : 0;
   const errorRecibido =
-    tipoMedio === 'efectivo' && recibido !== null && cobrado !== null && recibido < cobrado
-      ? 'El valor recibido es menor al valor a cobrar. No se aceptan abonos.'
+    aCobrarEnEfectivo > 0 && recibido !== null && recibido < aCobrarEnEfectivo
+      ? filasMedio
+        ? 'El efectivo recibido es menor a la parte en efectivo.'
+        : 'El valor recibido es menor al valor a cobrar. No se aceptan abonos.'
       : null;
-  const cambio = tipoMedio === 'efectivo' && recibido !== null && cobrado !== null ? recibido - cobrado : null;
+  const cambio = aCobrarEnEfectivo > 0 && recibido !== null ? recibido - aCobrarEnEfectivo : null;
+  const repartoIncompleto = !!filasMedio && !repartoCompleto(filasMedio, cobrado ?? 0);
 
-  const listo = puedeCobrar && turnoPropio && !errorPrecio && !errorRecibido && !!metodo.trim() && !enviando;
+  const listo = puedeCobrar && turnoPropio && !errorPrecio && !errorRecibido && (!!filasMedio || !!metodo.trim()) && !repartoIncompleto && !enviando;
 
   const cobrar = async () => {
     if (motivoFaltante) {
@@ -169,9 +175,10 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
 
     const pagoBase: PagoVenta = {
       monto: cobrado,
-      metodo: metodo.trim(),
-      tipo_medio: tipoMedio,
-      valor_recibido: tipoMedio === 'efectivo' && recibido !== null ? recibido : undefined,
+      metodo: filasMedio ? 'mixto' : metodo.trim(),
+      tipo_medio: filasMedio ? 'mixto' : tipoMedio,
+      pagos: filasMedio ? mediosDeFilas(filasMedio) : undefined,
+      valor_recibido: aCobrarEnEfectivo > 0 && recibido !== null ? recibido : undefined,
     };
     if (hayDescuento) {
       pagoBase.precio_cobrado = cobrado;
@@ -316,8 +323,27 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
             </p>
           )}
 
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={enviando}
+            onClick={() => setFilasMedio(filasMedio ? null : filasIniciales(metodosConfigurados))}
+          >
+            {filasMedio ? 'Pagar con un solo medio' : 'Dividir el pago entre varios medios'}
+          </Button>
+
+          {filasMedio && (
+            <PagoDividido
+              metodos={metodosConfigurados}
+              total={cobrado ?? 0}
+              filas={filasMedio}
+              onChange={setFilasMedio}
+              disabled={enviando}
+            />
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {metodosConfigurados ? (
+            {filasMedio ? null : metodosConfigurados ? (
               <Select
                 id="cobro-metodo"
                 label="Método de pago"

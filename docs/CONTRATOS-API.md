@@ -149,6 +149,9 @@ Usa las funciones `platform.plan_actual`, `planes_disponibles`, `solicitud_plan_
 | `POST /caja/ventas` | Una venta con `pase_dia` sin `deportista_id` responde `422 PASE_DIA_REQUIERE_CLIENTE` (GW-RF-17 CA3) |
 | `POST /control-ingreso/checkin-manual` y `checkin-huella` | **Decisión de Juan (4-nov):** un pase de día sin anular, comprado hoy (día de Bogotá) por esa persona, da `resultado: abrio` aunque no tenga membresía al día. Sirve para reingresar ese mismo día. Al deportista desactivado se le sigue negando |
 
+### Pago mixto (migración 060)
+`POST /caja/ventas`, `POST /caja/pagos-membresia` y el `pago` de `/membresias/asignar` aceptan `tipo_medio: "mixto"` con `pagos: [{metodo, tipo_medio: efectivo|otro, monto}]` (mínimo dos). La suma debe ser exacta (`422 MEDIOS_NO_SUMAN_TOTAL`). `valor_recibido` se compara solo con la parte en efectivo. Las respuestas de venta traen `medios`. Anular devuelve a cada medio lo que se pagó con él: en una venta mixta se ignora `tipo_medio_reembolso`.
+
 ## Carril 3 · Super-Admin y SaaS (SA)
 
 ### 3.1 Planes de suscripción (SA-RF-33)

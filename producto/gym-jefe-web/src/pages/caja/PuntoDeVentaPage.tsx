@@ -18,6 +18,15 @@ import { Cargando, ErrorCarga, MensajeFijo } from '../../components/estados/Esta
 import { formatCOP, formatFechaHora, formatMiles } from '../../utils/formato';
 import { imprimirRecibo } from '../../utils/imprimirRecibo';
 import { FormularioDeportista } from '../deportistas/FormularioDeportista';
+import {
+  FilaMedio,
+  PagoDividido,
+  efectivoDeFilas,
+  filasIniciales,
+  mediosDeFilas,
+  repartoCompleto,
+  tipoMedioDe,
+} from '../../components/ui/PagoDividido';
 import type { ProductoResponse } from '../../types/inventario.types';
 import type { InfoGymResponse } from '../../types/myGym.types';
 import type { PreciosPasesResponse, VentaItemRequest, VentaResponseDto } from '../../types/caja.types';
@@ -47,11 +56,6 @@ function entero(valor: string): number | null {
   if (valor.trim() === '') return null;
   const n = Number(valor);
   return Number.isFinite(n) ? Math.round(n) : null;
-}
-
-/** `efectivo` → efectivo; cualquier otro método → otro (datáfono, Nequi, transferencia...). */
-function tipoMedioDe(metodo: string): 'efectivo' | 'otro' {
-  return metodo.trim().toLowerCase() === 'efectivo' ? 'efectivo' : 'otro';
 }
 
 /**
@@ -101,6 +105,8 @@ export const PuntoDeVentaPage: React.FC = () => {
   const [reciboCliente, setReciboCliente] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   const [registrandoVisitante, setRegistrandoVisitante] = useState(false);
+  // Pago mixto: `null` = un solo medio.
+  const [filasMedio, setFilasMedio] = useState<FilaMedio[] | null>(null);
   // Tablet/móvil: la venta es un panel que sube desde abajo.
   const [ventaAbierta, setVentaAbierta] = useState(false);
 
@@ -160,7 +166,7 @@ export const PuntoDeVentaPage: React.FC = () => {
   // Cualquier cambio en lo que se cobra invalida la clave anterior (es otra operación).
   useEffect(() => {
     setIdempotencyKey(null);
-  }, [lineas, cliente, metodo, tipoMedioManual, valorRecibido]);
+  }, [lineas, cliente, metodo, tipoMedioManual, valorRecibido, filasMedio]);
 
   const precioFinal = (l: LineaCarrito): number => {
     const cobrado = descuentosPermitidos && l.tipo === 'producto' ? entero(l.precioCobrado) : null;
@@ -170,7 +176,9 @@ export const PuntoDeVentaPage: React.FC = () => {
   const total = lineas.reduce((acc, l) => acc + precioFinal(l) * l.cantidad, 0);
 
   const recibido = entero(valorRecibido);
-  const cambio = tipoMedio === 'efectivo' && recibido !== null ? recibido - total : null;
+  // Lo que debe entregarse en efectivo: el total, o solo la parte en efectivo de un pago mixto.
+  const aCobrarEnEfectivo = filasMedio ? efectivoDeFilas(filasMedio) : tipoMedio === 'efectivo' ? total : 0;
+  const cambio = aCobrarEnEfectivo > 0 && recibido !== null ? recibido - aCobrarEnEfectivo : null;
 
   // ---- Validaciones de la UI (el backend vuelve a validar todo) ----
   const erroresLinea = (l: LineaCarrito): string | null => {
@@ -194,14 +202,17 @@ export const PuntoDeVentaPage: React.FC = () => {
 
   const hayErroresLineas = lineas.some((l) => erroresLinea(l) !== null);
   const errorRecibido =
-    tipoMedio === 'efectivo' && recibido !== null && recibido < total
-      ? 'El valor recibido es menor al total. No se aceptan abonos.'
+    aCobrarEnEfectivo > 0 && recibido !== null && recibido < aCobrarEnEfectivo
+      ? filasMedio
+        ? 'El efectivo recibido es menor a la parte en efectivo.'
+        : 'El valor recibido es menor al total. No se aceptan abonos.'
       : null;
-  const metodoVacio = !metodo.trim();
+  const metodoVacio = !filasMedio && !metodo.trim();
+  const repartoIncompleto = !!filasMedio && !repartoCompleto(filasMedio, total);
   const puedeAbrirCobro = puedeVender && turnoAbierto && lineas.length > 0 && !hayErroresLineas;
   // GW-RF-17 CA3: el pase de día deja al visitante con registro mínimo.
   const paseDiaSinCliente = lineas.some((l) => l.tipo === 'pase_dia') && !cliente;
-  const puedeCobrar = puedeAbrirCobro && !errorRecibido && !metodoVacio && !paseDiaSinCliente && !enviando;
+  const puedeCobrar = puedeAbrirCobro && !errorRecibido && !metodoVacio && !repartoIncompleto && !paseDiaSinCliente && !enviando;
 
   // ---- Carrito ----
   const agregarProducto = (p: ProductoResponse) => {
@@ -254,6 +265,7 @@ export const PuntoDeVentaPage: React.FC = () => {
     setLineas([]);
     setCliente(null);
     setValorRecibido('');
+    setFilasMedio(null);
     setErrorVenta(null);
     setIdempotencyKey(null);
   };
@@ -310,9 +322,10 @@ export const PuntoDeVentaPage: React.FC = () => {
       const venta = await cajaService.registrarVenta(
         {
           deportista_id: cliente?.id,
-          metodo: metodo.trim(),
-          tipo_medio: tipoMedio,
-          valor_recibido: tipoMedio === 'efectivo' && recibido !== null ? recibido : undefined,
+          metodo: filasMedio ? 'mixto' : metodo.trim(),
+          tipo_medio: filasMedio ? 'mixto' : tipoMedio,
+          pagos: filasMedio ? mediosDeFilas(filasMedio) : undefined,
+          valor_recibido: aCobrarEnEfectivo > 0 && recibido !== null ? recibido : undefined,
           items,
         },
         clave
@@ -322,6 +335,7 @@ export const PuntoDeVentaPage: React.FC = () => {
       setLineas([]);
       setCliente(null);
       setValorRecibido('');
+      setFilasMedio(null);
       setIdempotencyKey(null);
       refrescarTurno();
       cargarProductos(busqueda);
@@ -641,7 +655,10 @@ export const PuntoDeVentaPage: React.FC = () => {
               <strong>{formatCOP(recibo.total)}</strong>
             </div>
             <p style={{ margin: '4px 0 12px', fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)' }}>
-              {formatFechaHora(recibo.created_at)} · {recibo.metodo}
+              {formatFechaHora(recibo.created_at)} ·{' '}
+              {recibo.medios?.length
+                ? recibo.medios.map((m) => `${m.metodo} ${formatCOP(m.monto)}`).join(' + ')
+                : recibo.metodo}
               {reciboCliente ? ` · ${reciboCliente}` : ''}
             </p>
             {recibo.cambio_devuelto !== null && recibo.cambio_devuelto !== undefined && Number(recibo.cambio_devuelto) > 0 && (
@@ -694,7 +711,25 @@ export const PuntoDeVentaPage: React.FC = () => {
                 </MensajeFijo>
               )}
 
-              {metodosConfigurados ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                style={{ alignSelf: 'flex-start' }}
+                disabled={enviando}
+                onClick={() => setFilasMedio(filasMedio ? null : filasIniciales(metodosConfigurados))}
+              >
+                {filasMedio ? 'Pagar con un solo medio' : 'Dividir el pago entre varios medios'}
+              </Button>
+
+              {filasMedio ? (
+                <PagoDividido
+                  metodos={metodosConfigurados}
+                  total={total}
+                  filas={filasMedio}
+                  onChange={setFilasMedio}
+                  disabled={enviando}
+                />
+              ) : metodosConfigurados ? (
                 metodosComoBotones ? (
                   <div className="form-group" role="radiogroup" aria-label="Método de pago">
                     <span className="form-label">Método de pago</span>
@@ -755,10 +790,10 @@ export const PuntoDeVentaPage: React.FC = () => {
                 </>
               )}
 
-              {tipoMedio === 'efectivo' && (
+              {aCobrarEnEfectivo > 0 && (
                 <>
                   <Input
-                    label="Valor recibido (opcional)"
+                    label={filasMedio ? 'Efectivo recibido (opcional)' : 'Valor recibido (opcional)'}
                     moneda
                     value={valorRecibido}
                     onChange={(e) => setValorRecibido(e.target.value)}
