@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Menu, Moon, Sun } from 'lucide-react';
+import { KeyRound, LogOut, Menu, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenantTheme } from '../../contexts/TenantThemeContext';
 import { useCajaTurno } from '../../contexts/CajaTurnoContext';
@@ -104,6 +104,15 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, navegacionBloqu
                 <span className="user-chip-role">{NOMBRE_ROL[user.rol] ?? user.rol}</span>
               </div>
             </div>
+            <button
+              type="button"
+              className="icon-btn ghost"
+              onClick={() => navigate('/cambiar-clave')}
+              title="Mi perfil · Cambiar contraseña"
+              aria-label="Cambiar contraseña"
+            >
+              <KeyRound size={17} />
+            </button>
             <button type="button" className="icon-btn ghost" onClick={logout} title="Salir" aria-label="Salir">
               <LogOut size={17} />
             </button>

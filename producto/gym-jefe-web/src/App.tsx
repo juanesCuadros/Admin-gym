@@ -46,7 +46,7 @@ import { MiSuscripcionPage } from './pages/configuracion/MiSuscripcionPage';
 import { CargaInicialPage } from './pages/configuracion/CargaInicialPage';
 import { AuditoriaPage } from './pages/auditoria/AuditoriaPage';
 
-import { PantallaTvAccesoPage } from './pages/enConstruccion/EnConstruccionPage';
+import { PantallaTvConfigPage } from './pages/controlIngreso/PantallaTvConfigPage';
 
 import './styles/components.css';
 
@@ -92,7 +92,7 @@ export const App: React.FC = () => {
                     <Route element={<ProtectedRoute requiredSubmodule="control_ingreso" />}>
                       <Route path="/control-ingreso" element={<ControlIngresoPage />} />
                       <Route path="/control-ingreso/ingresos-hoy" element={<IngresosHoyPage />} />
-                      <Route path="/control-ingreso/pantalla-tv" element={<PantallaTvAccesoPage />} />
+                      <Route path="/control-ingreso/pantalla-tv" element={<PantallaTvConfigPage />} />
                     </Route>
 
                     <Route element={<ProtectedRoute requiredSubmodule="caja" />}>

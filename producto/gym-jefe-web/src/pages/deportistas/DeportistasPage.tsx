@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { UserPlus, Eye, Scale, Edit2, Plus, Calculator } from 'lucide-react';
+import { UserPlus, Eye, Scale, Edit2, Plus, Calculator, LineChart } from 'lucide-react';
 import { deportistasService } from '../../api/deportistas.service';
 import { membresiasService } from '../../api/membresias.service';
 import { useToast } from '../../contexts/ToastContext';
@@ -22,6 +22,7 @@ import {
 } from '../../types/deportistas.types';
 import { CobroMembresiaModal, DestinoCobro } from '../membresias/CobroMembresiaModal';
 import { FormularioDeportista, PlanAsignacionInicial, edadEnBogota } from './FormularioDeportista';
+import { MedicionesDrawer } from '../../components/mediciones/MedicionesDrawer';
 
 /** Días de `desde` a `hasta` (fechas de negocio `YYYY-MM-DD`), sin pasar por la zona del navegador. */
 function diasEntre(desde: string, hasta: string): number {
@@ -253,6 +254,9 @@ export const DeportistasPage: React.FC = () => {
   const [alturaMedicion, setAlturaMedicion] = useState('');
   const [errorMedicion, setErrorMedicion] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Progreso de mediciones (panel propio, abre desde la lista o la ficha)
+  const [medicionesDe, setMedicionesDe] = useState<{ id: string; nombre: string } | null>(null);
 
   const q = searchQuery.trim();
 
@@ -507,9 +511,17 @@ export const DeportistasPage: React.FC = () => {
             {
               header: '',
               align: 'right',
-              width: '190px',
+              width: '300px',
               render: (d) => (
                 <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    leftIcon={<LineChart size={13} />}
+                    onClick={() => setMedicionesDe({ id: d.id, nombre: d.nombre })}
+                  >
+                    Mediciones
+                  </Button>
                   {puedeEditar && (
                     <Button variant="ghost" size="sm" leftIcon={<Edit2 size={13} />} onClick={() => abrirEditar(d.id)}>
                       Editar
@@ -690,11 +702,26 @@ export const DeportistasPage: React.FC = () => {
             <section className="form-section">
               <div className="form-section-head">
                 <div className="form-section-title">Mediciones recientes</div>
-                {puedeCrear && !medicionAbierta && (
-                  <Button variant="secondary" size="sm" leftIcon={<Plus size={14} />} onClick={abrirMedicion}>
-                    Registrar medición
-                  </Button>
-                )}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {ficha.mediciones_recientes.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      leftIcon={<LineChart size={14} />}
+                      onClick={() => {
+                        setSelectedDeportistaId(null);
+                        setMedicionesDe({ id: ficha.deportista.id, nombre: ficha.deportista.nombre });
+                      }}
+                    >
+                      Ver progreso
+                    </Button>
+                  )}
+                  {puedeCrear && !medicionAbierta && (
+                    <Button variant="secondary" size="sm" leftIcon={<Plus size={14} />} onClick={abrirMedicion}>
+                      Registrar medición
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {medicionAbierta && (
@@ -966,6 +993,8 @@ export const DeportistasPage: React.FC = () => {
           </>
         )}
       </Drawer>
+
+      <MedicionesDrawer deportista={medicionesDe} onClose={() => setMedicionesDe(null)} />
     </div>
   );
 };

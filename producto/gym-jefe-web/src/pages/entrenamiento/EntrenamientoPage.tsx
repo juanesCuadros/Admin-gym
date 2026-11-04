@@ -18,6 +18,7 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
+import { ImagenEjercicio } from '../../components/ui/ImagenEjercicio';
 import { Modal } from '../../components/ui/Modal';
 import { Drawer } from '../../components/ui/Drawer';
 import { Table } from '../../components/ui/Table';
@@ -265,6 +266,9 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
                 style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}
               >
                 <div>
+                  <div style={{ marginBottom: 12 }}>
+                    <ImagenEjercicio url={ej.archivo_url} nombre={ej.nombre_es} bloque />
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                     <Badge variant={ej.propio ? 'primary' : 'neutral'}>
                       {ej.propio ? 'Personalizado' : 'GymOS'}
@@ -426,24 +430,27 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
                     alignItems: 'center',
                   }}
                 >
-                  <div>
-                    <div style={{ fontWeight: 500, fontSize: '0.925rem' }}>
-                      {idx + 1}. {item.ejercicio_nombre}
-                    </div>
-                    <div style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>
-                      {item.ejercicio_grupo_muscular} · {item.ejercicio_equipo || 'Libre'}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <ImagenEjercicio url={item.ejercicio_archivo_url} nombre={item.ejercicio_nombre} tamano={52} />
+                    <div>
+                      <div style={{ fontWeight: 500, fontSize: '0.925rem' }}>
+                        {idx + 1}. {item.ejercicio_nombre}
+                      </div>
+                      <div style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>
+                        {[item.ejercicio_grupo_muscular, item.ejercicio_equipo].filter(Boolean).join(' · ')}
+                      </div>
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', gap: 14, fontSize: '0.85rem' }}>
                     <span>
-                      <strong>{item.series || 3}</strong> series
+                      <strong>{item.series ?? '—'}</strong> series
                     </span>
                     <span>
-                      <strong>{item.reps || '10-12'}</strong> reps
+                      <strong>{item.reps || '—'}</strong> reps
                     </span>
                     <span>
-                      Descanso: <strong>{item.descanso_seg || 60}s</strong>
+                      Descanso: <strong>{item.descanso_seg != null ? `${item.descanso_seg} s` : '—'}</strong>
                     </span>
                   </div>
                 </div>

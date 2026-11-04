@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, ClipboardList, Archive, RotateCcw, Plus } from 'lucide-react';
+import { ChevronDown, ChevronUp, ClipboardList, Archive, RotateCcw, Plus, LineChart, Printer, MessageCircle } from 'lucide-react';
+import { useTenantTheme } from '../../contexts/TenantThemeContext';
+import { enlaceWhatsApp, imprimirRutina, rutinaComoTexto } from '../../utils/compartirRutina';
+import { MedicionesDrawer } from '../../components/mediciones/MedicionesDrawer';
 import { entrenamientoService } from '../../api/entrenamiento.service';
 import { ApiError, toApiError } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,6 +14,7 @@ import { Badge } from '../../components/ui/Badge';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { Drawer } from '../../components/ui/Drawer';
 import { BuscadorDeportista } from '../../components/ui/BuscadorDeportista';
+import { ImagenEjercicio } from '../../components/ui/ImagenEjercicio';
 import { Cargando, ErrorCarga, MensajeFijo, VacioInicial } from '../../components/estados/Estados';
 import { formatFechaHora } from '../../utils/formato';
 import type { DeportistaBusquedaItem } from '../../types/comun.types';
@@ -37,10 +41,15 @@ const DetalleRutina: React.FC<{ rutina: RutinaAsignadaResponse }> = ({ rutina })
             <tr key={it.id}>
               <td>{i + 1}</td>
               <td>
-                <div style={{ fontWeight: 500 }}>{it.ejercicio_nombre}</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  {[it.ejercicio_grupo_muscular, it.ejercicio_equipo].filter(Boolean).join(' · ')}
-                  {!it.ejercicio_activo_en_gym && ' · Desactivado en el gimnasio (sin imagen)'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <ImagenEjercicio url={it.ejercicio_archivo_url} nombre={it.ejercicio_nombre} tamano={44} />
+                  <div>
+                    <div style={{ fontWeight: 500 }}>{it.ejercicio_nombre}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {[it.ejercicio_grupo_muscular, it.ejercicio_equipo].filter(Boolean).join(' · ')}
+                      {!it.ejercicio_activo_en_gym && ' · Desactivado en el gimnasio (sin imagen)'}
+                    </div>
+                  </div>
                 </div>
               </td>
               <td style={{ textAlign: 'right' }}>{it.series ?? '—'}</td>
@@ -64,6 +73,9 @@ export const RutinasAsignadasPage: React.FC = () => {
   const { showToast } = useToast();
   const puedeAsignar = hasPermission('entrenamiento', 'crear');
   const puedeEditar = hasPermission('entrenamiento', 'editar');
+  const puedeVerMediciones = hasPermission('deportistas', 'leer');
+  const { tenant } = useTenantTheme();
+  const [verMediciones, setVerMediciones] = useState(false);
 
   const [deportista, setDeportista] = useState<DeportistaBusquedaItem | null>(null);
   const [soloActivas, setSoloActivas] = useState(false);
@@ -166,11 +178,18 @@ export const RutinasAsignadasPage: React.FC = () => {
             Rutinas de cada deportista. Editar una plantilla no cambia las rutinas ya asignadas.
           </p>
         </div>
-        {puedeAsignar && deportista && (
-          <Button variant="primary" leftIcon={<Plus size={16} />} onClick={abrirAsignar}>
-            Asignar rutina
-          </Button>
-        )}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {puedeVerMediciones && deportista && (
+            <Button variant="outline" leftIcon={<LineChart size={16} />} onClick={() => setVerMediciones(true)}>
+              Mediciones
+            </Button>
+          )}
+          {puedeAsignar && deportista && (
+            <Button variant="primary" leftIcon={<Plus size={16} />} onClick={abrirAsignar}>
+              Asignar rutina
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card style={{ marginBottom: 20 }}>
@@ -234,6 +253,33 @@ export const RutinasAsignadasPage: React.FC = () => {
                     aria-expanded={abierta}
                   >
                     {abierta ? 'Ocultar' : 'Ver ejercicios'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    leftIcon={<Printer size={14} />}
+                    disabled={r.items.length === 0}
+                    onClick={() => {
+                      if (!imprimirRutina(r, tenant.nombre, deportista.nombre))
+                        showToast('error', 'No se abrió la impresión', 'Permite las ventanas emergentes de este sitio.');
+                    }}
+                  >
+                    Imprimir
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    leftIcon={<MessageCircle size={14} />}
+                    disabled={r.items.length === 0}
+                    onClick={() =>
+                      window.open(
+                        enlaceWhatsApp(rutinaComoTexto(r, tenant.nombre, deportista.nombre), deportista.telefono),
+                        '_blank',
+                        'noopener'
+                      )
+                    }
+                  >
+                    WhatsApp
                   </Button>
                   {puedeEditar &&
                     (r.activa ? (
@@ -333,6 +379,11 @@ export const RutinasAsignadasPage: React.FC = () => {
           )}
         </form>
       </Drawer>
+
+      <MedicionesDrawer
+        deportista={verMediciones && deportista ? { id: deportista.id, nombre: deportista.nombre } : null}
+        onClose={() => setVerMediciones(false)}
+      />
     </div>
   );
 };
