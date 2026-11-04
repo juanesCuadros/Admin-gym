@@ -88,6 +88,7 @@ class AuthService:
             ("recepcionista", "personal", False, False, False, False),
             ("recepcionista", "reportes", False, False, False, False),
             ("recepcionista", "configuracion", False, False, False, False),
+            ("recepcionista", "gastos", False, False, False, False),
             # Rol Entrenador
             ("entrenador", "control_ingreso", False, True, False, False),
             ("entrenador", "caja", False, False, False, False),
@@ -99,6 +100,7 @@ class AuthService:
             ("entrenador", "personal", False, False, False, False),
             ("entrenador", "reportes", False, False, False, False),
             ("entrenador", "configuracion", False, False, False, False),
+            ("entrenador", "gastos", False, False, False, False),
         ]
 
         insert_stmt = text("""

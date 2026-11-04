@@ -153,6 +153,25 @@ class MembresiaListItemResponse(BaseModel):
     created_at: Optional[datetime] = None
 
 
+class AvisoVencimientoItem(BaseModel):
+    membresia_id: UUID
+    deportista_id: UUID
+    deportista_nombre: str
+    deportista_documento: str
+    deportista_telefono: Optional[str] = None
+    plan_nombre: str
+    fecha_vencimiento: date
+    dias: int
+    situacion: Literal["por_vencer", "en_gracia"]
+    ultimo_aviso_en: Optional[datetime] = None
+    ultimo_aviso_por: Optional[str] = None
+
+
+class AvisosVencimientoResponse(BaseModel):
+    items: List[AvisoVencimientoItem]
+    total: int
+
+
 class MembresiasPaginadasResponse(BaseModel):
     items: List[MembresiaListItemResponse]
     total: int

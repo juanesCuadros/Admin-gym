@@ -20,6 +20,8 @@ from app.modules.caja.schemas import PagoMembresiaResponseDto, RegistrarPagoMemb
 from app.modules.caja.service import CajaService
 from app.modules.membresias.domain import MembresiaDomainService
 from app.modules.membresias.schemas import (
+    AvisoVencimientoItem,
+    AvisosVencimientoResponse,
     AsignarMembresiaRequest,
     CambiarEstadoPlanRequest,
     CambiarPlanRequest,
@@ -1064,6 +1066,106 @@ class MembresiasService:
     # =========================================================================
     # 4. LISTADOS Y REPORTES ACCIONABLES (RF-27, RF-42)
     # =========================================================================
+
+    @classmethod
+    async def listar_avisos_vencimiento(
+        cls, session: AsyncSession, gym_id: UUID, q: Optional[str] = None, limit: int = 20, offset: int = 0
+    ) -> AvisosVencimientoResponse:
+        """
+        Por vencer (según `dias_umbral_por_vencer`) y en gracia (según `dias_gracia_mora`).
+        Quien ya renovó no aparece: se mira solo su membresía más reciente. Las congeladas no vencen.
+        """
+        gracia, umbral = await cls._obtener_config_tenant(session, gym_id)
+        hoy = today_local()
+        params: Dict[str, Any] = {
+            "gym_id": gym_id,
+            "hoy": hoy,
+            "inicio": hoy - timedelta(days=gracia),
+            "fin": hoy + timedelta(days=umbral),
+            "limit": limit,
+            "offset": offset,
+        }
+        cond_q = ""
+        if q:
+            cond_q = "AND (d.documento ILIKE :q OR d.nombre ILIKE :q)"
+            params["q"] = f"%{q.strip()}%"
+        base = f"""
+            FROM platform.membresias m
+            JOIN platform.deportistas d ON d.id = m.deportista_id
+            JOIN platform.planes p ON p.id = m.plan_id
+            WHERE m.gimnasio_id = :gym_id
+              AND m.cancelada = false
+              AND d.activo = true AND d.deleted_at IS NULL
+              AND m.fecha_vencimiento BETWEEN :inicio AND :fin
+              AND NOT EXISTS (
+                SELECT 1 FROM platform.membresias n
+                WHERE n.deportista_id = m.deportista_id AND n.cancelada = false
+                  AND n.fecha_vencimiento > m.fecha_vencimiento
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM platform.congelamientos c WHERE c.membresia_id = m.id AND c.fecha_fin IS NULL
+              )
+              {cond_q}
+        """
+        total = (await session.execute(text(f"SELECT COUNT(*) {base}"), params)).scalar_one()
+        filas = await session.execute(
+            text(f"""
+                SELECT m.id AS membresia_id, m.deportista_id, d.nombre AS deportista_nombre,
+                       d.documento AS deportista_documento, d.telefono AS deportista_telefono,
+                       p.nombre AS plan_nombre, m.fecha_vencimiento,
+                       a.created_at AS ultimo_aviso_en, s.nombre AS ultimo_aviso_por
+                {base.replace("WHERE m.gimnasio_id", '''LEFT JOIN LATERAL (
+                    SELECT av.created_at, av.avisado_por FROM platform.avisos_vencimiento av
+                    WHERE av.membresia_id = m.id AND av.fecha_vencimiento = m.fecha_vencimiento
+                    ORDER BY av.created_at DESC LIMIT 1
+                ) a ON true
+                LEFT JOIN platform.staff s ON s.id = a.avisado_por
+                WHERE m.gimnasio_id''')}
+                ORDER BY m.fecha_vencimiento, d.nombre
+                LIMIT :limit OFFSET :offset
+            """),
+            params,
+        )
+        items = []
+        for f in filas.mappings().all():
+            dias = (f["fecha_vencimiento"] - hoy).days
+            items.append(
+                AvisoVencimientoItem(**dict(f), dias=dias, situacion="en_gracia" if dias < 0 else "por_vencer")
+            )
+        return AvisosVencimientoResponse(items=items, total=total)
+
+    @classmethod
+    async def registrar_aviso_vencimiento(
+        cls, session: AsyncSession, gym_id: UUID, staff_id: UUID, staff_nombre: str, membresia_id: UUID
+    ) -> None:
+        fecha = (
+            await session.execute(
+                text("SELECT fecha_vencimiento FROM platform.membresias WHERE id = :id AND gimnasio_id = :gym_id"),
+                {"id": membresia_id, "gym_id": gym_id},
+            )
+        ).scalar()
+        if fecha is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"codigo": "MEMBRESIA_NO_ENCONTRADA", "mensaje": "La membresía no existe en este gimnasio."},
+            )
+        await session.execute(
+            text("""
+                INSERT INTO platform.avisos_vencimiento (gimnasio_id, membresia_id, fecha_vencimiento, avisado_por)
+                VALUES (:gym_id, :id, :fecha, :staff)
+            """),
+            {"gym_id": gym_id, "id": membresia_id, "fecha": fecha, "staff": staff_id},
+        )
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=gym_id,
+            actor_id=staff_id,
+            actor_nombre=staff_nombre,
+            accion="AVISO_VENCIMIENTO",
+            entidad="membresias",
+            entidad_id=str(membresia_id),
+            detalle={"fecha_vencimiento": fecha.isoformat()},
+        )
 
     @classmethod
     async def listar_membresias(

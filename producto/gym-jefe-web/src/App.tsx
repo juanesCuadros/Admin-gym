@@ -44,6 +44,8 @@ import { ConfigLandingPage } from './pages/configuracion/ConfigLandingPage';
 import { MiSuscripcionPage } from './pages/configuracion/MiSuscripcionPage';
 import { CargaInicialPage } from './pages/configuracion/CargaInicialPage';
 import { LandingGimnasioPage } from './pages/publico/LandingGimnasioPage';
+import { AvisosVencimientoPage } from './pages/membresias/AvisosVencimientoPage';
+import { GastosPage } from './pages/gastos/GastosPage';
 
 import { PantallaTvConfigPage } from './pages/controlIngreso/PantallaTvConfigPage';
 
@@ -110,6 +112,7 @@ export const App: React.FC = () => {
                     <Route element={<ProtectedRoute requiredSubmodule="membresias" />}>
                       <Route path="/membresias" element={<MembresiasPage tabInicial="membresias" />} />
                       <Route path="/membresias/planes" element={<MembresiasPage tabInicial="planes" />} />
+                      <Route path="/membresias/avisos" element={<AvisosVencimientoPage />} />
                     </Route>
 
                     <Route element={<ProtectedRoute requiredSubmodule="clases" />}>
@@ -125,6 +128,10 @@ export const App: React.FC = () => {
                     <Route element={<ProtectedRoute requiredSubmodule="inventario" />}>
                       <Route path="/inventario" element={<ProductosPage />} />
                       <Route path="/inventario/movimientos" element={<MovimientosStockPage />} />
+                    </Route>
+
+                    <Route element={<ProtectedRoute requiredSubmodule="gastos" />}>
+                      <Route path="/gastos" element={<GastosPage />} />
                     </Route>
 
                     <Route element={<ProtectedRoute requiredSubmodule="reportes" />}>

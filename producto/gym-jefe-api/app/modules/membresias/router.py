@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
 from app.core.dependencies import AuthenticatedStaff, require_permission, require_role
 from app.modules.membresias.schemas import (
+    AvisosVencimientoResponse,
     AsignarMembresiaRequest,
     CambiarEstadoPlanRequest,
     CambiarPlanRequest,
@@ -230,6 +231,36 @@ async def listar_membresias(
         q=q,
         skip=skip,
         limit=limit,
+    )
+
+
+@router.get(
+    "/membresias/avisos-vencimiento",
+    response_model=AvisosVencimientoResponse,
+    summary="Por vencer y en gracia, para avisar por WhatsApp",
+)
+async def listar_avisos_vencimiento(
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("membresias", "leer"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    q: Optional[str] = Query(None, description="Nombre o documento"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    return await MembresiasService.listar_avisos_vencimiento(session, current_staff.gimnasio_id, q, limit, offset)
+
+
+@router.post(
+    "/membresias/{id}/aviso",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Marcar que ya se le avisó del vencimiento",
+)
+async def registrar_aviso_vencimiento(
+    id: UUID,
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("membresias", "crear"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    await MembresiasService.registrar_aviso_vencimiento(
+        session, current_staff.gimnasio_id, current_staff.staff_id, current_staff.nombre, id
     )
 
 

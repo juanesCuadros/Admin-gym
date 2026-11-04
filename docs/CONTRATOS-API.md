@@ -152,6 +152,21 @@ Usa las funciones `platform.plan_actual`, `planes_disponibles`, `solicitud_plan_
 ### Pago mixto (migración 060)
 `POST /caja/ventas`, `POST /caja/pagos-membresia` y el `pago` de `/membresias/asignar` aceptan `tipo_medio: "mixto"` con `pagos: [{metodo, tipo_medio: efectivo|otro, monto}]` (mínimo dos). La suma debe ser exacta (`422 MEDIOS_NO_SUMAN_TOTAL`). `valor_recibido` se compara solo con la parte en efectivo. Las respuestas de venta traen `medios`. Anular devuelve a cada medio lo que se pagó con él: en una venta mixta se ignora `tipo_medio_reembolso`.
 
+### Usabilidad · Tandas 2 a 4 (GW)
+| Método y ruta | Qué hace |
+|---|---|
+| `POST /caja/turnos/{id}/revision` | Jefe. Body `{nota}`. Marca revisado un turno con descuadre; el arqueo no cambia. `409 TURNO_SIN_DESCUADRE` o `TURNO_YA_REVISADO` |
+| `GET /membresias?grupo=activas\|vencidas\|canceladas` | Filtro en SQL: el total y la paginación corresponden al grupo |
+| `GET /deportistas/mediciones` | Deportistas con su última medición. Query `q`, `limit`, `offset` |
+| `POST /deportistas/{id}/mediciones` | `422 SEXO_Y_ESTATURA_REQUERIDOS` si ni la petición ni la ficha los tienen. Con sexo `otro` no se calcula grasa ni músculo |
+| `GET, POST /clases/catalogo`, `PUT /clases/catalogo/{id}` | Clases que ofrece el gimnasio. `409 CLASE_CATALOGO_DUPLICADA` |
+| `GET /my-gym/public-landing/{subdominio}` | Público. Solo datos pensados para el visitante |
+| `GET /my-gym/public-imagen/{subdominio}/{logo\|banner}` | Público. La imagen subida |
+| `POST, DELETE /my-gym/imagen/{logo\|banner}` | `configuracion:editar`. PNG, JPG o WEBP de hasta 3 MB. `422 IMAGEN_NO_VALIDA`, `413 IMAGEN_MUY_GRANDE` |
+| `GET, POST /gastos`, `GET /gastos/beneficiarios`, `GET /gastos/resultado` | Permiso `gastos`. El POST exige `X-Idempotency-Key`; el efectivo exige turno propio y deja un egreso |
+| `GET /gastos/entrenadores`, `PUT /gastos/entrenadores/{id}/config`, `POST /gastos/entrenadores/{id}/pagos` | Solo el Jefe. Liquidación por periodo: fijo, por clase realizada o comisión |
+| `GET /membresias/avisos-vencimiento`, `POST /membresias/{id}/aviso` | Por vencer y en gracia; quién avisó y cuándo |
+
 ## Carril 3 · Super-Admin y SaaS (SA)
 
 ### 3.1 Planes de suscripción (SA-RF-33)

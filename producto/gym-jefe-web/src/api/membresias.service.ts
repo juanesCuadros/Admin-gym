@@ -44,6 +44,18 @@ export const membresiasService = {
   },
 
   // Membresías
+  async getAvisosVencimiento(params: { q?: string; limit?: number; offset?: number }): Promise<{
+    items: import('../types/membresias.types').AvisoVencimiento[];
+    total: number;
+  }> {
+    const response = await apiClient.get('/membresias/avisos-vencimiento', { params });
+    return response.data;
+  },
+
+  async registrarAviso(membresiaId: string): Promise<void> {
+    await apiClient.post(`/membresias/${membresiaId}/aviso`);
+  },
+
   async getMembresias(params?: {
     skip?: number;
     limit?: number;

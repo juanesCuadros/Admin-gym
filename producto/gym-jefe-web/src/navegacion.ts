@@ -12,6 +12,7 @@ import {
   UserCheck,
   Settings,
   ScrollText,
+  Wallet,
 } from 'lucide-react';
 
 /**
@@ -96,6 +97,7 @@ export const NAVEGACION: GrupoNav[] = [
         submodulos: [
           { id: 'membresias.membresias', etiqueta: 'Membresías', ruta: '/membresias' },
           { id: 'membresias.planes', etiqueta: 'Planes', ruta: '/membresias/planes' },
+          { id: 'membresias.avisos', etiqueta: 'Avisos de vencimiento', ruta: '/membresias/avisos' },
         ],
       },
       { id: 'clases', etiqueta: 'Clases', ruta: '/clases', icono: Calendar, submodulo: 'clases' },
@@ -122,6 +124,7 @@ export const NAVEGACION: GrupoNav[] = [
           { id: 'inventario.movimientos', etiqueta: 'Movimientos de stock', ruta: '/inventario/movimientos' },
         ],
       },
+      { id: 'gastos', etiqueta: 'Gastos', ruta: '/gastos', icono: Wallet, submodulo: 'gastos' },
       {
         id: 'reportes',
         etiqueta: 'Reportes',

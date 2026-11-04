@@ -119,6 +119,21 @@ export interface MembresiaListItemResponse {
   created_at?: string | null;
 }
 
+export interface AvisoVencimiento {
+  membresia_id: string;
+  deportista_id: string;
+  deportista_nombre: string;
+  deportista_documento: string;
+  deportista_telefono?: string | null;
+  plan_nombre: string;
+  fecha_vencimiento: string;
+  /** Negativo = días desde que venció. */
+  dias: number;
+  situacion: 'por_vencer' | 'en_gracia';
+  ultimo_aviso_en?: string | null;
+  ultimo_aviso_por?: string | null;
+}
+
 export type GrupoMembresias = 'activas' | 'vencidas' | 'canceladas';
 
 export interface MembresiasPaginadasResponse {

@@ -80,3 +80,16 @@ Todos los supuestos S-xx y SW-xx de la revisión quedaron aceptados e integrados
 | "Se le bloquea todo" | Bloquea el sistema web para todos los roles **y la landing pública** |
 | Suspensión manual | Tiene el mismo efecto que el bloqueo por no pago |
 | "No se permita cambiar" (P-14) | Se refiere a cambiar **beneficiarios**, no a cambiar de plan |
+
+## Decisiones de Juan de oct-nov 2026
+
+| Tema | Decisión |
+|---|---|
+| Pago a entrenadores (27-oct) | Configurable por entrenador: sueldo fijo, valor por clase dictada o % de comisión, con la base que elija el Jefe (membresías que vendió o clientes asignados). El sistema calcula lo que se debe en el periodo y lo registra solo el Jefe |
+| Gastos (27-oct) | Categoría, beneficiario (staff o externo) y método (efectivo de la caja del turno o transferencia), con reporte de ingresos menos gastos. Por defecto solo el Jefe; se puede habilitar con el permiso `gastos` |
+| Avisos de vencimiento (27-oct) | Sin automatizar: recepción ve la lista, un botón abre WhatsApp desde su número y queda marcado a quién se le avisó |
+| Lista de espera de clases (27-oct) | No se hace: clase llena no admite más reservas |
+| Huella y torniquete (27-oct) | En espera del hardware del primer cliente |
+| Mediciones (3-nov) | La fecha de nacimiento se queda en el registro y la estatura pasa a mediciones. Sexo y estatura son obligatorios para medir; nunca se calcula con valores supuestos |
+| Auditoría (3-nov) | Se quita la pantalla y su enlace; se sigue registrando todo |
+| Pase de día (4-nov) | Exige cliente registrado y permite entrar ese día, incluso varias veces. Al desactivado se le sigue negando |

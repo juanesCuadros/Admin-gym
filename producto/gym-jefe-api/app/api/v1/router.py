@@ -13,6 +13,7 @@ from app.modules.personal.router import router as personal_router
 from app.modules.reportes.router import router as reportes_router
 from app.modules.my_gym.router import router as my_gym_router
 from app.modules.carga_inicial.router import router as carga_inicial_router
+from app.modules.gastos.router import router as gastos_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -30,3 +31,4 @@ api_v1_router.include_router(personal_router)
 api_v1_router.include_router(reportes_router)
 api_v1_router.include_router(my_gym_router)
 api_v1_router.include_router(carga_inicial_router)
+api_v1_router.include_router(gastos_router)
