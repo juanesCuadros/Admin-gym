@@ -117,6 +117,8 @@ interface FormularioDeportistaProps {
   inicial?: DeportistaResponse | null;
   /** Al crear: documento ya escrito en otra pantalla (por ejemplo, Check-in). */
   documentoInicial?: string;
+  /** Oculta "asignar plan" cuando el registro ocurre dentro de otro cobro. */
+  sinPlan?: boolean;
   onCerrar: () => void;
   onGuardado: (d: DeportistaResponse, seleccionPlan?: PlanAsignacionInicial) => void;
   /** 409 de concurrencia: el padre recarga el registro. */
@@ -131,12 +133,13 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
   isOpen,
   inicial,
   documentoInicial,
+  sinPlan = false,
   onCerrar,
   onGuardado,
   onRecargar,
 }) => {
   const { hasPermission } = useAuth();
-  const puedeAsignarPlan = hasPermission('membresias', 'crear') && hasPermission('caja', 'crear');
+  const puedeAsignarPlan = !sinPlan && hasPermission('membresias', 'crear') && hasPermission('caja', 'crear');
   const editando = !!inicial;
   const base = useMemo(
     () => (inicial ? desdeDeportista(inicial) : { ...VACIO, documento: documentoInicial ?? '' }),

@@ -638,6 +638,16 @@ class CajaService:
             )
         turno_id = turno["id"]
 
+        # GW-RF-17 CA3: el visitante con pase de día queda con registro mínimo (nombre, documento y consentimiento).
+        if data.deportista_id is None and any(it.tipo == "pase_dia" for it in data.items):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "codigo": "PASE_DIA_REQUIERE_CLIENTE",
+                    "mensaje": "El pase de día necesita un cliente registrado. Búscalo o regístralo con nombre, documento y consentimiento.",
+                },
+            )
+
         # 3. Extracción y Bloqueo Pesimista Ordenado de Productos (Prevención de Deadlocks)
         items_producto = [it for it in data.items if it.tipo == "producto"]
         for it in items_producto:

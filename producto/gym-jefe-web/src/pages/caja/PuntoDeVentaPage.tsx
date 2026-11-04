@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Minus, Plus, Printer, ShoppingCart, Trash2, Ticket, CalendarDays, Receipt, PackageSearch, Package, Search, X } from 'lucide-react';
+import { Minus, Plus, Printer, ShoppingCart, Trash2, Ticket, CalendarDays, Receipt, PackageSearch, Package, Search, UserPlus, X } from 'lucide-react';
 import { inventarioService } from '../../api/inventario.service';
 import { myGymService } from '../../api/myGym.service';
 import { cajaService } from '../../api/caja.service';
@@ -17,6 +17,7 @@ import { BuscadorDeportista } from '../../components/ui/BuscadorDeportista';
 import { Cargando, ErrorCarga, MensajeFijo } from '../../components/estados/Estados';
 import { formatCOP, formatFechaHora, formatMiles } from '../../utils/formato';
 import { imprimirRecibo } from '../../utils/imprimirRecibo';
+import { FormularioDeportista } from '../deportistas/FormularioDeportista';
 import type { ProductoResponse } from '../../types/inventario.types';
 import type { InfoGymResponse } from '../../types/myGym.types';
 import type { PreciosPasesResponse, VentaItemRequest, VentaResponseDto } from '../../types/caja.types';
@@ -74,6 +75,7 @@ export const PuntoDeVentaPage: React.FC = () => {
   // Consultas auxiliares solo con permiso: un 403 de permiso saca al usuario de la vista (interceptor).
   const puedeVerInventario = hasPermission('inventario', 'leer');
   const puedeVerConfig = hasPermission('configuracion', 'leer');
+  const puedeCrearCliente = hasPermission('deportistas', 'crear');
 
   // Catálogo
   const [busqueda, setBusqueda] = useState('');
@@ -98,6 +100,7 @@ export const PuntoDeVentaPage: React.FC = () => {
   const [recibo, setRecibo] = useState<VentaResponseDto | null>(null);
   const [reciboCliente, setReciboCliente] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
+  const [registrandoVisitante, setRegistrandoVisitante] = useState(false);
   // Tablet/móvil: la venta es un panel que sube desde abajo.
   const [ventaAbierta, setVentaAbierta] = useState(false);
 
@@ -196,7 +199,9 @@ export const PuntoDeVentaPage: React.FC = () => {
       : null;
   const metodoVacio = !metodo.trim();
   const puedeAbrirCobro = puedeVender && turnoAbierto && lineas.length > 0 && !hayErroresLineas;
-  const puedeCobrar = puedeAbrirCobro && !errorRecibido && !metodoVacio && !enviando;
+  // GW-RF-17 CA3: el pase de día deja al visitante con registro mínimo.
+  const paseDiaSinCliente = lineas.some((l) => l.tipo === 'pase_dia') && !cliente;
+  const puedeCobrar = puedeAbrirCobro && !errorRecibido && !metodoVacio && !paseDiaSinCliente && !enviando;
 
   // ---- Carrito ----
   const agregarProducto = (p: ProductoResponse) => {
@@ -407,10 +412,10 @@ export const PuntoDeVentaPage: React.FC = () => {
               />
             </div>
             <Button variant="secondary" size="sm" leftIcon={<CalendarDays size={14} />} onClick={() => agregarPase('pase_dia')} disabled={!turnoAbierto}>
-              Pase de día
+              Pase de día{preciosPases?.pase_dia != null ? ` · ${formatCOP(preciosPases.pase_dia)}` : ''}
             </Button>
             <Button variant="secondary" size="sm" leftIcon={<Ticket size={14} />} onClick={() => agregarPase('pase_clase')} disabled={!turnoAbierto}>
-              Pase de clase
+              Pase de clase{preciosPases?.pase_clase != null ? ` · ${formatCOP(preciosPases.pase_clase)}` : ''}
             </Button>
           </div>
 
@@ -664,11 +669,30 @@ export const PuntoDeVentaPage: React.FC = () => {
             </ul>
 
               <BuscadorDeportista
-                label="Cliente (opcional)"
+                label={lineas.some((l) => l.tipo === 'pase_dia') ? 'Cliente' : 'Cliente (opcional)'}
                 seleccionado={cliente}
                 onSeleccionar={setCliente}
                 disabled={enviando}
               />
+              {paseDiaSinCliente && (
+                <MensajeFijo
+                  tono="advertencia"
+                  accion={
+                    puedeCrearCliente ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        leftIcon={<UserPlus size={14} />}
+                        onClick={() => setRegistrandoVisitante(true)}
+                      >
+                        Registrar visitante
+                      </Button>
+                    ) : undefined
+                  }
+                >
+                  El pase de día necesita un cliente registrado: búscalo o regístralo con nombre, documento y consentimiento.
+                </MensajeFijo>
+              )}
 
               {metodosConfigurados ? (
                 metodosComoBotones ? (
@@ -775,6 +799,17 @@ export const PuntoDeVentaPage: React.FC = () => {
           </div>
         )}
       </Modal>
+
+      <FormularioDeportista
+        isOpen={registrandoVisitante}
+        sinPlan
+        onCerrar={() => setRegistrandoVisitante(false)}
+        onGuardado={(d) => {
+          setRegistrandoVisitante(false);
+          setCliente({ id: d.id, documento: d.documento, nombre: d.nombre, activo: true, tipo_documento: d.tipo_documento });
+          showToast('success', 'Visitante registrado', d.nombre);
+        }}
+      />
     </div>
   );
 };

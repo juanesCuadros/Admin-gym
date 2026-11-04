@@ -22,13 +22,36 @@ async def _fijar_precios(cliente: AsyncClient, headers: dict, **precios):
     return await cliente.patch("/api/v1/my-gym/parametros", json={"version": version, **precios}, headers=headers)
 
 
+async def _visitante(cliente: AsyncClient, headers: dict) -> str:
+    """Registro mínimo: nombre, documento y consentimiento (GW-RF-17 CA3)."""
+    r = await cliente.post(
+        "/api/v1/deportistas",
+        json={
+            "tipo_documento": "CC",
+            "documento": uuid4().hex[:10],
+            "nombre": "Visitante de prueba",
+            "consentimiento_1581": True,
+        },
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
 async def _vender_pase(cliente: AsyncClient, headers: dict, tipo: str, precio_unitario=None):
     item = {"tipo": tipo, "descripcion": "Pase", "cantidad": 1}
     if precio_unitario is not None:
         item["precio_unitario"] = precio_unitario
+    deportista_id = await _visitante(cliente, headers) if tipo == "pase_dia" else None
     return await cliente.post(
         "/api/v1/caja/ventas",
-        json={"metodo": "efectivo", "tipo_medio": "efectivo", "valor_recibido": 100000, "items": [item]},
+        json={
+            "deportista_id": deportista_id,
+            "metodo": "efectivo",
+            "tipo_medio": "efectivo",
+            "valor_recibido": 100000,
+            "items": [item],
+        },
         headers={**headers, "X-Idempotency-Key": str(uuid4())},
     )
 
@@ -81,3 +104,33 @@ async def test_null_lo_deja_sin_configurar_y_omitir_no_lo_cambia(cliente: AsyncC
     assert r.json()["precio_pase_clase"] == 10000
 
     assert (await _fijar_precios(cliente, headers, precio_pase_clase=-1)).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_pase_de_dia_exige_cliente_registrado(cliente: AsyncClient, fabrica: Fabrica):
+    headers = await _jefe_con_turno(cliente, fabrica)
+    item = {"tipo": "pase_dia", "descripcion": "Pase", "cantidad": 1, "precio_unitario": 15000}
+    cuerpo = {"metodo": "efectivo", "tipo_medio": "efectivo", "valor_recibido": 15000, "items": [item]}
+
+    r = await cliente.post("/api/v1/caja/ventas", json=cuerpo, headers={**headers, "X-Idempotency-Key": str(uuid4())})
+    assert r.status_code == 422
+    assert r.json()["error"]["codigo"] == "PASE_DIA_REQUIERE_CLIENTE"
+    turno = (await cliente.get("/api/v1/caja/turnos/actual", headers=headers)).json()
+    assert float(turno["ventas_efectivo"]) == 0  # no se cobró nada
+
+    deportista_id = await _visitante(cliente, headers)
+    r = await cliente.post(
+        "/api/v1/caja/ventas",
+        json={**cuerpo, "deportista_id": deportista_id},
+        headers={**headers, "X-Idempotency-Key": str(uuid4())},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["deportista_id"] == deportista_id
+
+
+@pytest.mark.asyncio
+async def test_pase_de_clase_y_productos_siguen_sin_exigir_cliente(cliente: AsyncClient, fabrica: Fabrica):
+    headers = await _jefe_con_turno(cliente, fabrica)
+    r = await _vender_pase(cliente, headers, "pase_clase", precio_unitario=8000)
+    assert r.status_code == 201, r.text
+    assert r.json()["deportista_id"] is None
