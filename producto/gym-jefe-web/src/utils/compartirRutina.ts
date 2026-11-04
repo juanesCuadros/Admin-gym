@@ -38,7 +38,7 @@ export function enlaceWhatsApp(texto: string, telefono?: string | null): string 
   return `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
 }
 
-const escapar = (s: string) =>
+export const escapar = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /** Abre una ventana con la rutina en formato de hoja y lanza la impresión. */

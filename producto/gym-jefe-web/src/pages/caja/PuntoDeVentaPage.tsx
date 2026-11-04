@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Minus, Plus, ShoppingCart, Trash2, Ticket, CalendarDays, Receipt, PackageSearch, Package, Search, X } from 'lucide-react';
+import { Minus, Plus, Printer, ShoppingCart, Trash2, Ticket, CalendarDays, Receipt, PackageSearch, Package, Search, X } from 'lucide-react';
 import { inventarioService } from '../../api/inventario.service';
 import { myGymService } from '../../api/myGym.service';
 import { cajaService } from '../../api/caja.service';
@@ -8,12 +8,15 @@ import { toApiError, ApiError } from '../../api/client';
 import { useCajaTurno } from '../../contexts/CajaTurnoContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useTenantTheme } from '../../contexts/TenantThemeContext';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
+import { Modal } from '../../components/ui/Modal';
 import { BuscadorDeportista } from '../../components/ui/BuscadorDeportista';
 import { Cargando, ErrorCarga, MensajeFijo } from '../../components/estados/Estados';
 import { formatCOP, formatFechaHora, formatMiles } from '../../utils/formato';
+import { imprimirRecibo } from '../../utils/imprimirRecibo';
 import type { ProductoResponse } from '../../types/inventario.types';
 import type { InfoGymResponse } from '../../types/myGym.types';
 import type { PreciosPasesResponse, VentaItemRequest, VentaResponseDto } from '../../types/caja.types';
@@ -66,6 +69,7 @@ export const PuntoDeVentaPage: React.FC = () => {
   } = useCajaTurno();
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
+  const { tenant } = useTenantTheme();
   const puedeVender = hasPermission('caja', 'crear');
   // Consultas auxiliares solo con permiso: un 403 de permiso saca al usuario de la vista (interceptor).
   const puedeVerInventario = hasPermission('inventario', 'leer');
@@ -92,6 +96,8 @@ export const PuntoDeVentaPage: React.FC = () => {
   const [errorVenta, setErrorVenta] = useState<ApiError | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [recibo, setRecibo] = useState<VentaResponseDto | null>(null);
+  const [reciboCliente, setReciboCliente] = useState<string | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
   // Tablet/móvil: la venta es un panel que sube desde abajo.
   const [ventaAbierta, setVentaAbierta] = useState(false);
 
@@ -189,8 +195,8 @@ export const PuntoDeVentaPage: React.FC = () => {
       ? 'El valor recibido es menor al total. No se aceptan abonos.'
       : null;
   const metodoVacio = !metodo.trim();
-  const puedeCobrar =
-    puedeVender && turnoAbierto && lineas.length > 0 && !hayErroresLineas && !errorRecibido && !metodoVacio && !enviando;
+  const puedeAbrirCobro = puedeVender && turnoAbierto && lineas.length > 0 && !hayErroresLineas;
+  const puedeCobrar = puedeAbrirCobro && !errorRecibido && !metodoVacio && !enviando;
 
   // ---- Carrito ----
   const agregarProducto = (p: ProductoResponse) => {
@@ -248,6 +254,27 @@ export const PuntoDeVentaPage: React.FC = () => {
   };
 
   // ---- Cobro ----
+  const abrirConfirmacion = () => {
+    if (!puedeAbrirCobro) return;
+    setRecibo(null);
+    setErrorVenta(null);
+    setVentaAbierta(false);
+    setConfirmando(true);
+  };
+
+  const cerrarConfirmacion = () => {
+    if (enviando) return;
+    setConfirmando(false);
+    setRecibo(null);
+  };
+
+  const imprimir = () => {
+    if (!recibo) return;
+    if (!imprimirRecibo(recibo, tenant.nombre, reciboCliente)) {
+      showToast('warning', 'No se pudo abrir la impresión', 'Permite las ventanas emergentes de este sitio e inténtalo de nuevo.');
+    }
+  };
+
   const cobrar = async () => {
     if (!puedeCobrar) return;
     const clave = idempotencyKey ?? crypto.randomUUID();
@@ -286,7 +313,7 @@ export const PuntoDeVentaPage: React.FC = () => {
         clave
       );
       setRecibo(venta);
-      setVentaAbierta(true);
+      setReciboCliente(cliente?.nombre ?? null);
       setLineas([]);
       setCliente(null);
       setValorRecibido('');
@@ -467,34 +494,6 @@ export const PuntoDeVentaPage: React.FC = () => {
           </div>
 
           <div className="venta-scroll">
-            {recibo && (
-              <div style={{ padding: '14px 18px 0' }}>
-                <MensajeFijo
-                  tono="info"
-                  titulo={`Venta registrada · ${formatCOP(recibo.total)}`}
-                  accion={
-                    <Button variant="ghost" size="sm" onClick={() => setRecibo(null)}>
-                      Cerrar
-                    </Button>
-                  }
-                >
-                  <div>
-                    {formatFechaHora(recibo.created_at)} · {recibo.metodo}
-                    {recibo.cambio_devuelto !== null && recibo.cambio_devuelto !== undefined && Number(recibo.cambio_devuelto) > 0 && (
-                      <> · Cambio: <strong>{formatCOP(recibo.cambio_devuelto)}</strong></>
-                    )}
-                  </div>
-                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                    {recibo.items.map((it) => (
-                      <li key={it.id}>
-                        {it.cantidad} × {it.descripcion} · {formatCOP(it.subtotal)}
-                      </li>
-                    ))}
-                  </ul>
-                </MensajeFijo>
-              </div>
-            )}
-
             <div className="venta-items">
               {lineas.length === 0 ? (
                 <div className="venta-vacia">
@@ -578,6 +577,92 @@ export const PuntoDeVentaPage: React.FC = () => {
           </div>
 
           <div className="venta-pago">
+              <div className="venta-total">
+                <span>Total</span>
+                <strong>{formatCOP(total)}</strong>
+              </div>
+
+              <Button
+                variant="primary"
+                size="lg"
+                className="venta-cobrar"
+                leftIcon={<Receipt size={17} />}
+                onClick={abrirConfirmacion}
+                disabled={!puedeAbrirCobro}
+              >
+                Cobrar {lineas.length > 0 ? formatCOP(total) : ''}
+              </Button>
+          </div>
+        </aside>
+      </div>
+
+      {/* Barra inferior (tablet y móvil) */}
+      <button type="button" className="venta-barra" onClick={() => setVentaAbierta(true)}>
+        <ShoppingCart size={18} />
+        <span>{unidades > 0 ? `Ver venta · ${unidades} ${unidades === 1 ? 'ítem' : 'ítems'}` : 'Venta vacía'}</span>
+        <strong>{formatCOP(total)}</strong>
+      </button>
+
+      <Modal
+        isOpen={confirmando}
+        onClose={cerrarConfirmacion}
+        title={recibo ? 'Venta registrada' : 'Confirmar venta'}
+        footer={
+          recibo ? (
+            <>
+              <Button variant="secondary" leftIcon={<Printer size={16} />} onClick={imprimir}>
+                Imprimir recibo
+              </Button>
+              <Button variant="primary" onClick={cerrarConfirmacion}>
+                Nueva venta
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={cerrarConfirmacion} disabled={enviando}>
+                Volver
+              </Button>
+              <Button variant="primary" onClick={cobrar} isLoading={enviando} disabled={!puedeCobrar}>
+                Confirmar {formatCOP(total)}
+              </Button>
+            </>
+          )
+        }
+      >
+        {recibo ? (
+          <div className="venta-recibo">
+            <div className="venta-total" style={{ padding: 0, border: 0 }}>
+              <span>Total</span>
+              <strong>{formatCOP(recibo.total)}</strong>
+            </div>
+            <p style={{ margin: '4px 0 12px', fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)' }}>
+              {formatFechaHora(recibo.created_at)} · {recibo.metodo}
+              {reciboCliente ? ` · ${reciboCliente}` : ''}
+            </p>
+            {recibo.cambio_devuelto !== null && recibo.cambio_devuelto !== undefined && Number(recibo.cambio_devuelto) > 0 && (
+              <div className="venta-linea" style={{ marginBottom: 12 }}>
+                <span>Cambio a devolver</span>
+                <strong>{formatCOP(recibo.cambio_devuelto)}</strong>
+              </div>
+            )}
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--fs-sm)' }}>
+              {recibo.items.map((it) => (
+                <li key={it.id}>
+                  {it.cantidad} × {it.descripcion} · {formatCOP(it.subtotal)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--fs-sm)' }}>
+              {lineas.map((l) => (
+                <li key={l.clave}>
+                  {l.cantidad} × {l.descripcion} · {formatCOP(precioFinal(l) * l.cantidad)}
+                </li>
+              ))}
+            </ul>
+
               <BuscadorDeportista
                 label="Cliente (opcional)"
                 seleccionado={cliente}
@@ -664,10 +749,10 @@ export const PuntoDeVentaPage: React.FC = () => {
                 </>
               )}
 
-              <div className="venta-total">
-                <span>Total</span>
-                <strong>{formatCOP(total)}</strong>
-              </div>
+            <div className="venta-total" style={{ padding: 0, border: 0 }}>
+              <span>Total</span>
+              <strong>{formatCOP(total)}</strong>
+            </div>
 
               {errorVenta && (
                 <MensajeFijo tono="error" titulo="No se registró la venta">
@@ -687,27 +772,9 @@ export const PuntoDeVentaPage: React.FC = () => {
                 </MensajeFijo>
               )}
 
-              <Button
-                variant="primary"
-                size="lg"
-                className="venta-cobrar"
-                leftIcon={<Receipt size={17} />}
-                onClick={cobrar}
-                isLoading={enviando}
-                disabled={!puedeCobrar}
-              >
-                Cobrar {lineas.length > 0 ? formatCOP(total) : ''}
-              </Button>
           </div>
-        </aside>
-      </div>
-
-      {/* Barra inferior (tablet y móvil) */}
-      <button type="button" className="venta-barra" onClick={() => setVentaAbierta(true)}>
-        <ShoppingCart size={18} />
-        <span>{unidades > 0 ? `Ver venta · ${unidades} ${unidades === 1 ? 'ítem' : 'ítems'}` : recibo ? 'Ver última venta' : 'Venta vacía'}</span>
-        <strong>{formatCOP(total)}</strong>
-      </button>
+        )}
+      </Modal>
     </div>
   );
 };
