@@ -172,6 +172,28 @@ export interface EgresoResponseDto {
   created_at: string;
 }
 
+export interface TurnoHistorialDto extends TurnoResumenDto {
+  estado_revision?: 'pendiente_revision' | 'revisado' | null;
+  revisado_por_nombre?: string | null;
+}
+
+export interface ListadoTurnosResponse {
+  items: TurnoHistorialDto[];
+  total: number;
+  pagina: number;
+  limite: number;
+  total_paginas: number;
+}
+
+export interface FiltrosTurnos {
+  desde: string;
+  hasta: string;
+  staff_id?: string;
+  con_descuadre?: boolean;
+  pagina?: number;
+  limite?: number;
+}
+
 export interface MovimientoCajaItemDto {
   id: string;
   tipo_movimiento: 'venta' | 'pago_membresia' | 'egreso' | 'devolucion';

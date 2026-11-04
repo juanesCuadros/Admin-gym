@@ -51,6 +51,19 @@ class TurnoResumenDto(BaseModel):
 
 
 # --- Punto de Venta (Ventas Multi-Ítem) ---
+class TurnoHistorialDto(TurnoResumenDto):
+    estado_revision: Optional[str] = None
+    revisado_por_nombre: Optional[str] = None
+
+
+class ListadoTurnosResponse(BaseModel):
+    items: List[TurnoHistorialDto]
+    total: int
+    pagina: int
+    limite: int
+    total_paginas: int
+
+
 class VentaItemRequest(BaseModel):
     tipo: Literal["producto", "pase_dia", "pase_clase"] = Field(
         ...,

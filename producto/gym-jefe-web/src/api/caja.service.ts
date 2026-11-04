@@ -5,6 +5,8 @@ import {
   CierreForzadoRequest,
   CerrarTurnoAjenoRequest,
   TurnoResumenDto,
+  FiltrosTurnos,
+  ListadoTurnosResponse,
   RegistrarVentaRequest,
   VentaResponseDto,
   RegistrarPagoMembresiaRequest,
@@ -55,6 +57,12 @@ export const cajaService = {
 
   async cierreForzado(turnoId: string, data: CierreForzadoRequest): Promise<TurnoResumenDto> {
     const response = await apiClient.post<TurnoResumenDto>(`/caja/turnos/${turnoId}/cierre-forzado`, data);
+    return response.data;
+  },
+
+  /** Turnos cerrados (GW-RF-10, GW-RF-13). Las fechas son días de Bogotá sobre la apertura del turno. */
+  async listarTurnos(params: FiltrosTurnos): Promise<ListadoTurnosResponse> {
+    const response = await apiClient.get<ListadoTurnosResponse>('/caja/turnos', { params });
     return response.data;
   },
 

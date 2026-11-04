@@ -11,9 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from zoneinfo import ZoneInfo
 
 from app.core.audit import AuditService
-from app.core.timezone import now_local, today_local
+from app.core.timezone import get_local_day_range_utc, now_local, today_local
 from app.modules.caja.reglas import calcular_vencimiento_renovacion_c2
 from app.modules.caja.schemas import (
+    ListadoTurnosResponse,
+    TurnoHistorialDto,
     AbrirTurnoRequest,
     AnularPagoMembresiaRequest,
     AnularVentaRequest,
@@ -180,6 +182,83 @@ class CajaService:
         turno["es_propio"] = (turno["staff_id"] == staff_id)
         turno["abierto_por_nombre"] = turno["staff_nombre"]
         return await cls._calcular_acumulados_turno(session, turno)
+
+    @classmethod
+    async def listar_turnos(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        staff_actual_id: UUID,
+        desde: date,
+        hasta: date,
+        estado: str = "cerrado",
+        staff_id: Optional[UUID] = None,
+        con_descuadre: bool = False,
+        pagina: int = 1,
+        limite: int = 20,
+    ) -> ListadoTurnosResponse:
+        """Turnos del gimnasio por el día de Bogotá en que se abrieron (GW-RF-10, GW-RF-13)."""
+        if hasta < desde:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"codigo": "RANGO_FECHAS_INVALIDO", "mensaje": "La fecha inicial no puede ser posterior a la final."}
+            )
+        inicio_utc, _ = get_local_day_range_utc(desde)
+        _, fin_utc = get_local_day_range_utc(hasta)
+
+        condiciones = [
+            "t.gimnasio_id = :gym_id",
+            "t.estado = :estado",
+            "t.abierto_en BETWEEN :inicio_utc AND :fin_utc",
+        ]
+        params: Dict[str, object] = {"gym_id": gym_id, "estado": estado, "inicio_utc": inicio_utc, "fin_utc": fin_utc}
+        if staff_id is not None:
+            condiciones.append("t.staff_id = :staff_id")
+            params["staff_id"] = staff_id
+        if con_descuadre:
+            condiciones.append("t.diferencia IS NOT NULL AND t.diferencia <> 0")
+        where = " AND ".join(condiciones)
+
+        total = (
+            await session.execute(text(f"SELECT COUNT(*) FROM platform.turnos_caja t WHERE {where}"), params)
+        ).scalar_one()
+
+        filas = await session.execute(
+            text(f"""
+                SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre as staff_nombre, t.base_inicial,
+                       t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia,
+                       t.estado_revision, t.revisado_en, rev.nombre as revisado_por_nombre
+                FROM platform.turnos_caja t
+                JOIN platform.staff s ON s.id = t.staff_id
+                LEFT JOIN platform.staff rev ON rev.id = t.revisado_por
+                WHERE {where}
+                ORDER BY t.abierto_en DESC
+                LIMIT :limite OFFSET :desplazamiento
+            """),
+            {**params, "limite": limite, "desplazamiento": (pagina - 1) * limite},
+        )
+
+        items: List[TurnoHistorialDto] = []
+        for fila in filas.mappings().all():
+            turno = dict(fila)
+            turno["es_propio"] = turno["staff_id"] == staff_actual_id
+            turno["abierto_por_nombre"] = turno["staff_nombre"]
+            resumen = await cls._calcular_acumulados_turno(session, turno)
+            items.append(
+                TurnoHistorialDto(
+                    **{**resumen.model_dump(), "revisado_en": turno["revisado_en"]},
+                    estado_revision=turno["estado_revision"],
+                    revisado_por_nombre=turno["revisado_por_nombre"],
+                )
+            )
+
+        return ListadoTurnosResponse(
+            items=items,
+            total=total,
+            pagina=pagina,
+            limite=limite,
+            total_paginas=max(1, (total + limite - 1) // limite),
+        )
 
     @classmethod
     async def cerrar_turno(

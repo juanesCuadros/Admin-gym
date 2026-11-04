@@ -1,6 +1,7 @@
-from typing import Annotated, Dict
+from datetime import date
+from typing import Annotated, Dict, Literal, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Header, Path, status
+from fastapi import APIRouter, Depends, Header, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import (
@@ -18,6 +19,7 @@ from app.modules.caja.schemas import (
     CierreForzadoRequest,
     EgresoResponseDto,
     HistorialMovimientosTurnoResponse,
+    ListadoTurnosResponse,
     PagoMembresiaResponseDto,
     PreciosPasesResponse,
     RegistrarEgresoRequest,
@@ -56,6 +58,36 @@ async def abrir_turno(
         staff_id=current_staff.id,
         staff_nombre=current_staff.nombre,
         data=data
+    )
+
+
+@router.get(
+    "/turnos",
+    response_model=ListadoTurnosResponse,
+    summary="Historial de turnos con su arqueo y descuadre (RF-10, RF-13)"
+)
+async def listar_turnos(
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("caja", "leer"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    desde: date = Query(..., description="Primer día, por la apertura del turno (YYYY-MM-DD, Bogotá)"),
+    hasta: date = Query(..., description="Último día, incluido (YYYY-MM-DD, Bogotá)"),
+    estado: Literal["abierto", "cerrado"] = Query("cerrado"),
+    staff_id: Optional[UUID] = Query(None, description="Solo los turnos abiertos por esta persona"),
+    con_descuadre: bool = Query(False, description="Solo los turnos con diferencia distinta de cero"),
+    pagina: int = Query(1, ge=1),
+    limite: int = Query(20, ge=1, le=100),
+):
+    return await CajaService.listar_turnos(
+        session=session,
+        gym_id=current_staff.gimnasio_id,
+        staff_actual_id=current_staff.staff_id,
+        desde=desde,
+        hasta=hasta,
+        estado=estado,
+        staff_id=staff_id,
+        con_descuadre=con_descuadre,
+        pagina=pagina,
+        limite=limite,
     )
 
 
