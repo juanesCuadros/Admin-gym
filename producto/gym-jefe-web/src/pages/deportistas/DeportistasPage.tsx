@@ -855,7 +855,7 @@ export const DeportistasPage: React.FC = () => {
                       >
                         <Calculator size={14} />
                         <span>
-                          Medidas derivadas (cálculo automático · {sexoMedicion === 'F' ? 'Mujer' : 'Hombre'})
+                          Medidas derivadas (cálculo automático · {sexoMedicion === 'F' ? 'Mujer' : sexoMedicion === 'M' ? 'Hombre' : 'indica el sexo'})
                         </span>
                       </div>
                       <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
