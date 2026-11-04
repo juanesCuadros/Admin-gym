@@ -111,7 +111,7 @@ export const ConfigMetodosPagoPage: React.FC<{ embebido?: boolean; onGuardado?: 
       ) : errorCarga || !info ? (
         <ErrorCarga error={errorCarga} onReintentar={cargar} />
       ) : (
-        <Card style={{ maxWidth: 640 }}>
+        <Card style={embebido ? undefined : { maxWidth: 640 }}>
           {!puedeEditar && (
             <MensajeFijo tono="info" style={{ marginBottom: 16 }}>
               Puedes ver los métodos de pago, pero no tienes permiso para cambiarlos.

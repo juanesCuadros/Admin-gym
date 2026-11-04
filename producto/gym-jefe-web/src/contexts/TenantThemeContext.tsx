@@ -1,3 +1,4 @@
+import { urlDeImagen } from '../api/client';
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { apiClient, toApiError, STORAGE } from '../api/client';
 import { TenantConfig, PublicBrandingData, EstadoBranding } from '../types/tenant.types';
@@ -96,7 +97,7 @@ export const TenantThemeProvider: React.FC<{ children: ReactNode }> = ({ childre
         primary_color: b.primary_color || undefined,
         secondary_color: b.secondary_color || undefined,
         accent_color: b.accent_color || undefined,
-        logo_url: b.logo_url ?? null,
+        logo_url: urlDeImagen(b.logo_url) ?? null,
       }));
       setEstadoBranding('ok');
       return 'ok';

@@ -46,7 +46,7 @@ export const ClasesPage: React.FC = () => {
   const [formData, setFormData] = useState<ProgramarClaseRequest>({
     nombre: '',
     tipo: 'Spinning',
-    profesor_externo: 'Instructor Staff',
+    profesor_externo: '',
     cupo: 20,
     fecha_hora: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
     duracion_minutos: 60,
