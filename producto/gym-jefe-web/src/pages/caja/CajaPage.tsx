@@ -124,7 +124,7 @@ export const CajaPage: React.FC = () => {
       setShowAbrirModal(false);
       setBaseInicial('');
       setAjenoDelError(null);
-      showToast('success', 'Turno abierto', 'La caja quedó lista para vender y cobrar.');
+      showToast('success', 'Caja abierta', 'Quedó lista para vender y cobrar.');
       await trasCambioDeTurno();
     } catch (err) {
       const e = toApiError(err);
@@ -271,7 +271,7 @@ export const CajaPage: React.FC = () => {
                 setShowCerrarModal(true);
               }}
             >
-              Cerrar turno
+              Cerrar caja
             </Button>
           </div>
         )}
@@ -312,7 +312,7 @@ export const CajaPage: React.FC = () => {
             )
           }
         >
-          Turno abierto el {formatFechaHora(turnoAjeno.abierto_en)}. En el gimnasio solo puede haber un turno abierto: para
+          Caja abierta el {formatFechaHora(turnoAjeno.abierto_en)}. En el gimnasio solo puede haber una caja abierta: para
           vender o cobrar con tu usuario, ciérralo con el conteo del efectivo y abre el tuyo. El descuadre, si lo hay, queda a
           nombre de {turnoAjeno.abierto_por_nombre}.
         </MensajeFijo>
@@ -401,14 +401,14 @@ export const CajaPage: React.FC = () => {
           <Card style={{ textAlign: 'center', padding: '40px 20px', marginBottom: 28 }}>
             {(isRecepcionista || llegoRedirigida) && (
               <MensajeFijo tono="info" titulo="Primero abre la caja" style={{ marginBottom: 20, textAlign: 'left' }}>
-                No hay un turno de caja abierto en el gimnasio. Ábrelo con la base de efectivo para empezar la jornada; mientras
+                La caja del gimnasio está cerrada. Ábrelo con la base de efectivo para empezar la jornada; mientras
                 tanto el resto del sistema queda bloqueado.
               </MensajeFijo>
             )}
             <Lock size={48} color="var(--text-muted)" style={{ marginBottom: 12 }} />
             <h3 style={{ fontSize: '1.25rem', fontWeight: 500, color: 'var(--text-primary)' }}>No hay turno de caja abierto</h3>
             <p style={{ color: 'var(--text-secondary)', maxWidth: 450, margin: '8px auto 20px auto' }}>
-              Para vender, cobrar membresías o registrar egresos, abre el turno con la base de efectivo para dar cambio.
+              Para vender, cobrar membresías o registrar egresos, abre la caja con la base de efectivo para dar cambio.
             </p>
             {puedeOperar ? (
               <Button
@@ -419,7 +419,7 @@ export const CajaPage: React.FC = () => {
                 }}
                 leftIcon={<Unlock size={16} />}
               >
-                Abrir turno
+                Abrir caja
               </Button>
             ) : (
               <p style={{ color: 'var(--text-muted)' }}>No tienes permiso para abrir la caja.</p>
@@ -432,7 +432,7 @@ export const CajaPage: React.FC = () => {
       <Modal
         isOpen={showAbrirModal}
         onClose={() => !isProcessing && setShowAbrirModal(false)}
-        title="Abrir turno de caja"
+        title="Abrir caja"
         footer={
           <>
             <Button variant="outline" onClick={() => setShowAbrirModal(false)} disabled={isProcessing}>
@@ -444,7 +444,7 @@ export const CajaPage: React.FC = () => {
               isLoading={isProcessing}
               disabled={base === null || base < 0}
             >
-              Abrir turno
+              Abrir caja
             </Button>
           </>
         }
@@ -480,7 +480,7 @@ export const CajaPage: React.FC = () => {
               isLoading={isProcessing}
               disabled={contado === null || contado < 0}
             >
-              Cerrar turno
+              Cerrar caja
             </Button>
           </>
         }
@@ -572,7 +572,7 @@ export const CajaPage: React.FC = () => {
         isDestructive
         title="Confirmar cierre de turno ajeno"
         message={`Vas a cerrar el turno de ${ajenoACerrar?.abierto_por_nombre ?? ''} con ${formatCOP(conteoAjenoNum ?? 0)} contados. Esta acción no se puede deshacer y queda en la auditoría.`}
-        confirmText="Cerrar turno"
+        confirmText="Cerrar caja"
       />
 
       {/* Egreso */}

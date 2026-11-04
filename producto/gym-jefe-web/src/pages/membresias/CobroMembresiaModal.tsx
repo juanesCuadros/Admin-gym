@@ -67,7 +67,7 @@ function mensajeError(err: ApiError): string {
         : 'El descuento supera el tope permitido por el gimnasio.';
     }
     case 'NO_HAY_TURNO_ABIERTO':
-      return 'Necesitas tu propio turno de caja abierto para cobrar.';
+      return 'Necesitas la caja abierta a tu nombre para cobrar.';
     case 'PAGO_INSUFICIENTE':
       return 'El valor recibido es menor al valor a cobrar. No se aceptan abonos.';
     default:
@@ -270,7 +270,7 @@ export const CobroMembresiaModal: React.FC<CobroMembresiaModalProps> = ({ destin
               }
               style={{ marginBottom: 12 }}
             >
-              Para cobrar necesitas tu propio turno abierto.
+              Para cobrar necesitas la caja abierta a tu nombre.
             </MensajeFijo>
           )}
 

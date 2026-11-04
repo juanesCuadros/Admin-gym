@@ -72,9 +72,9 @@ export const NAVEGACION: GrupoNav[] = [
         icono: CreditCard,
         submodulo: 'caja',
         submodulos: [
-          { id: 'caja.turno_actual', etiqueta: 'Turno actual', ruta: '/caja' },
+          { id: 'caja.turno_actual', etiqueta: 'Caja actual', ruta: '/caja' },
           { id: 'caja.punto_de_venta', etiqueta: 'Punto de venta', ruta: '/caja/punto-de-venta' },
-          { id: 'caja.historial', etiqueta: 'Historial de turnos', ruta: '/caja/historial' },
+          { id: 'caja.historial', etiqueta: 'Historial de caja', ruta: '/caja/historial' },
         ],
       },
       {
@@ -150,6 +150,7 @@ export const NAVEGACION: GrupoNav[] = [
         submodulo: 'personal',
         submodulos: [
           { id: 'personal.staff', etiqueta: 'Equipo', ruta: '/personal' },
+          { id: 'personal.turnos', etiqueta: 'Turnos de trabajo', ruta: '/personal/turnos' },
           { id: 'personal.permisos', etiqueta: 'Permisos', ruta: '/personal/permisos' },
         ],
       },

@@ -212,7 +212,7 @@ export const ReservarCupoModal: React.FC<ReservarCupoModalProps> = ({ clase, isO
                 </Link>
               }
             >
-              Para cobrar el pase necesitas tu turno de caja abierto.
+              Para cobrar el pase necesitas la caja abierta a tu nombre.
             </MensajeFijo>
           ) : (
             <>

@@ -152,8 +152,8 @@ export const HistorialTurnosPage: React.FC = () => {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Historial de turnos</h1>
-          <p className="page-subtitle">Turnos de caja cerrados, con su arqueo y descuadre</p>
+          <h1 className="page-title">Historial de caja</h1>
+          <p className="page-subtitle">Cada cierre de caja, con su arqueo y descuadre</p>
         </div>
       </div>
 
@@ -188,8 +188,8 @@ export const HistorialTurnosPage: React.FC = () => {
         <Card>
           <VacioInicial
             icono={<History size={24} />}
-            titulo={hayFiltrosExtra ? 'Ningún turno coincide con los filtros' : 'No hay turnos cerrados en estas fechas'}
-            descripcion="Aquí aparecen los turnos de caja una vez se cierran, con lo esperado, lo contado y la diferencia."
+            titulo={hayFiltrosExtra ? 'Ningún cierre coincide con los filtros' : 'No hay cierres de caja en estas fechas'}
+            descripcion="Aquí aparece cada caja una vez se cierra, con lo esperado, lo contado y la diferencia."
           />
         </Card>
       ) : (
@@ -237,7 +237,7 @@ export const HistorialTurnosPage: React.FC = () => {
         </Card>
       )}
 
-      <Modal isOpen={!!detalle} onClose={() => setDetalle(null)} title="Detalle del turno" maxWidth="760px">
+      <Modal isOpen={!!detalle} onClose={() => setDetalle(null)} title="Detalle de la caja" maxWidth="760px">
         {detalle && (
           <>
             <div className="checkin-stats" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
@@ -318,7 +318,7 @@ export const HistorialTurnosPage: React.FC = () => {
                 data={movimientos}
                 isLoading={cargandoMovs}
                 keyExtractor={(m) => `${m.tipo_movimiento}-${m.id}`}
-                emptyMessage="Este turno no tuvo movimientos."
+                emptyMessage="Esta caja no tuvo movimientos."
               />
             )}
           </>

@@ -93,3 +93,5 @@ Todos los supuestos S-xx y SW-xx de la revisión quedaron aceptados e integrados
 | Mediciones (3-nov) | La fecha de nacimiento se queda en el registro y la estatura pasa a mediciones. Sexo y estatura son obligatorios para medir; nunca se calcula con valores supuestos |
 | Auditoría (3-nov) | Se quita la pantalla y su enlace; se sigue registrando todo |
 | Pase de día (4-nov) | Exige cliente registrado y permite entrar ese día, incluso varias veces. Al desactivado se le sigue negando |
+| Caja y turno de trabajo (4-nov) | Sigue una sola caja por gimnasio (P-13). Recepción entra sin abrir caja y se le pide solo al cobrar; reemplaza GW-RF-00.1 CA4. El turno de trabajo es aparte: varias personas a la vez, registra entrada y salida y calcula las horas. No toca dinero |
+| Pantalla TV (4-nov) | Se abre desde la sesión sin emparejar. Saluda con el primer nombre y no recibe ingresos negados ni el documento |

@@ -8,12 +8,10 @@ import { BuscadorModulos } from './BuscadorModulos';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
-  /** Recepcionista sin turno: no se ofrece el buscador (solo puede estar en /caja). */
-  navegacionBloqueada?: boolean;
 }
 
 /** Header (§B3): nombre y logo · estado de caja · buscador. La cuenta está en la barra de módulos. Sin selector de gimnasio. */
-export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, navegacionBloqueada = false }) => {
+export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
   const { hasPermission } = useAuth();
   const { tenant, themeMode, toggleThemeMode } = useTenantTheme();
   const { turno, cargando, error, turnoAbierto } = useCajaTurno();
@@ -36,12 +34,12 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, navegacionBloqu
       clase = 'ok';
       texto = 'Caja abierta';
       corto = 'Abierta';
-      titulo = turno?.staff_nombre ? `Turno abierto por ${turno.staff_nombre}` : 'Turno abierto';
+      titulo = turno?.staff_nombre ? `Caja abierta por ${turno.staff_nombre}` : 'Caja abierta';
     } else if (!cargando) {
       clase = 'warn';
       texto = 'Caja cerrada';
       corto = 'Cerrada';
-      titulo = 'No hay turno abierto';
+      titulo = 'La caja está cerrada';
     }
     estadoCaja = (
       <button
@@ -73,7 +71,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, navegacionBloqu
       <div className="header-right">
         {estadoCaja}
 
-        <BuscadorModulos deshabilitado={navegacionBloqueada} />
+        <BuscadorModulos />
 
         <button
           type="button"

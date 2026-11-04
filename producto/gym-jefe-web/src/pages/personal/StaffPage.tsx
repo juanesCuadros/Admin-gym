@@ -618,7 +618,7 @@ export const StaffPage: React.FC = () => {
         message={
           <>
             <strong>{aDesactivar?.nombre}</strong> no podrá iniciar sesión y sus sesiones abiertas se cierran de
-            inmediato. Si tiene un turno de caja abierto, el turno queda abierto hasta que otra persona lo cierre.
+            inmediato. Si tiene la caja abierta, queda abierta hasta que otra persona la cierre.
           </>
         }
         confirmText="Desactivar"

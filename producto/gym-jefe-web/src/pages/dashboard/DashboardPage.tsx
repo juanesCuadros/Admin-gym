@@ -194,7 +194,7 @@ export const DashboardPage: React.FC = () => {
                       : 'Cerrada'
               }
               icon={<CreditCard size={18} />}
-              subtext={caja.turnoAbierto ? 'Efectivo esperado en el turno' : 'No hay turno abierto'}
+              subtext={caja.turnoAbierto ? 'Efectivo esperado en caja' : 'La caja está cerrada'}
             />
           )}
           {puedeClases && (
