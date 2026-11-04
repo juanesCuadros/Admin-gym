@@ -323,7 +323,6 @@ export const PuntoDeVentaPage: React.FC = () => {
       setCliente(null);
       setValorRecibido('');
       setIdempotencyKey(null);
-      showToast('success', 'Venta registrada', `Total ${formatCOP(venta.total)}`);
       refrescarTurno();
       cargarProductos(busqueda);
     } catch (e) {
@@ -609,7 +608,8 @@ export const PuntoDeVentaPage: React.FC = () => {
       </button>
 
       <Modal
-        isOpen={confirmando}
+        // El formulario es un panel lateral y queda debajo de los modales: mientras está abierto, el modal se oculta.
+        isOpen={confirmando && !registrandoVisitante}
         onClose={cerrarConfirmacion}
         title={recibo ? 'Venta registrada' : 'Confirmar venta'}
         footer={

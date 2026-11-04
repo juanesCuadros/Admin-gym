@@ -140,6 +140,14 @@ Usa las funciones `platform.plan_actual`, `planes_disponibles`, `solicitud_plan_
 
 ---
 
+## Usabilidad · Tanda 1 (GW)
+
+| Método y ruta | Cambio |
+|---|---|
+| `GET /control-ingreso/historial` **(nuevo)** | Query `desde`, `hasta` (días de Bogotá, ambos incluidos), `limit`, `offset`. Responde `{desde, hasta, resumen: {total_registros, accesos_abiertos, alertas_mora, accesos_negados, cortesias}, items}`. `422 RANGO_FECHAS_INVALIDO` si `hasta < desde`. Permiso `control_ingreso:leer` |
+| `GET /caja/turnos` **(nuevo)** | Query `desde`, `hasta` (días de Bogotá sobre la apertura), `estado` (por defecto `cerrado`), `staff_id`, `con_descuadre`, `pagina`, `limite`. Responde `{items: TurnoResumenDto + {estado_revision, revisado_por_nombre}, total, pagina, limite, total_paginas}`. `422 RANGO_FECHAS_INVALIDO` si `hasta < desde`. Permiso `caja:leer` |
+| `POST /caja/ventas` | Una venta con `pase_dia` sin `deportista_id` responde `422 PASE_DIA_REQUIERE_CLIENTE` (GW-RF-17 CA3) |
+
 ## Carril 3 · Super-Admin y SaaS (SA)
 
 ### 3.1 Planes de suscripción (SA-RF-33)
