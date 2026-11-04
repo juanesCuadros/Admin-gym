@@ -206,7 +206,7 @@ class PersonalService:
         except IntegrityError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"codigo": "CORREO_DUPLICADO", "mensaje": f"Conflicto de unicidad: ya existe un usuario con el correo {data.correo} en este gimnasio"},
+                detail={"codigo": "CORREO_DUPLICADO", "mensaje": f"Ya existe una persona del equipo con el correo {data.correo}."},
             )
 
         # Registro de auditoría append-only
@@ -257,7 +257,7 @@ class PersonalService:
         if target["rol"] == "jefe":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"codigo": "OPERACION_INVALIDA_SOBRE_JEFE", "mensaje": "No se puede editar los datos del Jefe del gimnasio mediante este endpoint"},
+                detail={"codigo": "OPERACION_INVALIDA_SOBRE_JEFE", "mensaje": "Los datos del Jefe del gimnasio no se editan desde aquí."},
             )
 
         # Pre-validar duplicidad de correo excluyendo al mismo usuario

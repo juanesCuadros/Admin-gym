@@ -810,7 +810,7 @@ class ReportesService:
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"codigo": "TIPO_REPORTE_INVALIDO", "mensaje": f"Tipo de reporte desconocido: '{tipo_reporte}'"}
+                detail={"codigo": "TIPO_REPORTE_INVALIDO", "mensaje": "Ese reporte no existe."}
             )
 
         timestamp_str = now_local().strftime("%Y%m%d_%H%M%S")

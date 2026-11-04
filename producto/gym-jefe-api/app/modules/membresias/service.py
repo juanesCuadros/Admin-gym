@@ -200,7 +200,7 @@ class MembresiasService:
         except IntegrityError:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"codigo": "PLAN_YA_EXISTE", "mensaje": "Conflicto de unicidad al crear el plan"}
+                detail={"codigo": "PLAN_YA_EXISTE", "mensaje": "Ya existe un plan con ese nombre en este gimnasio."}
             )
 
         await AuditService.registrar(
@@ -864,7 +864,7 @@ class MembresiasService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={
                     "codigo": "MEMBRESIA_NO_CONGELABLE",
-                    "mensaje": f"Solo se puede congelar una membresía en estado 'activo' o 'por_vencer' (estado actual: '{calc.estado}')"
+                    "mensaje": f"Solo se puede congelar una membresía activa o por vencer. Esta está {str(calc.estado).replace('_', ' ')}."
                 }
             )
 
@@ -1359,7 +1359,7 @@ class MembresiasService:
             if b_id not in deps_map:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail={"codigo": "DEPORTISTA_NO_ENCONTRADO", "mensaje": f"El deportista con ID {b_id} no existe o no pertenece a este gimnasio"}
+                    detail={"codigo": "DEPORTISTA_NO_ENCONTRADO", "mensaje": "Uno de los beneficiarios no existe en este gimnasio."}
                 )
             if not deps_map[b_id]["activo"]:
                 raise HTTPException(

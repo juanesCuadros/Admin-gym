@@ -68,7 +68,7 @@ async def get_current_staff(
         if payload.get("type") != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={"codigo": "TOKEN_INVALIDO", "mensaje": "Tipo de token inválido"},
+                detail={"codigo": "TOKEN_INVALIDO", "mensaje": "Tu sesión no es válida. Vuelve a iniciar sesión."},
                 headers={"WWW-Authenticate": "Bearer"}
             )
         staff_id = UUID(payload["sub"])
@@ -135,10 +135,19 @@ def require_role(*allowed_roles: str) -> Callable:
         if current_staff.rol not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail={"codigo": "ROL_NO_AUTORIZADO", "mensaje": f"Acceso denegado. Rol requerido: {', '.join(allowed_roles)}"}
+                detail={"codigo": "ROL_NO_AUTORIZADO", "mensaje": "Tu rol no tiene acceso a esta opción."}
             )
         return current_staff
     return role_checker
+
+
+_COLUMNA_PERMISO = {
+    "crear": "puede_crear",
+    "leer": "puede_leer",
+    "ver": "puede_leer",
+    "editar": "puede_editar",
+    "eliminar": "puede_eliminar"
+}
 
 
 def require_permission(submodulo: str, accion: str) -> Callable:
@@ -149,42 +158,42 @@ def require_permission(submodulo: str, accion: str) -> Callable:
     - Otros roles: Consulta platform.permisos_rol en cada request en PostgreSQL.
     Acciones canónicas: 'leer', 'crear', 'editar', 'eliminar'.
     """
-    col_map = {
-        "crear": "puede_crear",
-        "leer": "puede_leer",
-        "ver": "puede_leer",
-        "editar": "puede_editar",
-        "eliminar": "puede_eliminar"
-    }
-    columna_permiso = col_map.get(accion.lower())
-    if not columna_permiso:
+    if accion.lower() not in _COLUMNA_PERMISO:
         raise ValueError(f"Acción de permiso desconocida: {accion}")
 
     async def permission_checker(
         current_staff: Annotated[AuthenticatedStaff, Depends(get_current_staff)],
         session: Annotated[AsyncSession, Depends(get_db_session)],
     ) -> AuthenticatedStaff:
-        # El Jefe siempre tiene acceso total implícito
-        if current_staff.rol == "jefe":
-            return current_staff
-
-        query = text(f"""
-            SELECT {columna_permiso}
-            FROM platform.permisos_rol
-            WHERE gimnasio_id = :gym_id AND rol = :rol AND submodulo = :submodulo
-        """)
-        res = await session.execute(query, {
-            "gym_id": current_staff.gimnasio_id,
-            "rol": current_staff.rol,
-            "submodulo": submodulo.lower()
-        })
-        tiene_permiso = res.scalar_one_or_none()
-
-        if not tiene_permiso:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"codigo": "PERMISO_DENEGADO", "mensaje": f"No tiene permisos para {accion} en el submódulo {submodulo}"}
-            )
+        await exigir_permiso(session, current_staff, submodulo, accion)
         return current_staff
 
     return permission_checker
+
+
+async def staff_tiene_permiso(session: AsyncSession, staff: AuthenticatedStaff, submodulo: str, accion: str) -> bool:
+    """Permiso del rol en platform.permisos_rol. El Jefe lo tiene todo; sin fila de permiso, no (fail-closed)."""
+    if staff.rol == "jefe":
+        return True
+    columna_permiso = _COLUMNA_PERMISO.get(accion.lower())
+    if not columna_permiso:
+        raise ValueError(f"Acción de permiso desconocida: {accion}")
+    res = await session.execute(text(f"""
+        SELECT {columna_permiso}
+        FROM platform.permisos_rol
+        WHERE gimnasio_id = :gym_id AND rol = :rol AND submodulo = :submodulo
+    """), {"gym_id": staff.gimnasio_id, "rol": staff.rol, "submodulo": submodulo.lower()})
+    return bool(res.scalar_one_or_none())
+
+
+async def exigir_permiso(session: AsyncSession, staff: AuthenticatedStaff, submodulo: str, accion: str) -> None:
+    """Igual que `require_permission`, para cuando el permiso depende del contenido de la petición."""
+    if not await staff_tiene_permiso(session, staff, submodulo, accion):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "codigo": "PERMISO_DENEGADO",
+                "mensaje": "No tienes permiso para hacer esta acción. Pídeselo al Jefe del gimnasio.",
+                "detalles": {"submodulo": submodulo, "accion": accion},
+            }
+        )

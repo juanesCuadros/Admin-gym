@@ -1162,7 +1162,7 @@ class DeportistasService:
         except Exception:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"codigo": "TEMPLATE_INVALIDO", "mensaje": "El template biométrico no es un Base64 válido."},
+                detail={"codigo": "TEMPLATE_INVALIDO", "mensaje": "La huella leída no es válida. Vuelve a capturarla."},
             )
 
         # 3. Cifrar con AES-256-GCM (genera nonce de 12 bytes por registro)

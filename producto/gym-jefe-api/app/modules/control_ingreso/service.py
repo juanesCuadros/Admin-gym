@@ -195,7 +195,7 @@ class ControlIngresoService:
         if not target_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"codigo": "PARAMETROS_INSUFICIENTES", "mensaje": "Debe proporcionar deportista_id o documento"}
+                detail={"codigo": "PARAMETROS_INSUFICIENTES", "mensaje": "Busca al deportista por su nombre o su documento."}
             )
 
         # Ejecuta la misma lógica central con deduplicación y reglas dinámicas

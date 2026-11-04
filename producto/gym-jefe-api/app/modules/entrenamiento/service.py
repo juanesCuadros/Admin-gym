@@ -176,7 +176,7 @@ class EntrenamientoService:
         except IntegrityError:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail={"codigo": "EJERCICIO_YA_EXISTE", "mensaje": "Conflicto de unicidad al crear el ejercicio"}
+                detail={"codigo": "EJERCICIO_YA_EXISTE", "mensaje": "Ya existe un ejercicio igual en este gimnasio."}
             )
 
         await AuditService.registrar(
@@ -409,7 +409,7 @@ class EntrenamientoService:
             if eid not in valid_ids:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={"codigo": "EJERCICIO_NO_DISPONIBLE", "mensaje": f"El ejercicio {eid} no existe o no está disponible en este gimnasio"}
+                    detail={"codigo": "EJERCICIO_NO_DISPONIBLE", "mensaje": "Uno de los ejercicios de la rutina ya no está disponible en este gimnasio."}
                 )
 
         # 2. Insertar cabecera de plantilla
@@ -607,7 +607,7 @@ class EntrenamientoService:
             if eid not in valid_ids:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={"codigo": "EJERCICIO_NO_DISPONIBLE", "mensaje": f"El ejercicio {eid} no está disponible en este gimnasio"}
+                    detail={"codigo": "EJERCICIO_NO_DISPONIBLE", "mensaje": "Uno de los ejercicios de la rutina ya no está disponible en este gimnasio."}
                 )
 
         # 3. Actualizar cabecera e incrementar versión

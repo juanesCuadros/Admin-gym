@@ -71,7 +71,7 @@ class MembresiaDomainService:
                     dias_restantes_o_vencido=0,
                     permite_ingreso=False,
                     resultado_acceso="negado",
-                    mensaje="Membresía cancelada por la administración (RF-27)",
+                    mensaje="Membresía cancelada por la administración",
                     membresia_id=membresia_id,
                     plan_nombre=plan_nombre,
                     fecha_vencimiento=fecha_vencimiento
@@ -94,7 +94,7 @@ class MembresiaDomainService:
                 dias_restantes_o_vencido=0,
                 permite_ingreso=False,
                 resultado_acceso="negado",
-                mensaje="Membresía congelada temporalmente (RF-26)",
+                mensaje="Membresía congelada temporalmente",
                 membresia_id=membresia_id,
                 plan_nombre=plan_nombre,
                 fecha_vencimiento=fecha_vencimiento,

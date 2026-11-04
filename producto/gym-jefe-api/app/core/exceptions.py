@@ -43,10 +43,95 @@ class PermisoDenegadoException(GymOSException):
     def __init__(self, submodulo: str, accion: str):
         super().__init__(
             codigo="PERMISO_DENEGADO",
-            mensaje=f"No cuenta con permisos para {accion} en el submódulo {submodulo}",
+            mensaje="No tienes permiso para hacer esta acción. Pídeselo al Jefe del gimnasio.",
             status_code=status.HTTP_403_FORBIDDEN,
             detalles={"submodulo": submodulo, "accion": accion}
         )
+
+
+# Mensajes en español para los tipos de error de Pydantic v2 (los de Pydantic salen en inglés).
+_MENSAJES_VALIDACION = {
+    "missing": "Este dato es obligatorio.",
+    "string_type": "Debe ser un texto.",
+    "string_too_short": "Debe tener al menos {min_length} caracteres.",
+    "string_too_long": "Debe tener máximo {max_length} caracteres.",
+    "string_pattern_mismatch": "El formato no es válido.",
+    "int_type": "Debe ser un número entero.",
+    "int_parsing": "Debe ser un número entero.",
+    "int_from_float": "Debe ser un número entero, sin decimales.",
+    "float_type": "Debe ser un número.",
+    "float_parsing": "Debe ser un número.",
+    "decimal_type": "Debe ser un número.",
+    "decimal_parsing": "Debe ser un número.",
+    "bool_type": "Debe ser sí o no.",
+    "bool_parsing": "Debe ser sí o no.",
+    "greater_than": "Debe ser mayor que {gt}.",
+    "greater_than_equal": "Debe ser mayor o igual a {ge}.",
+    "less_than": "Debe ser menor que {lt}.",
+    "less_than_equal": "Debe ser menor o igual a {le}.",
+    "multiple_of": "Debe ser múltiplo de {multiple_of}.",
+    "uuid_type": "El identificador no es válido.",
+    "uuid_parsing": "El identificador no es válido.",
+    "date_type": "Debe ser una fecha.",
+    "date_parsing": "La fecha no es válida.",
+    "date_from_datetime_parsing": "La fecha no es válida.",
+    "date_from_datetime_inexact": "La fecha no debe incluir hora.",
+    "datetime_type": "Debe ser una fecha y hora.",
+    "datetime_parsing": "La fecha y hora no es válida.",
+    "datetime_from_date_parsing": "La fecha y hora no es válida.",
+    "time_type": "Debe ser una hora.",
+    "time_parsing": "La hora no es válida.",
+    "enum": "Elige una de las opciones: {expected}.",
+    "literal_error": "Elige una de las opciones: {expected}.",
+    "list_type": "Debe ser una lista.",
+    "too_short": "Debe tener al menos {min_length} elemento(s).",
+    "too_long": "Debe tener máximo {max_length} elemento(s).",
+    "dict_type": "El formato no es válido.",
+    "model_type": "El formato no es válido.",
+    "model_attributes_type": "El formato no es válido.",
+    "json_invalid": "Los datos enviados no tienen un formato válido.",
+    "json_type": "Los datos enviados no tienen un formato válido.",
+    "extra_forbidden": "Este dato no se permite.",
+    "url_parsing": "El enlace no es válido.",
+    "url_type": "El enlace no es válido.",
+    "url_scheme": "El enlace debe empezar por http:// o https://.",
+}
+
+
+def traducir_error_validacion(error: dict) -> str:
+    """Mensaje en español de un error de validación de Pydantic, para mostrarlo junto al campo."""
+    tipo = error.get("type", "")
+    msg = str(error.get("msg", ""))
+    if tipo in ("value_error", "assertion_error"):
+        # Los validadores propios ya escriben en español; Pydantic les antepone "Value error, ".
+        for prefijo in ("Value error, ", "Assertion failed, "):
+            if msg.startswith(prefijo):
+                msg = msg[len(prefijo):]
+        if "email address" in msg or "@-sign" in msg:
+            return "El correo electrónico no es válido."
+        return msg
+    plantilla = _MENSAJES_VALIDACION.get(tipo)
+    if plantilla is None:
+        return "El valor no es válido."
+    ctx = {k: str(v).replace("'", "").replace(" or ", " o ") for k, v in (error.get("ctx") or {}).items()}
+    try:
+        return plantilla.format(**ctx)
+    except (KeyError, IndexError):
+        return "El valor no es válido."
+
+
+def resumen_errores_validacion(errores: list) -> str:
+    """Mensaje general del 422: nombra el primer campo con error para que se entienda sin mirar el formulario."""
+    if not errores:
+        return "Revisa los datos ingresados."
+    nombre = [p.strip() for p in errores[0]["campo"].split("->") if p.strip() not in ("", "body", "query", "path")]
+    etiqueta = nombre[-1].replace("_", " ") if nombre else ""
+    if etiqueta.isdigit() and len(nombre) > 1:
+        etiqueta = nombre[-2].replace("_", " ")
+    base = f"Revisa «{etiqueta}»: {errores[0]['mensaje']}" if etiqueta else errores[0]["mensaje"]
+    if len(errores) > 1:
+        base += f" (y {len(errores) - 1} dato(s) más)"
+    return base
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -136,7 +221,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             campo = " -> ".join(str(loc) for loc in error["loc"])
             errores.append({
                 "campo": campo,
-                "mensaje": error["msg"],
+                "mensaje": traducir_error_validacion(error),
                 "tipo": error["type"]
             })
         return JSONResponse(
@@ -145,7 +230,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "success": False,
                 "error": {
                     "codigo": "ERROR_VALIDACION_CAMPOS",
-                    "mensaje": "Los datos enviados en la petición no son válidos",
+                    "mensaje": resumen_errores_validacion(errores),
                     "detalles": errores
                 }
             }
