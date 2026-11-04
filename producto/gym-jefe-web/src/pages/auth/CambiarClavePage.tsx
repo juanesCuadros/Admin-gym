@@ -93,7 +93,7 @@ export const CambiarClavePage: React.FC = () => {
       await authService.cambiarPassword({ password_actual: actual, password_nueva: nueva });
       marcarPasswordCambiada();
       showToast('success', 'Contraseña actualizada', 'Se cerraron tus demás sesiones abiertas.');
-      navigate('/', { replace: true });
+      navigate('/inicio', { replace: true });
     } catch (err) {
       const apiErr = toApiError(err);
       if (apiErr.tipo === 'suspendido') return; // el interceptor ya envió a /bloqueado

@@ -345,7 +345,7 @@ export const StaffPage: React.FC = () => {
       setTransferirAbierto(false);
       showToast('success', 'Rol de Jefe transferido', res.mensaje);
       await refrescarUsuario();
-      navigate('/', { replace: true });
+      navigate('/inicio', { replace: true });
     } catch (err) {
       setConfirmarTransferencia(false);
       setErrorTransferir(toApiError(err).message);

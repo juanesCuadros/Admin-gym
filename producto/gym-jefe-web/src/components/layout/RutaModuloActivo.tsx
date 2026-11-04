@@ -8,6 +8,6 @@ import { rutaHabilitada } from '../../navegacion';
  */
 export const RutaModuloActivo: React.FC = () => {
   const { pathname } = useLocation();
-  if (!rutaHabilitada(pathname)) return <Navigate to="/" replace />;
+  if (!rutaHabilitada(pathname)) return <Navigate to="/inicio" replace />;
   return <Outlet />;
 };

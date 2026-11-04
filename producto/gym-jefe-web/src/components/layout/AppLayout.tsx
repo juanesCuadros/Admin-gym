@@ -53,7 +53,7 @@ const Contenido: React.FC = () => {
     const onPermisoPerdido = (ev: Event) => {
       const err = (ev as CustomEvent<ApiError>).detail;
       refrescarUsuario();
-      navigate('/', { replace: true, state: { permisoPerdido: err?.message ?? 'Perdiste el permiso para esa sección.' } });
+      navigate('/inicio', { replace: true, state: { permisoPerdido: err?.message ?? 'Perdiste el permiso para esa sección.' } });
     };
     window.addEventListener(EVENTOS.permisoPerdido, onPermisoPerdido);
     return () => window.removeEventListener(EVENTOS.permisoPerdido, onPermisoPerdido);
