@@ -14,6 +14,11 @@ from app.core.exceptions import (
 )
 from app.core.config import settings
 
+def _ahora_al_segundo() -> datetime:
+    """El `iat` del JWT va en segundos: el corte de sesiones también, para no rechazar el token nuevo."""
+    return datetime.now(timezone.utc).replace(microsecond=0)
+
+
 class AuthUseCases:
     def __init__(self, db: Session):
         self.db = db
@@ -114,6 +119,8 @@ class AuthUseCases:
 
         user.hash_password = get_password_hash(nueva_password)
         rec.usado_en = datetime.now(timezone.utc)
+        # SA-RF-00.2 CA3: cambiar la contraseña cierra todas las sesiones del usuario.
+        user.sesiones_desde = _ahora_al_segundo()
         self.db.commit()
 
         self.audit_repo.record_action(
@@ -125,6 +132,29 @@ class AuthUseCases:
         )
 
         return True
+
+    def cambiar_password(self, user: UsuarioInterno, password_actual: str, password_nueva: str) -> str:
+        """
+        Cambio de contraseña con sesión iniciada. Cierra todas las sesiones del usuario
+        (SA-RF-00.2 CA3) y devuelve un token nuevo para que la sesión actual siga.
+        """
+        if not verify_password(password_actual, user.hash_password):
+            raise BusinessRuleException("La contraseña actual no es correcta.", codigo="PASSWORD_ACTUAL_INCORRECTA")
+        if password_nueva == password_actual:
+            raise BusinessRuleException("La nueva contraseña debe ser distinta de la actual.", codigo="PASSWORD_IGUAL_A_ACTUAL")
+
+        user.hash_password = get_password_hash(password_nueva)
+        user.sesiones_desde = _ahora_al_segundo()
+        self.db.commit()
+
+        self.audit_repo.record_action(
+            actor_id=user.id,
+            actor_nombre=user.nombre,
+            accion="CAMBIO_PASSWORD",
+            entidad="usuarios_internos",
+            entidad_id=user.id,
+        )
+        return create_access_token(subject=user.id, email=user.correo, role=user.rol)
 
     def logout(self, token: str, user: UsuarioInterno) -> bool:
         """

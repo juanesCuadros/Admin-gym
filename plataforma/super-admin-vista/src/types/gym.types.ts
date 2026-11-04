@@ -173,6 +173,14 @@ export interface GymDetail {
   export_expira_en?: string | null;
 }
 
+/** SA-RF-28: nota interna de MVC sobre un gimnasio. */
+export interface NotaGimnasio {
+  id: string;
+  texto: string;
+  autor_nombre?: string | null;
+  created_at: string;
+}
+
 export interface CredentialsIssuanceResponse {
   gimnasio_id: string;
   gimnasio_nombre: string;

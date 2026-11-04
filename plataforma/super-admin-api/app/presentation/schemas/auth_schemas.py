@@ -24,6 +24,10 @@ class UsuarioInternoResponse(BaseModel):
 class PasswordRecoveryRequest(BaseModel):
     correo: EmailStr
 
+class CambiarPasswordRequest(BaseModel):
+    password_actual: str = Field(..., min_length=1, max_length=128)
+    password_nueva: str = Field(..., min_length=8, max_length=128)
+
 class PasswordResetRequest(BaseModel):
     token: str
     nueva_password: str = Field(..., min_length=8)

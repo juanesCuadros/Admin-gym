@@ -1,5 +1,6 @@
 import React from 'react';
-import { Menu, Sun, Moon, LogOut, Shield } from 'lucide-react';
+import { Menu, Sun, Moon, LogOut, Shield, KeyRound } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import { IconButton } from '@/components/actions/IconButton';
@@ -11,6 +12,7 @@ export interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
   const { user, logout } = useAuth();
   const { actualTheme, toggleTheme } = useTheme();
+  const navigate = useNavigate();
 
   return (
     <header
@@ -127,6 +129,13 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
               </div>
             </div>
 
+            <IconButton
+              icon={<KeyRound size={16} />}
+              aria-label="Cambiar contraseña"
+              title="Cambiar contraseña"
+              size="sm"
+              onClick={() => navigate('/cambiar-password')}
+            />
             <IconButton
               icon={<LogOut size={16} />}
               aria-label="Cerrar sesión"

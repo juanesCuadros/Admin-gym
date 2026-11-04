@@ -7,7 +7,7 @@ from app.core.dependencies import get_current_admin_user
 from app.application.use_cases.auth_use_cases import AuthUseCases
 from app.presentation.schemas.auth_schemas import (
     LoginRequest, TokenResponse, UsuarioInternoResponse,
-    PasswordRecoveryRequest, PasswordResetRequest, MessageResponse
+    PasswordRecoveryRequest, PasswordResetRequest, MessageResponse, CambiarPasswordRequest
 )
 from app.core.config import settings
 
@@ -54,6 +54,31 @@ def reset_password(data: PasswordResetRequest, db: Session = Depends(get_db)):
     use_cases = AuthUseCases(db)
     use_cases.reset_password(raw_token=data.token, nueva_password=data.nueva_password)
     return MessageResponse(mensaje="Contraseña actualizada exitosamente.")
+
+@router.post("/cambiar-password", response_model=TokenResponse, summary="Cambiar la contraseña con sesión iniciada")
+def cambiar_password(
+    data: CambiarPasswordRequest,
+    user: UsuarioInterno = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """
+    SA-RF-00.2 CA3: cambiar la contraseña cierra todas las sesiones del usuario.
+    Devuelve un token nuevo para que la sesión desde la que se cambió siga abierta.
+    """
+    token = AuthUseCases(db).cambiar_password(user, data.password_actual, data.password_nueva)
+    return TokenResponse(
+        access_token=token,
+        token_type="bearer",
+        expires_in_minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+        usuario=UsuarioInternoResponse(
+            id=str(user.id),
+            nombre=user.nombre,
+            correo=user.correo,
+            rol=user.rol,
+            activo=user.activo,
+            ultimo_ingreso=user.ultimo_ingreso
+        )
+    )
 
 @router.get("/me", response_model=UsuarioInternoResponse, summary="Obtener perfil del usuario actual")
 def read_users_me(user = Depends(get_current_admin_user)):

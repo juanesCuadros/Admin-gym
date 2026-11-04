@@ -6,6 +6,7 @@ import {
   PasswordRecoveryRequest,
   PasswordResetRequest,
   MessageResponse,
+  CambiarPasswordRequest,
 } from '@/types/auth.types';
 
 export const authService = {
@@ -31,6 +32,13 @@ export const authService = {
     } finally {
       removeStoredToken();
     }
+  },
+
+  /** Cierra las demás sesiones; el token nuevo reemplaza al actual para que esta siga abierta. */
+  async changePassword(data: CambiarPasswordRequest): Promise<TokenResponse> {
+    const response = await apiClient.post<TokenResponse>('/auth/cambiar-password', data);
+    setStoredToken(response.data.access_token);
+    return response.data;
   },
 
   async requestRecovery(data: PasswordRecoveryRequest): Promise<MessageResponse> {

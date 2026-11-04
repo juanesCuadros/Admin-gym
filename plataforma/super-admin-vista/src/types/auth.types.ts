@@ -23,6 +23,11 @@ export interface PasswordRecoveryRequest {
   correo: string;
 }
 
+export interface CambiarPasswordRequest {
+  password_actual: string;
+  password_nueva: string;
+}
+
 export interface PasswordResetRequest {
   token: string;
   nueva_password: string;

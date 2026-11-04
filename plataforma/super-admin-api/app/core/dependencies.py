@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional
 import uuid
 from fastapi import Depends, HTTPException, status, Request
@@ -66,11 +67,28 @@ def get_current_admin_user(
     if not user.activo:
         raise ForbiddenException("Usuario inactivo o suspendido.")
 
+    # Sesiones cerradas en bloque (cambio de contraseña): el token debe ser posterior.
+    if user.sesiones_desde is not None and sesion_cerrada(payload.get("iat"), user.sesiones_desde):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tu sesión se cerró porque cambiaste la contraseña. Inicia sesión de nuevo.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     # 3. Strict role validation: Tenant users (jefe, entrenador, recepcionista) cannot access Super Admin
     if user.rol not in ["superadmin", "admin"] or token_role not in ["superadmin", "admin"]:
         raise ForbiddenException("Acceso denegado: se requieren privilegios de Super Administrador.")
 
     return user
+
+def sesion_cerrada(iat: Optional[int], sesiones_desde: datetime) -> bool:
+    """True si el token (por su `iat`, en segundos) es anterior al último cierre de sesiones."""
+    if iat is None:
+        return True
+    if sesiones_desde.tzinfo is None:
+        sesiones_desde = sesiones_desde.replace(tzinfo=timezone.utc)
+    return int(iat) < int(sesiones_desde.timestamp())
+
 
 def get_optional_tenant_context(request: Request, db: Session = Depends(get_db)) -> Optional[str]:
     """

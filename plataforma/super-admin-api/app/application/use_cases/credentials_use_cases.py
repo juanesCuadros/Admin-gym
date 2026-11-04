@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.infrastructure.models.superadmin_models import (
@@ -10,7 +11,7 @@ from app.infrastructure.repositories.gym_repository import GymRepository
 from app.infrastructure.repositories.audit_repository import AuditRepository
 from app.core.security import generate_secure_temporary_password, get_password_hash
 from app.core.exceptions import (
-    EntityNotFoundException, BusinessRuleException
+    EntityNotFoundException, BusinessRuleException, EntityConflictException
 )
 from app.core.config import settings
 from app.presentation.schemas.gym_schemas import CredentialsIssuanceResponse
@@ -93,6 +94,63 @@ class CredentialsUseCases:
             whatsapp_copiable=whatsapp_text,
             mensaje="Nuevas credenciales regeneradas con éxito. La contraseña anterior ha sido invalidada."
         )
+
+    def cambiar_correo_jefe(self, gym_id: str, correo_nuevo: str, actor: UsuarioInterno) -> CredentialsIssuanceResponse:
+        """
+        SA-RF-29: cambia el correo con el que entra el Jefe.
+        CA1: si el correo ya es de otro usuario de ese gimnasio, se rechaza.
+        CA2: la contraseña anterior deja de servir, así que en la misma operación se regeneran las credenciales.
+        CA3: la auditoría guarda el correo anterior y el nuevo.
+        """
+        gym = self.gym_repo.get_by_id(gym_id)
+        if not gym:
+            raise EntityNotFoundException("Gimnasio", gym_id)
+        jefe = gym.cuenta_jefe
+        if not jefe:
+            raise EntityNotFoundException("CuentaJefe", gym_id)
+
+        nuevo = correo_nuevo.strip().lower()
+        anterior = jefe.correo
+        if nuevo == (anterior or "").strip().lower():
+            raise BusinessRuleException("El correo nuevo es igual al actual.", codigo="CORREO_SIN_CAMBIO")
+
+        staff_jefe = self.db.query(Staff).filter(
+            Staff.gimnasio_id == gym.gimnasio_id,
+            Staff.rol == "jefe"
+        ).first()
+        otro = self.db.query(Staff).filter(
+            Staff.gimnasio_id == gym.gimnasio_id,
+            func.lower(Staff.correo) == nuevo,
+        ).first()
+        if otro and (staff_jefe is None or otro.id != staff_jefe.id):
+            raise EntityConflictException(
+                "Ese correo ya es de otro usuario de este gimnasio.", codigo="CORREO_YA_EXISTE"
+            )
+        # cuentas_jefe.correo es único en toda la plataforma.
+        otra_cuenta = self.db.query(CuentaJefe).filter(
+            func.lower(CuentaJefe.correo) == nuevo,
+            CuentaJefe.id != jefe.id,
+        ).first()
+        if otra_cuenta:
+            raise EntityConflictException(
+                "Ese correo ya es el del Jefe de otro gimnasio.", codigo="CORREO_YA_EXISTE"
+            )
+
+        jefe.correo = nuevo
+        if staff_jefe:
+            staff_jefe.correo = nuevo
+        self.audit_repo.record_action(
+            actor_id=actor.id,
+            actor_nombre=actor.nombre,
+            accion="CAMBIO_CORREO_JEFE",
+            entidad="cuentas_jefe",
+            entidad_id=jefe.id,
+            gimnasio_id=gym.id,
+            detalle={"correo_anterior": anterior, "correo_nuevo": nuevo},
+            commit=False,
+        )
+        # regenerate_credentials hace el único commit: correo, auditoría y credenciales nuevas van juntos.
+        return self.regenerate_credentials(gym_id, actor=actor)
 
     def resend_credentials(self, gym_id: str, actor: UsuarioInterno) -> CredentialsIssuanceResponse:
         """

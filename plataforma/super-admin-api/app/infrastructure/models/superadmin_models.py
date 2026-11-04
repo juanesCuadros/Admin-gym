@@ -28,6 +28,8 @@ class UsuarioInterno(Base):
     activo = Column(Boolean, nullable=False, default=True)
     mfa_secret = Column(String(255), nullable=True)
     ultimo_ingreso = Column(DateTime(timezone=True), nullable=True)
+    # Tokens emitidos antes de esta fecha ya no valen (cambio de contraseña: SA-RF-00.2 CA3).
+    sesiones_desde = Column(DateTime(timezone=True), nullable=True)
     version = Column(Integer, nullable=False, default=1)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
@@ -227,6 +229,19 @@ class EmisionCredenciales(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     gimnasio = relationship("Gimnasio", back_populates="credenciales")
+
+class NotaGimnasio(Base):
+    """SA-RF-28: nota interna de MVC sobre un gimnasio. Solo se crean; no se editan ni se borran."""
+    __tablename__ = "notas_gimnasio"
+    __table_args__ = {"schema": _schema()}
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    gimnasio_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}gimnasios.id", ondelete="CASCADE"), nullable=False, index=True)
+    autor_id = Column(String(36), ForeignKey(f"{_schema() + '.' if _schema() else ''}usuarios_internos.id", ondelete="SET NULL"), nullable=True)
+    texto = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    autor = relationship("UsuarioInterno")
 
 class ProvisioningPaso(Base):
     __tablename__ = "provisioning_pasos"

@@ -7,6 +7,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { LoginPage } from '@/pages/auth/LoginPage';
 import { RecoveryPage } from '@/pages/auth/RecoveryPage';
 import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage';
+import { ChangePasswordPage } from '@/pages/auth/ChangePasswordPage';
 import { DashboardPage } from '@/pages/dashboard/DashboardPage';
 import { GymListPage } from '@/pages/gyms/GymListPage';
 import { GymCreateWizardPage } from '@/pages/gyms/GymCreateWizardPage';
@@ -37,6 +38,7 @@ export const AppRoutes: React.FC = () => {
             <Route path="/plan-requests" element={<PlanRequestsPage />} />
             <Route path="/exercises" element={<ExercisesPage />} />
             <Route path="/audit" element={<AuditPage />} />
+            <Route path="/cambiar-password" element={<ChangePasswordPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Route>

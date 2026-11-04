@@ -18,6 +18,8 @@ import { ChangeStatusModal } from '@/components/business/ChangeStatusModal';
 import { CancelGymModal } from '@/components/business/CancelGymModal';
 import { UpdatePriceModal } from '@/components/business/UpdatePriceModal';
 import { CredentialsModal } from '@/components/business/CredentialsModal';
+import { ChangeJefeEmailModal } from '@/components/business/ChangeJefeEmailModal';
+import { NotasGimnasio } from '@/components/business/NotasGimnasio';
 import { ChangePlanModal } from '@/components/business/ChangePlanModal';
 import { Alert } from '@/components/feedback/Alert';
 import { useGymDetail } from '@/hooks/useGymDetail';
@@ -68,6 +70,7 @@ import {
   FileText,
   Share2,
   Globe,
+  StickyNote,
 } from 'lucide-react';
 
 export const GymDetailPage: React.FC = () => {
@@ -87,6 +90,7 @@ export const GymDetailPage: React.FC = () => {
   const [isUpdatePriceOpen, setIsUpdatePriceOpen] = useState<boolean>(false);
   const [isChangePlanOpen, setIsChangePlanOpen] = useState<boolean>(false);
   const [issuedCreds, setIssuedCreds] = useState<CredentialsIssuanceResponse | null>(null);
+  const [isChangeEmailOpen, setIsChangeEmailOpen] = useState<boolean>(false);
   // SA-RF-09 CA5: al anular el pago de reactivación el estado no se revierte; se avisa.
   const [advertenciaAnulacion, setAdvertenciaAnulacion] = useState<string | null>(null);
   // SA-RF-30: el enlace de exportación llega una sola vez, en la respuesta de cancelar.
@@ -299,6 +303,7 @@ export const GymDetailPage: React.FC = () => {
   const tabs: TabItem[] = [
     { id: 'general', label: 'Ficha General', icon: <Building2 size={16} /> },
     { id: 'jefe', label: 'Dueño y Accesos', icon: <KeyRound size={16} /> },
+    { id: 'notas', label: 'Notas internas', icon: <StickyNote size={16} /> },
     {
       id: 'pagos',
       label: 'Suscripción y Pagos',
@@ -1056,7 +1061,17 @@ export const GymDetailPage: React.FC = () => {
             subtitle="Responsable legal del tenant en la plataforma con privilegios de gestión completa."
             actions={
               esCancelado ? undefined : (
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                {gym.cuenta_jefe && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setIsChangeEmailOpen(true)}
+                    leftIcon={<Mail size={15} />}
+                  >
+                    Cambiar correo (RF-29)
+                  </Button>
+                )}
                 <Button
                   variant="secondary"
                   size="sm"
@@ -1255,6 +1270,8 @@ export const GymDetailPage: React.FC = () => {
       )}
 
       {/* Tab 4: Actividad y Auditoría */}
+      {activeTab === 'notas' && <NotasGimnasio gymId={gym.id} />}
+
       {activeTab === 'actividad' && (
         <ContentSection
           title="Trazabilidad Criptográfica Específica (RF-07 / RF-25)"
@@ -1344,6 +1361,20 @@ export const GymDetailPage: React.FC = () => {
         currentPrice={gym.suscripcion_actual?.valor_mensual ?? 0}
         onSuccess={refetch}
       />
+
+      {gym.cuenta_jefe && (
+        <ChangeJefeEmailModal
+          isOpen={isChangeEmailOpen}
+          onClose={() => setIsChangeEmailOpen(false)}
+          gymId={gym.id}
+          correoActual={gym.cuenta_jefe.correo}
+          onChanged={(creds) => {
+            setIssuedCreds(creds);
+            success('Correo del Jefe actualizado. Entrégale la contraseña temporal nueva.');
+            refetch();
+          }}
+        />
+      )}
 
       <CredentialsModal
         isOpen={!!issuedCreds}

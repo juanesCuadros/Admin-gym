@@ -11,6 +11,7 @@ import {
   GymDeleteResponse,
   SubdomainCheckResponse,
   CredentialsIssuanceResponse,
+  NotaGimnasio,
   GymState,
   FiltroEstadoCalculado,
 } from '@/types/gym.types';
@@ -93,6 +94,25 @@ export const gymService = {
   async regenerateCredentials(gymId: string): Promise<CredentialsIssuanceResponse> {
     const response = await apiClient.post<CredentialsIssuanceResponse>(
       `/admin/gyms/${gymId}/credentials/regenerate`
+    );
+    return response.data;
+  },
+
+  async getNotas(gymId: string): Promise<NotaGimnasio[]> {
+    const response = await apiClient.get<NotaGimnasio[]>(`/admin/gyms/${gymId}/notas`);
+    return response.data;
+  },
+
+  async crearNota(gymId: string, texto: string): Promise<NotaGimnasio> {
+    const response = await apiClient.post<NotaGimnasio>(`/admin/gyms/${gymId}/notas`, { texto });
+    return response.data;
+  },
+
+  /** SA-RF-29: cambia el correo del Jefe y regenera sus credenciales en la misma operación. */
+  async changeJefeEmail(gymId: string, correo: string): Promise<CredentialsIssuanceResponse> {
+    const response = await apiClient.patch<CredentialsIssuanceResponse>(
+      `/admin/gyms/${gymId}/credentials/correo-jefe`,
+      { correo }
     );
     return response.data;
   },

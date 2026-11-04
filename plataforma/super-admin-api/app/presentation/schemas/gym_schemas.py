@@ -401,6 +401,9 @@ class GymDeleteResponse(BaseModel):
     subdominio_liberado: str
     eliminado_en: datetime
 
+class CambiarCorreoJefeRequest(BaseModel):
+    correo: EmailStr
+
 class CredentialsIssuanceResponse(BaseModel):
     gimnasio_id: str
     gimnasio_nombre: str
