@@ -10,7 +10,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { clasesService } from '../../api/clases.service';
-import { deportistasService } from '../../api/deportistas.service';
+import { ReservarCupoModal } from './ReservarCupoModal';
 import { useToast } from '../../contexts/ToastContext';
 import { parseApiError } from '../../api/client';
 import { Card } from '../../components/ui/Card';
@@ -21,7 +21,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Drawer } from '../../components/ui/Drawer';
 import { Table } from '../../components/ui/Table';
 import { MenuAcciones } from '../../components/ui/MenuAcciones';
-import { formatDiaSemana, formatFechaHora, formatHora } from '../../utils/formato';
+import { formatCOP, formatDiaSemana, formatFechaHora, formatHora } from '../../utils/formato';
 
 const ESTADO_CLASE: Record<string, string> = { programada: 'Programada', cancelada: 'Cancelada', realizada: 'Realizada' };
 import {
@@ -57,8 +57,6 @@ export const ClasesPage: React.FC = () => {
 
   // Booking Modal
   const [showReservarModal, setShowReservarModal] = useState(false);
-  const [deportistasList, setDeportistasList] = useState<any[]>([]);
-  const [selectedDeportistaId, setSelectedDeportistaId] = useState('');
 
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -107,33 +105,21 @@ export const ClasesPage: React.FC = () => {
     }
   };
 
-  const handleOpenReservarModal = async () => {
-    try {
-      const depRes = await deportistasService.getDeportistas({ limit: 50 });
-      setDeportistasList(depRes.items);
-      setSelectedDeportistaId(depRes.items[0]?.id || '');
-      setShowReservarModal(true);
-    } catch {
-      showToast('error', 'Error', 'No se pudieron cargar los deportistas');
-    }
-  };
+  const handleOpenReservarModal = () => setShowReservarModal(true);
 
-  const handleCrearReserva = async () => {
-    if (!selectedClase || !selectedDeportistaId) return;
-    setIsProcessing(true);
-    try {
-      await clasesService.crearReserva(selectedClase.id, {
-        deportista_id: selectedDeportistaId,
-      });
-      showToast('success', 'Cupo reservado', 'Deportista registrado en la lista de la clase');
-      setShowReservarModal(false);
-      handleOpenReservas(selectedClase);
-      loadClases();
-    } catch (err) {
-      showToast('error', 'Error al reservar', parseApiError(err));
-    } finally {
-      setIsProcessing(false);
-    }
+  const handleReservada = (reserva: ReservaResponse) => {
+    const cobrado = reserva.total_cobrado != null ? Number(reserva.total_cobrado) : null;
+    const cambio = reserva.cambio_devuelto != null ? Number(reserva.cambio_devuelto) : null;
+    showToast(
+      'success',
+      'Cupo reservado',
+      cobrado !== null
+        ? `Pase cobrado: ${formatCOP(cobrado)}${cambio ? ` · Cambio: ${formatCOP(cambio)}` : ''}`
+        : 'Deportista registrado en la lista de la clase'
+    );
+    setShowReservarModal(false);
+    if (selectedClase) handleOpenReservas(selectedClase);
+    loadClases();
   };
 
   const handleRegistrarAsistencia = async (deportistaId: string) => {
@@ -474,35 +460,13 @@ export const ClasesPage: React.FC = () => {
         )}
       </Drawer>
 
-      {/* Modal: Reservar Cupo */}
-      <Modal
+      {/* Modal: Reservar Cupo (cobra el pase de clase en el mismo paso si hace falta) */}
+      <ReservarCupoModal
+        clase={selectedClase}
         isOpen={showReservarModal}
         onClose={() => setShowReservarModal(false)}
-        title="Reservar cupo"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setShowReservarModal(false)}>
-              Cancelar
-            </Button>
-            <Button variant="primary" onClick={handleCrearReserva} isLoading={isProcessing}>
-              Confirmar reserva
-            </Button>
-          </>
-        }
-      >
-        <Select
-          label="Deportista *"
-          options={deportistasList.map((d) => ({
-            value: d.id,
-            label: `${d.nombre} (${d.documento})`,
-          }))}
-          value={selectedDeportistaId}
-          onChange={(e) => setSelectedDeportistaId(e.target.value)}
-        />
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 8 }}>
-          Si el deportista no cuenta con membresía activa, el sistema valida que posea un pase de clase emitido en Caja.
-        </p>
-      </Modal>
+        onReservada={handleReservada}
+      />
     </div>
   );
 };

@@ -39,9 +39,19 @@ export interface ClasesPaginadasResponse {
   limit: number;
 }
 
+/** Cobro del pase de clase en el mismo paso de la reserva (exige caja:crear y turno abierto). */
+export interface CobroPaseClaseRequest {
+  metodo: string;
+  tipo_medio: 'efectivo' | 'otro';
+  valor_recibido?: number;
+  /** Solo si el gimnasio no tiene precio configurado para el pase de clase. */
+  precio_unitario?: number;
+}
+
 export interface CrearReservaRequest {
   deportista_id: string;
   venta_item_id?: string;
+  cobro?: CobroPaseClaseRequest;
 }
 
 export interface ReservaResponse {
@@ -57,6 +67,10 @@ export interface ReservaResponse {
   pase_pagado: boolean;
   venta_item_id?: string | null;
   created_at: string;
+  /** Solo cuando la reserva cobró el pase en el mismo paso. */
+  venta_id?: string | null;
+  total_cobrado?: number | string | null;
+  cambio_devuelto?: number | string | null;
 }
 
 export interface RegistrarAsistenciaRequest {

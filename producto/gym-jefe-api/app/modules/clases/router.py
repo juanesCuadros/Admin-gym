@@ -2,11 +2,11 @@ from datetime import datetime
 from typing import Annotated, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query, status
+from fastapi import APIRouter, Depends, Header, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
-from app.core.dependencies import AuthenticatedStaff, get_current_staff, require_permission
+from app.core.dependencies import AuthenticatedStaff, exigir_permiso, get_current_staff, require_permission
 from app.modules.clases.schemas import (
     AsistenciaResponse,
     CalificacionResponse,
@@ -217,7 +217,10 @@ async def cancelar_clase(
         "   - Si el deportista cuenta con membresía activa o por vencer, reserva sin costo (`pase_pagado=false`).\n"
         "   - Si el deportista no cuenta con membresía activa (vencido, mora, congelado, sin membresía), "
         "exige suministrar `venta_item_id` correspondiente a un pase de clase adquirido en Caja.\n"
-        "5. **Protección contra doble gasto:** Un `venta_item_id` no puede usarse en más de una reserva activa simultánea."
+        "5. **Protección contra doble gasto:** Un `venta_item_id` no puede usarse en más de una reserva activa simultánea.\n"
+        "6. **Cobro en un paso:** en lugar de `venta_item_id` se puede enviar `cobro`: se registra la venta del pase "
+        "en el turno abierto y la reserva en la misma transacción. Exige permiso `caja:crear` y `X-Idempotency-Key`; "
+        "el reintento con la misma clave devuelve la misma reserva sin cobrar de nuevo."
     ),
     response_description="Reserva confirmada con identificador único y estado 'reservada'",
     dependencies=[Depends(require_permission("clases", "crear"))],
@@ -227,10 +230,13 @@ async def crear_reserva(
     req: CrearReservaRequest,
     current_staff: Annotated[AuthenticatedStaff, Depends(get_current_staff)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    x_idempotency_key: Annotated[Optional[str], Header(alias="X-Idempotency-Key", max_length=128)] = None,
 ):
     """
     Crea una reserva de cupo para un deportista, validando su estado de membresía o pase pagado en Caja.
     """
+    if req.cobro is not None:
+        await exigir_permiso(session, current_staff, "caja", "crear")
     return await ClasesService.crear_reserva(
         session=session,
         gym_id=current_staff.gimnasio_id,
@@ -238,6 +244,8 @@ async def crear_reserva(
         staff_nombre=current_staff.nombre,
         clase_id=id,
         req=req,
+        staff_rol=current_staff.rol,
+        idempotency_key=x_idempotency_key,
     )
 
 

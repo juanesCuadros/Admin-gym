@@ -41,8 +41,11 @@ export const clasesService = {
     return response.data;
   },
 
-  async crearReserva(claseId: string, data: CrearReservaRequest): Promise<ReservaResponse> {
-    const response = await apiClient.post<ReservaResponse>(`/clases/${claseId}/reservas`, data);
+  /** Con `cobro`, `idempotencyKey` es obligatoria: el reintento con la misma clave no cobra dos veces. */
+  async crearReserva(claseId: string, data: CrearReservaRequest, idempotencyKey?: string): Promise<ReservaResponse> {
+    const response = await apiClient.post<ReservaResponse>(`/clases/${claseId}/reservas`, data, {
+      headers: idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : undefined,
+    });
     return response.data;
   },
 

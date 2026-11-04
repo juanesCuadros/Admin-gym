@@ -24,6 +24,8 @@ from app.modules.clases.schemas import (
     ResumenAsistenciaClaseResponse,
     ResumenCalificacionesResponse,
 )
+from app.modules.caja.schemas import RegistrarVentaRequest, VentaItemRequest
+from app.modules.caja.service import CajaService
 from app.modules.membresias.domain import MembresiaDomainService
 
 
@@ -251,7 +253,7 @@ class ClasesService:
         if clase.estado != "programada":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"codigo": "CLASE_NO_EDITABLE", "mensaje": f"No se puede editar una clase con estado '{clase.estado}'"}
+                detail={"codigo": "CLASE_NO_EDITABLE", "mensaje": f"Esta clase ya está {str(clase.estado).replace('_', ' ')} y no se puede editar."}
             )
 
         # Si se reduce el cupo, verificar que no quede por debajo de las reservas activas
@@ -358,6 +360,34 @@ class ClasesService:
         return await cls.obtener_clase(session, gym_id, clase_id)
 
     @classmethod
+    async def _reserva_de_cobro_previo(cls, session: AsyncSession, gym_id: UUID, venta) -> ReservaResponse:
+        item_ids = [it.id for it in venta.items]
+        res = await session.execute(text("""
+            SELECT r.id, r.clase_id, c.nombre AS clase_nombre, c.fecha_hora AS clase_fecha_hora,
+                   r.deportista_id, d.nombre AS deportista_nombre, d.documento AS deportista_documento,
+                   r.estado, r.pase_pagado, r.venta_item_id, r.created_at
+            FROM platform.reservas_clase r
+            JOIN platform.clases c ON c.id = r.clase_id
+            JOIN platform.deportistas d ON d.id = r.deportista_id
+            WHERE r.gimnasio_id = :gym_id AND r.venta_item_id = ANY(:items)
+            ORDER BY r.created_at DESC
+            LIMIT 1
+        """), {"gym_id": gym_id, "items": item_ids})
+        row = res.mappings().first()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"codigo": "COBRO_YA_REGISTRADO", "mensaje": "Ese cobro ya se registró en caja. Recarga para ver la reserva."}
+            )
+        return ReservaResponse(
+            gimnasio_id=gym_id,
+            venta_id=venta.id,
+            total_cobrado=venta.total,
+            cambio_devuelto=venta.cambio_devuelto,
+            **dict(row),
+        )
+
+    @classmethod
     async def crear_reserva(
         cls,
         session: AsyncSession,
@@ -366,6 +396,8 @@ class ClasesService:
         staff_nombre: str,
         clase_id: UUID,
         req: CrearReservaRequest,
+        staff_rol: str = "",
+        idempotency_key: Optional[str] = None,
     ) -> ReservaResponse:
         """
         Crea una reserva de cupo para un deportista en una clase (RF-33).
@@ -375,8 +407,19 @@ class ClasesService:
         - Evalúa estado de membresía:
           * Activa/Por Vencer: puede reservar gratis (pase_pagado = false, venta_item_id = None).
           * Sin membresía / Vencido / Congelado / Mora: EXIGE venta_item_id de tipo 'pase_clase'
-            pagado en caja y no reutilizado previamente.
+            pagado en caja y no reutilizado previamente, o `cobro` para cobrarlo en el mismo paso.
         """
+        if req.cobro is not None:
+            if not idempotency_key or len(idempotency_key.strip()) < 8:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"codigo": "IDEMPOTENCY_KEY_REQUERIDA", "mensaje": "Falta la clave de la operación de cobro. Recarga e inténtalo de nuevo."}
+                )
+            # Reintento de un cobro ya hecho: se devuelve la misma reserva, sin cobrar dos veces.
+            previa = await CajaService._consultar_venta_existente_por_idempotency_key(session, gym_id, idempotency_key.strip())
+            if previa:
+                return await cls._reserva_de_cobro_previo(session, gym_id, previa)
+
         # 1. Bloquear y validar la clase
         q_clase = text("""
             SELECT id, nombre, cupo, fecha_hora, estado
@@ -394,7 +437,7 @@ class ClasesService:
         if clase["estado"] != "programada":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"codigo": "CLASE_NO_DISPONIBLE", "mensaje": f"No se puede reservar en una clase con estado '{clase['estado']}'"}
+                detail={"codigo": "CLASE_NO_DISPONIBLE", "mensaje": f"Esta clase está {str(clase['estado']).replace('_', ' ')} y no recibe reservas."}
             )
 
         # Regla temporal explícita: No se permite reservar clases que ya hayan iniciado
@@ -496,6 +539,7 @@ class ClasesService:
 
         pase_pagado = False
         venta_item_id = None
+        venta_cobrada = None
 
         # 6. Regla de negocio RF-33: Sólo membresía activa (activo o por_vencer) reserva sin costo
         if estado_memb in ("activo", "por_vencer"):
@@ -514,6 +558,31 @@ class ClasesService:
                 )
             pase_pagado = False
             venta_item_id = None
+        elif req.cobro is not None:
+            # Cobro del pase en el mismo paso: la venta y la reserva quedan en la misma transacción.
+            venta = await CajaService.registrar_venta(
+                session=session,
+                gym_id=gym_id,
+                staff_id=staff_id,
+                staff_rol=staff_rol,
+                staff_nombre=staff_nombre,
+                idempotency_key=idempotency_key or "",
+                data=RegistrarVentaRequest(
+                    deportista_id=req.deportista_id,
+                    metodo=req.cobro.metodo,
+                    tipo_medio=req.cobro.tipo_medio,
+                    valor_recibido=req.cobro.valor_recibido,
+                    items=[VentaItemRequest(
+                        tipo="pase_clase",
+                        descripcion=f"Pase de clase · {clase['nombre']}"[:200],
+                        cantidad=1,
+                        precio_unitario=req.cobro.precio_unitario,
+                    )],
+                ),
+            )
+            pase_pagado = True
+            venta_item_id = venta.items[0].id
+            venta_cobrada = venta
         else:
             # Requiere pase de clase pagado en caja
             if not req.venta_item_id:
@@ -521,7 +590,7 @@ class ClasesService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail={
                         "codigo": "PASE_CLASE_REQUERIDO",
-                        "mensaje": f"El deportista tiene estado '{estado_memb}' y requiere presentar un pase de clase pagado en Caja (RF-33)"
+                        "mensaje": f"La membresía del deportista está {str(estado_memb).replace('_', ' ')}: para reservar necesita un pase de clase pagado."
                     }
                 )
 
@@ -547,7 +616,7 @@ class ClasesService:
             if item_row["tipo"] != "pase_clase":
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={"codigo": "ITEM_NO_ES_PASE_CLASE", "mensaje": f"El ítem de venta es de tipo '{item_row['tipo']}', no 'pase_clase'"}
+                    detail={"codigo": "ITEM_NO_ES_PASE_CLASE", "mensaje": "La venta elegida no es un pase de clase."}
                 )
 
             # Control de doble uso: el pase no puede estar activo en otra reserva
@@ -595,6 +664,7 @@ class ClasesService:
                 "deportista_id": str(req.deportista_id),
                 "pase_pagado": pase_pagado,
                 "venta_item_id": str(venta_item_id) if venta_item_id else None,
+                "venta_id": str(venta_cobrada.id) if venta_cobrada else None,
             }
         )
 
@@ -611,6 +681,9 @@ class ClasesService:
             pase_pagado=pase_pagado,
             venta_item_id=venta_item_id,
             created_at=res_row["created_at"],
+            venta_id=venta_cobrada.id if venta_cobrada else None,
+            total_cobrado=venta_cobrada.total if venta_cobrada else None,
+            cambio_devuelto=venta_cobrada.cambio_devuelto if venta_cobrada else None,
         )
 
     @classmethod

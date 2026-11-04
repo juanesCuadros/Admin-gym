@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import List, Literal, Optional
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -77,12 +78,34 @@ class ClasesPaginadasResponse(BaseModel):
     limit: int
 
 
+class CobroPaseClaseRequest(BaseModel):
+    """Cobro del pase de clase en el mismo paso de la reserva. Exige permiso de caja y turno abierto."""
+    metodo: str = Field(..., min_length=2, max_length=50, description="Método de pago (efectivo, nequi, datáfono...)")
+    tipo_medio: Literal["efectivo", "otro"]
+    valor_recibido: Optional[Decimal] = Field(None, ge=0, description="Valor entregado en efectivo")
+    precio_unitario: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        description="Precio del pase si el gimnasio no lo tiene configurado. Con precio configurado se ignora."
+    )
+
+
 class CrearReservaRequest(BaseModel):
     deportista_id: UUID
     venta_item_id: Optional[UUID] = Field(
         None,
         description="ID del ítem de venta (tipo='pase_clase') generado en Caja. Obligatorio para deportistas sin membresía activa (RF-33)."
     )
+    cobro: Optional[CobroPaseClaseRequest] = Field(
+        None,
+        description="Alternativa a venta_item_id: cobra el pase de clase y reserva en una sola operación (X-Idempotency-Key)."
+    )
+
+    @model_validator(mode="after")
+    def validar_un_solo_medio(self) -> "CrearReservaRequest":
+        if self.venta_item_id is not None and self.cobro is not None:
+            raise ValueError("Usa un pase ya pagado o cobra uno nuevo, no las dos cosas.")
+        return self
 
 
 class ReservaResponse(BaseModel):
@@ -100,6 +123,10 @@ class ReservaResponse(BaseModel):
     pase_pagado: bool
     venta_item_id: Optional[UUID] = None
     created_at: datetime
+    # Solo cuando la reserva cobró el pase en el mismo paso (campo `cobro`)
+    venta_id: Optional[UUID] = None
+    total_cobrado: Optional[Decimal] = None
+    cambio_devuelto: Optional[Decimal] = None
 
 
 class RegistrarAsistenciaRequest(BaseModel):
