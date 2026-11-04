@@ -242,10 +242,7 @@ export const LandingGimnasioPage: React.FC = () => {
       <header className={`lp-header ${conScroll ? 'lp-header-scroll' : ''}`}>
         <a className="lp-marca lp-marca-header" href="#inicio">
           {logo && <img src={logo} alt="" />}
-          <span className="lp-marca-texto">
-            <strong>{datos.nombre}</strong>
-            <small>{datos.subdominio}</small>
-          </span>
+          <strong className="lp-marca-texto">{datos.nombre}</strong>
         </a>
         {secciones.length > 0 && (
           <nav className="lp-nav" aria-label="Secciones">
