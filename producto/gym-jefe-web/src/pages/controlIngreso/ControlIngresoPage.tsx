@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Gift, CheckCircle2, AlertTriangle, XCircle, Search } from 'lucide-react';
+import { ArrowRight, Gift, CheckCircle2, AlertTriangle, XCircle, Search, UserPlus } from 'lucide-react';
 import { controlIngresoService } from '../../api/controlIngreso.service';
 import { deportistasService } from '../../api/deportistas.service';
+import { membresiasService } from '../../api/membresias.service';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { parseApiError } from '../../api/client';
+import { parseApiError, toApiError } from '../../api/client';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -15,9 +16,11 @@ import { Badge } from '../../components/ui/Badge';
 import { MensajeFijo } from '../../components/estados/Estados';
 import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
 import { formatHora } from '../../utils/formato';
-import { formatFechaNegocio } from '../../utils/fechasBogota';
+import { formatFechaNegocio, hoyBogota } from '../../utils/fechasBogota';
 import { CheckinItemHistorialDto, CheckinResponseDto, ResumenIngresosHoyDto } from '../../types/controlIngreso.types';
-import { MembresiaFichaResponse } from '../../types/deportistas.types';
+import { DeportistaResponse, MembresiaFichaResponse } from '../../types/deportistas.types';
+import { FormularioDeportista, PlanAsignacionInicial } from '../deportistas/FormularioDeportista';
+import { CobroMembresiaModal, DestinoCobro } from '../membresias/CobroMembresiaModal';
 import { PanelAdentro } from './PanelAdentro';
 import { presentarResultado } from './formatoIngreso';
 
@@ -42,6 +45,7 @@ export const ControlIngresoPage: React.FC = () => {
   const puedeRegistrar = hasPermission('control_ingreso', 'crear');
   // Plan y vencimiento salen de la ficha (endpoint existente); solo se consulta con permiso de lectura.
   const puedeVerFicha = hasPermission('deportistas', 'leer');
+  const puedeCrearCliente = hasPermission('deportistas', 'crear');
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [documento, setDocumento] = useState('');
@@ -49,6 +53,13 @@ export const ControlIngresoPage: React.FC = () => {
   const [lastCheckin, setLastCheckin] = useState<CheckinResponseDto | null>(null);
   const [membresia, setMembresia] = useState<MembresiaFichaResponse | null>(null);
   const [errorCheckin, setErrorCheckin] = useState<string | null>(null);
+  // Documento que no existe en el gimnasio: se ofrece registrarlo sin volver a escribirlo.
+  const [documentoSinRegistro, setDocumentoSinRegistro] = useState<string | null>(null);
+
+  // Nuevo cliente sin salir de Check-in
+  const [formClienteAbierto, setFormClienteAbierto] = useState(false);
+  const [documentoCliente, setDocumentoCliente] = useState('');
+  const [cobro, setCobro] = useState<DestinoCobro | null>(null);
 
   const [resumen, setResumen] = useState<ResumenIngresosHoyDto | null>(null);
   const [recientes, setRecientes] = useState<CheckinItemHistorialDto[]>([]);
@@ -98,6 +109,7 @@ export const ControlIngresoPage: React.FC = () => {
 
     setIsProcessing(true);
     setErrorCheckin(null);
+    setDocumentoSinRegistro(null);
     setMembresia(null);
     try {
       const res = await controlIngresoService.checkinManual({ documento: documento.trim() });
@@ -107,9 +119,53 @@ export const ControlIngresoPage: React.FC = () => {
       if (res.deportista?.id) cargarMembresia(res.deportista.id);
     } catch (err) {
       setErrorCheckin(parseApiError(err));
+      if (toApiError(err).codigo === 'DEPORTISTA_NO_ENCONTRADO') setDocumentoSinRegistro(documento.trim());
     } finally {
       setIsProcessing(false);
       // El campo queda listo para el siguiente documento.
+      inputRef.current?.focus();
+    }
+  };
+
+  const abrirNuevoCliente = (documentoEscrito = '') => {
+    setDocumentoCliente(documentoEscrito);
+    setFormClienteAbierto(true);
+  };
+
+  /**
+   * De vuelta en Check-in con el documento listo. El ingreso no se valida solo: sin membresía quedaría
+   * registrado como negado, y es recepción quien decide cuándo validarlo.
+   */
+  const trasRegistrarCliente = (d: DeportistaResponse, seleccionPlan?: PlanAsignacionInicial) => {
+    setFormClienteAbierto(false);
+    setErrorCheckin(null);
+    setDocumentoSinRegistro(null);
+    setDocumento(d.documento);
+
+    if (seleccionPlan) {
+      showToast('success', 'Cliente registrado', 'Completa el cobro para activar su membresía');
+      setCobro({
+        tipo: 'venta',
+        titulo: d.nombre,
+        detalle: `${seleccionPlan.plan.nombre} · ${seleccionPlan.plan.duracion_dias} días desde ${formatFechaNegocio(
+          seleccionPlan.fechaInicio ?? hoyBogota()
+        )}`,
+        precioLista: Math.round(Number(seleccionPlan.plan.precio)),
+        registrar: async (pago, clave) => {
+          const nueva = await membresiasService.asignarPlan(
+            {
+              deportista_id: d.id,
+              plan_id: seleccionPlan.plan.id,
+              fecha_inicio: seleccionPlan.fechaInicio,
+              pago,
+            },
+            clave
+          );
+          return nueva.pago!;
+        },
+      });
+    } else {
+      showToast('success', 'Cliente registrado', 'Su documento quedó listo para validar el acceso.');
       inputRef.current?.focus();
     }
   };
@@ -159,11 +215,18 @@ export const ControlIngresoPage: React.FC = () => {
           <p className="page-subtitle">Valida el acceso de cada persona y registra su salida</p>
         </div>
 
-        {puedeRegistrar && (
-          <Button variant="secondary" leftIcon={<Gift size={16} />} onClick={() => setShowCortesiaModal(true)}>
-            Ingreso de cortesía
-          </Button>
-        )}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {puedeCrearCliente && (
+            <Button variant="secondary" leftIcon={<UserPlus size={16} />} onClick={() => abrirNuevoCliente()}>
+              Nuevo cliente
+            </Button>
+          )}
+          {puedeRegistrar && (
+            <Button variant="secondary" leftIcon={<Gift size={16} />} onClick={() => setShowCortesiaModal(true)}>
+              Ingreso de cortesía
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="checkin-layout">
@@ -207,7 +270,23 @@ export const ControlIngresoPage: React.FC = () => {
 
             {errorCheckin && (
               <div className="mensaje-fijo-wrap">
-                <MensajeFijo tono="error">{errorCheckin}</MensajeFijo>
+                <MensajeFijo
+                  tono="error"
+                  accion={
+                    documentoSinRegistro && puedeCrearCliente ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        leftIcon={<UserPlus size={14} />}
+                        onClick={() => abrirNuevoCliente(documentoSinRegistro)}
+                      >
+                        Registrar cliente
+                      </Button>
+                    ) : undefined
+                  }
+                >
+                  {errorCheckin}
+                </MensajeFijo>
               </div>
             )}
           </div>
@@ -307,6 +386,22 @@ export const ControlIngresoPage: React.FC = () => {
           )}
         </Card>
       </div>
+
+      <FormularioDeportista
+        isOpen={formClienteAbierto}
+        documentoInicial={documentoCliente}
+        onCerrar={() => setFormClienteAbierto(false)}
+        onGuardado={trasRegistrarCliente}
+      />
+
+      <CobroMembresiaModal
+        destino={cobro}
+        onCerrar={() => {
+          setCobro(null);
+          inputRef.current?.focus();
+        }}
+        onCobrado={() => showToast('success', 'Membresía asignada', cobro?.titulo ?? '')}
+      />
 
       <Modal
         isOpen={showCortesiaModal}

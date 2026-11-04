@@ -1,55 +1,269 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
 import { History } from 'lucide-react';
-import { MensajeFijo } from '../../components/estados/Estados';
+import { cajaService } from '../../api/caja.service';
+import { personalService } from '../../api/personal.service';
+import { useAuth } from '../../contexts/AuthContext';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { Input, Select } from '../../components/ui/Input';
+import { Modal } from '../../components/ui/Modal';
+import { Table } from '../../components/ui/Table';
+import { Cargando, ErrorCarga, MensajeFijo, VacioInicial } from '../../components/estados/Estados';
+import { formatCOP, formatFechaHora, formatHora } from '../../utils/formato';
+import { hoyBogota, sumarDias } from '../../utils/fechasBogota';
+import type { ListadoTurnosResponse, MovimientoCajaItemDto, TurnoHistorialDto } from '../../types/caja.types';
+
+const TURNOS_POR_PAGINA = 20;
+
+const ETIQUETA_MOVIMIENTO: Record<MovimientoCajaItemDto['tipo_movimiento'], string> = {
+  venta: 'Venta',
+  pago_membresia: 'Membresía',
+  egreso: 'Egreso',
+  devolucion: 'Devolución',
+};
+
+const DiferenciaBadge: React.FC<{ turno: TurnoHistorialDto }> = ({ turno }) => {
+  if (turno.diferencia === null || turno.diferencia === undefined) return <>—</>;
+  const diferencia = Number(turno.diferencia);
+  if (diferencia === 0) return <Badge variant="success">Cuadrado</Badge>;
+  return (
+    <Badge variant="danger">
+      {diferencia > 0 ? 'Sobran' : 'Faltan'} {formatCOP(Math.abs(diferencia))}
+    </Badge>
+  );
+};
 
 /**
- * Historial de turnos (GW-RF-10, GW-RF-13).
- *
- * El backend no tiene un endpoint para listar turnos: solo existen `GET /caja/turnos/actual`
- * y `GET /caja/turnos/{turno_id}/movimientos`, que exige conocer el id. Sin la lista no hay
- * forma honesta de mostrar el historial, así que la pantalla lo dice y no inventa filas.
- *
- * Endpoint que falta (ver reporte del carril 5):
- *   GET /caja/turnos?estado=cerrado&desde=YYYY-MM-DD&hasta=YYYY-MM-DD&staff_id=&con_descuadre=&pagina=&limite=20
- *   → { items: TurnoResumenDto[] (+ abierto_por_nombre, cerrado_por_nombre, revisado_por_nombre, nota_revision),
- *       total, pagina, limite, total_paginas }
- *   Permiso `caja:leer`. Fechas por día de Bogotá sobre `abierto_en`.
+ * Historial de turnos (GW-RF-10, GW-RF-13): turnos cerrados con su arqueo, para revisar descuadres.
+ * Un turno cerrado es inmutable: esta pantalla solo consulta.
  */
-export const HistorialTurnosPage: React.FC = () => (
-  <div>
-    <div className="page-header">
-      <div>
-        <h1 className="page-title">Historial de turnos</h1>
-        <p className="page-subtitle">Turnos de caja cerrados, con su arqueo y descuadre</p>
+export const HistorialTurnosPage: React.FC = () => {
+  const { hasPermission } = useAuth();
+  const puedeVerPersonal = hasPermission('personal', 'leer');
+
+  const hoy = hoyBogota();
+  const [desde, setDesde] = useState(sumarDias(hoy, -30));
+  const [hasta, setHasta] = useState(hoy);
+  const [staffId, setStaffId] = useState('');
+  const [soloDescuadre, setSoloDescuadre] = useState(false);
+  const [pagina, setPagina] = useState(1);
+
+  const [datos, setDatos] = useState<ListadoTurnosResponse | null>(null);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState<unknown>(null);
+  const [personal, setPersonal] = useState<{ value: string; label: string }[]>([]);
+
+  const [detalle, setDetalle] = useState<TurnoHistorialDto | null>(null);
+  const [movimientos, setMovimientos] = useState<MovimientoCajaItemDto[]>([]);
+  const [cargandoMovs, setCargandoMovs] = useState(false);
+  const [errorMovs, setErrorMovs] = useState<unknown>(null);
+
+  const rangoInvalido = !desde || !hasta || hasta < desde;
+
+  const cargar = useCallback(async () => {
+    if (!desde || !hasta || hasta < desde) return;
+    setCargando(true);
+    try {
+      const res = await cajaService.listarTurnos({
+        desde,
+        hasta,
+        staff_id: staffId || undefined,
+        con_descuadre: soloDescuadre || undefined,
+        pagina,
+        limite: TURNOS_POR_PAGINA,
+      });
+      setDatos(res);
+      setError(null);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setCargando(false);
+    }
+  }, [desde, hasta, staffId, soloDescuadre, pagina]);
+
+  useEffect(() => {
+    cargar();
+  }, [cargar]);
+
+  useEffect(() => {
+    if (!puedeVerPersonal) return;
+    personalService
+      .listar({ limite: 100 })
+      .then((res) => setPersonal(res.items.map((s) => ({ value: s.id, label: s.nombre }))))
+      .catch(() => setPersonal([]));
+  }, [puedeVerPersonal]);
+
+  const cargarMovimientos = useCallback(async (turnoId: string) => {
+    setCargandoMovs(true);
+    try {
+      const res = await cajaService.getMovimientos(turnoId);
+      setMovimientos(res.items);
+      setErrorMovs(null);
+    } catch (e) {
+      setErrorMovs(e);
+    } finally {
+      setCargandoMovs(false);
+    }
+  }, []);
+
+  const abrirDetalle = (turno: TurnoHistorialDto) => {
+    setDetalle(turno);
+    setMovimientos([]);
+    cargarMovimientos(turno.id);
+  };
+
+  const conFiltro = <T,>(setter: (valor: T) => void) => (valor: T) => {
+    setter(valor);
+    setPagina(1);
+  };
+
+  const hayFiltrosExtra = !!staffId || soloDescuadre;
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Historial de turnos</h1>
+          <p className="page-subtitle">Turnos de caja cerrados, con su arqueo y descuadre</p>
+        </div>
       </div>
-    </div>
 
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        textAlign: 'center',
-        padding: '56px 20px',
-        background: 'var(--bg-surface)',
-        border: '1px dashed var(--border-color)',
-        borderRadius: 'var(--radius-md)',
-        marginBottom: 20,
-      }}
-    >
-      <History size={40} color="var(--text-muted)" style={{ marginBottom: 12 }} />
-      <div style={{ fontSize: '1.05rem', fontWeight: 500, marginBottom: 6 }}>El historial aún no está disponible</div>
-      <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: 520, margin: 0 }}>
-        El servidor todavía no permite consultar la lista de turnos cerrados. Mientras tanto, el turno abierto y sus
-        movimientos se ven en <Link to="/caja">Caja · Turno actual</Link>, y los ingresos por periodo en{' '}
-        <Link to="/reportes">Reportes · Ingresos</Link>.
-      </p>
-    </div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 20 }}>
+        <Input label="Desde" type="date" value={desde} max={hoy} onChange={(e) => conFiltro(setDesde)(e.target.value)} />
+        <Input label="Hasta" type="date" value={hasta} max={hoy} onChange={(e) => conFiltro(setHasta)(e.target.value)} />
+        {puedeVerPersonal && (
+          <Select
+            label="Persona"
+            value={staffId}
+            onChange={(e) => conFiltro(setStaffId)(e.target.value)}
+            options={[{ value: '', label: 'Todas' }, ...personal]}
+          />
+        )}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 34, fontSize: 'var(--fs-sm)' }}>
+          <input
+            type="checkbox"
+            checked={soloDescuadre}
+            onChange={(e) => conFiltro(setSoloDescuadre)(e.target.checked)}
+          />
+          Solo con descuadre
+        </label>
+      </div>
 
-    <MensajeFijo tono="info" titulo="Disponible pronto">
-      Aquí vas a poder ver cada turno cerrado con su base, el efectivo esperado, el conteo, la diferencia y los
-      movimientos, y filtrarlos por fecha, persona y descuadre.
-    </MensajeFijo>
-  </div>
-);
+      {rangoInvalido ? (
+        <MensajeFijo tono="advertencia">Elige un rango válido: la fecha inicial no puede ser posterior a la final.</MensajeFijo>
+      ) : error ? (
+        <ErrorCarga error={error} onReintentar={cargar} />
+      ) : !datos ? (
+        <Cargando />
+      ) : datos.total === 0 && !cargando ? (
+        <Card>
+          <VacioInicial
+            icono={<History size={24} />}
+            titulo={hayFiltrosExtra ? 'Ningún turno coincide con los filtros' : 'No hay turnos cerrados en estas fechas'}
+            descripcion="Aquí aparecen los turnos de caja una vez se cierran, con lo esperado, lo contado y la diferencia."
+          />
+        </Card>
+      ) : (
+        <Card>
+          <Table<TurnoHistorialDto>
+            columns={[
+              { header: 'Abierto', accessor: (t) => formatFechaHora(t.abierto_en) },
+              { header: 'Cerrado', accessor: (t) => (t.cerrado_en ? formatFechaHora(t.cerrado_en) : '—') },
+              { header: 'Persona', accessor: (t) => t.staff_nombre ?? '—' },
+              { header: 'Esperado', align: 'right', accessor: (t) => formatCOP(t.total_esperado_efectivo) },
+              {
+                header: 'Contado',
+                align: 'right',
+                accessor: (t) =>
+                  t.efectivo_contado === null || t.efectivo_contado === undefined ? '—' : formatCOP(t.efectivo_contado),
+              },
+              { header: 'Diferencia', render: (t) => <DiferenciaBadge turno={t} /> },
+              {
+                header: '',
+                align: 'right',
+                render: (t) => (
+                  <Button variant="ghost" size="sm" onClick={() => abrirDetalle(t)}>
+                    Ver detalle
+                  </Button>
+                ),
+              },
+            ]}
+            data={datos.items}
+            isLoading={cargando}
+            keyExtractor={(t) => t.id}
+            pagination={{ currentPage: pagina, totalPages: datos.total_paginas, onPageChange: setPagina }}
+          />
+        </Card>
+      )}
+
+      <Modal isOpen={!!detalle} onClose={() => setDetalle(null)} title="Detalle del turno" maxWidth="760px">
+        {detalle && (
+          <>
+            <div className="checkin-stats" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+              <div className="checkin-stat">
+                <small>Base inicial</small>
+                <strong>{formatCOP(detalle.base_inicial)}</strong>
+              </div>
+              <div className="checkin-stat">
+                <small>Efectivo esperado</small>
+                <strong>{formatCOP(detalle.total_esperado_efectivo)}</strong>
+              </div>
+              <div className="checkin-stat">
+                <small>Efectivo contado</small>
+                <strong>
+                  {detalle.efectivo_contado === null || detalle.efectivo_contado === undefined
+                    ? '—'
+                    : formatCOP(detalle.efectivo_contado)}
+                </strong>
+              </div>
+              <div className="checkin-stat">
+                <small>Otros medios</small>
+                <strong>{formatCOP(Number(detalle.ventas_otro) + Number(detalle.pagos_membresia_otro))}</strong>
+              </div>
+            </div>
+            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', margin: '0 0 12px' }}>
+              {detalle.staff_nombre ?? 'Sin nombre'} · <DiferenciaBadge turno={detalle} />
+              {detalle.cierre_forzado && <> · Cierre forzado</>}
+              {detalle.estado_revision === 'revisado' && (
+                <> · Revisado{detalle.revisado_por_nombre ? ` por ${detalle.revisado_por_nombre}` : ''}</>
+              )}
+            </p>
+            {errorMovs ? (
+              <ErrorCarga error={errorMovs} onReintentar={() => cargarMovimientos(detalle.id)} />
+            ) : (
+              <Table<MovimientoCajaItemDto>
+                columns={[
+                  { header: 'Hora', accessor: (m) => formatHora(m.ts), width: '80px' },
+                  { header: 'Tipo', accessor: (m) => ETIQUETA_MOVIMIENTO[m.tipo_movimiento] ?? m.tipo_movimiento, width: '110px' },
+                  {
+                    header: 'Concepto',
+                    render: (m) => (
+                      <span style={{ textDecoration: m.anulado ? 'line-through' : undefined }}>
+                        {m.concepto}
+                        {m.anulado ? ' (anulado)' : ''}
+                      </span>
+                    ),
+                  },
+                  { header: 'Método', accessor: (m) => m.metodo ?? '—' },
+                  {
+                    header: 'Monto',
+                    align: 'right',
+                    render: (m) => {
+                      const salida = m.tipo_movimiento === 'egreso' || m.tipo_movimiento === 'devolucion';
+                      return `${salida ? '−' : '+'}${formatCOP(m.monto)}`;
+                    },
+                  },
+                ]}
+                data={movimientos}
+                isLoading={cargandoMovs}
+                keyExtractor={(m) => `${m.tipo_movimiento}-${m.id}`}
+                emptyMessage="Este turno no tuvo movimientos."
+              />
+            )}
+          </>
+        )}
+      </Modal>
+    </div>
+  );
+};

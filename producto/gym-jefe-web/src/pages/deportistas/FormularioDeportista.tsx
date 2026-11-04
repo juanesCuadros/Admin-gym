@@ -115,6 +115,8 @@ interface FormularioDeportistaProps {
   isOpen: boolean;
   /** Sin `inicial` se crea; con `inicial` se edita (con su `version`). */
   inicial?: DeportistaResponse | null;
+  /** Al crear: documento ya escrito en otra pantalla (por ejemplo, Check-in). */
+  documentoInicial?: string;
   onCerrar: () => void;
   onGuardado: (d: DeportistaResponse, seleccionPlan?: PlanAsignacionInicial) => void;
   /** 409 de concurrencia: el padre recarga el registro. */
@@ -128,6 +130,7 @@ interface FormularioDeportistaProps {
 export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
   isOpen,
   inicial,
+  documentoInicial,
   onCerrar,
   onGuardado,
   onRecargar,
@@ -135,7 +138,10 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
   const { hasPermission } = useAuth();
   const puedeAsignarPlan = hasPermission('membresias', 'crear') && hasPermission('caja', 'crear');
   const editando = !!inicial;
-  const base = useMemo(() => (inicial ? desdeDeportista(inicial) : VACIO), [inicial]);
+  const base = useMemo(
+    () => (inicial ? desdeDeportista(inicial) : { ...VACIO, documento: documentoInicial ?? '' }),
+    [inicial, documentoInicial]
+  );
   const [v, setV] = useState<Valores>(base);
   const [planes, setPlanes] = useState<PlanResponse[]>([]);
   const [planId, setPlanId] = useState('');
