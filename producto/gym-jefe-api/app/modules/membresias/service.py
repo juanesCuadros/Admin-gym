@@ -1074,6 +1074,7 @@ class MembresiasService:
         q: Optional[str] = None,
         skip: int = 0,
         limit: int = 50,
+        grupo: Optional[str] = None,
     ) -> MembresiasPaginadasResponse:
         """
         Listado paginado de membresías.
@@ -1087,6 +1088,18 @@ class MembresiasService:
             params["q_text"] = f"%{q.strip()}%"
 
         cond_cancelada = "AND m.cancelada = true" if estado == "cancelada" else "AND m.cancelada = false"
+        if grupo:
+            # Se filtra en SQL para que el total y la paginación correspondan al grupo.
+            params["hoy"] = today_local()
+            congelada = (
+                "EXISTS (SELECT 1 FROM platform.congelamientos c "
+                "WHERE c.membresia_id = m.id AND c.fecha_fin IS NULL)"
+            )
+            cond_cancelada = {
+                "canceladas": "AND m.cancelada = true",
+                "activas": f"AND m.cancelada = false AND (m.fecha_vencimiento >= :hoy OR {congelada})",
+                "vencidas": f"AND m.cancelada = false AND m.fecha_vencimiento < :hoy AND NOT {congelada}",
+            }[grupo]
 
         q_count = text(f"""
             SELECT COUNT(*)
@@ -1101,7 +1114,7 @@ class MembresiasService:
             SELECT m.id, m.deportista_id, d.nombre as deportista_nombre, d.documento as deportista_documento,
                    d.correo as deportista_correo, d.telefono as deportista_telefono, d.activo as deportista_activo,
                    m.plan_id, p.nombre as plan_nombre, m.fecha_inicio, m.fecha_vencimiento, m.cancelada,
-                   m.plan_precio_vendido, m.plan_duracion_dias_vendida
+                   m.plan_precio_vendido, m.plan_duracion_dias_vendida, m.created_at
             FROM platform.membresias m
             JOIN platform.deportistas d ON d.id = m.deportista_id
             JOIN platform.planes p ON p.id = m.plan_id

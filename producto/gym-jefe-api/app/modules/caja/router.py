@@ -20,6 +20,7 @@ from app.modules.caja.schemas import (
     EgresoResponseDto,
     HistorialMovimientosTurnoResponse,
     ListadoTurnosResponse,
+    RevisarTurnoRequest,
     PagoMembresiaResponseDto,
     PreciosPasesResponse,
     RegistrarEgresoRequest,
@@ -88,6 +89,27 @@ async def listar_turnos(
         con_descuadre=con_descuadre,
         pagina=pagina,
         limite=limite,
+    )
+
+
+@router.post(
+    "/turnos/{turno_id}/revision",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="El Jefe revisa un descuadre y deja una nota (RF-10 CA2)"
+)
+async def revisar_turno(
+    turno_id: Annotated[UUID, Path(description="Turno revisado")],
+    data: RevisarTurnoRequest,
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_role("jefe"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    await CajaService.revisar_turno(
+        session=session,
+        gym_id=current_staff.gimnasio_id,
+        staff_id=current_staff.staff_id,
+        staff_nombre=current_staff.nombre,
+        turno_id=turno_id,
+        nota=data.nota,
     )
 
 

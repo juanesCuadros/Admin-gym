@@ -116,7 +116,10 @@ export interface MembresiaListItemResponse {
   /** Copia del plan en la venta (contrato 1.4): precio de lista de esta membresía. */
   plan_precio_vendido?: number | string | null;
   plan_duracion_dias_vendida?: number | null;
+  created_at?: string | null;
 }
+
+export type GrupoMembresias = 'activas' | 'vencidas' | 'canceladas';
 
 export interface MembresiasPaginadasResponse {
   items: MembresiaListItemResponse[];

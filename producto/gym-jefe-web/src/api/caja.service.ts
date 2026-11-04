@@ -66,6 +66,11 @@ export const cajaService = {
     return response.data;
   },
 
+  /** GW-RF-10 CA2: solo el Jefe. El arqueo no cambia. */
+  async revisarTurno(turnoId: string, nota: string): Promise<void> {
+    await apiClient.post(`/caja/turnos/${turnoId}/revision`, { nota });
+  },
+
   async getMovimientos(turnoId: string): Promise<HistorialMovimientosTurnoResponse> {
     const response = await apiClient.get<HistorialMovimientosTurnoResponse>(`/caja/turnos/${turnoId}/movimientos`);
     return response.data;

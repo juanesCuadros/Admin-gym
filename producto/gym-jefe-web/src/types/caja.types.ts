@@ -185,6 +185,7 @@ export interface EgresoResponseDto {
 export interface TurnoHistorialDto extends TurnoResumenDto {
   estado_revision?: 'pendiente_revision' | 'revisado' | null;
   revisado_por_nombre?: string | null;
+  nota_revision?: string | null;
 }
 
 export interface ListadoTurnosResponse {

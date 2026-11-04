@@ -15,6 +15,8 @@ export interface TableProps<T> {
   data: T[];
   isLoading?: boolean;
   emptyMessage?: string;
+  /** Hace clicable toda la fila. Los botones dentro de la fila deben detener el clic. */
+  onRowClick?: (item: T) => void;
   keyExtractor: (item: T) => string | number;
   pagination?: {
     currentPage: number;
@@ -28,6 +30,7 @@ export function Table<T>({
   data,
   isLoading = false,
   emptyMessage = 'No se encontraron registros',
+  onRowClick,
   keyExtractor,
   pagination,
 }: TableProps<T>) {
@@ -71,7 +74,11 @@ export function Table<T>({
               </tr>
             ) : (
               data.map((item) => (
-                <tr key={keyExtractor(item)}>
+                <tr
+                  key={keyExtractor(item)}
+                  onClick={onRowClick ? () => onRowClick(item) : undefined}
+                  style={onRowClick ? { cursor: 'pointer' } : undefined}
+                >
                   {columns.map((col, colIdx) => {
                     let content: ReactNode = null;
                     if (col.render) {

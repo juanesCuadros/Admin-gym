@@ -150,6 +150,7 @@ class MembresiaListItemResponse(BaseModel):
     congelamiento_id: Optional[UUID] = None
     plan_precio_vendido: Optional[Decimal] = None
     plan_duracion_dias_vendida: Optional[int] = None
+    created_at: Optional[datetime] = None
 
 
 class MembresiasPaginadasResponse(BaseModel):

@@ -3,6 +3,8 @@ import { History } from 'lucide-react';
 import { cajaService } from '../../api/caja.service';
 import { personalService } from '../../api/personal.service';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
+import { parseApiError } from '../../api/client';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -39,7 +41,8 @@ const DiferenciaBadge: React.FC<{ turno: TurnoHistorialDto }> = ({ turno }) => {
  * Un turno cerrado es inmutable: esta pantalla solo consulta.
  */
 export const HistorialTurnosPage: React.FC = () => {
-  const { hasPermission } = useAuth();
+  const { hasPermission, isJefe } = useAuth();
+  const { showToast } = useToast();
   const puedeVerPersonal = hasPermission('personal', 'leer');
 
   const hoy = hoyBogota();
@@ -58,6 +61,9 @@ export const HistorialTurnosPage: React.FC = () => {
   const [movimientos, setMovimientos] = useState<MovimientoCajaItemDto[]>([]);
   const [cargandoMovs, setCargandoMovs] = useState(false);
   const [errorMovs, setErrorMovs] = useState<unknown>(null);
+  const [notaRevision, setNotaRevision] = useState('');
+  const [guardandoRevision, setGuardandoRevision] = useState(false);
+  const [errorRevision, setErrorRevision] = useState<string | null>(null);
 
   const rangoInvalido = !desde || !hasta || hasta < desde;
 
@@ -110,7 +116,29 @@ export const HistorialTurnosPage: React.FC = () => {
   const abrirDetalle = (turno: TurnoHistorialDto) => {
     setDetalle(turno);
     setMovimientos([]);
+    setNotaRevision('');
+    setErrorRevision(null);
     cargarMovimientos(turno.id);
+  };
+
+  const guardarRevision = async () => {
+    if (!detalle) return;
+    if (notaRevision.trim().length < 4) {
+      setErrorRevision('Escribe qué encontraste (mínimo 4 caracteres).');
+      return;
+    }
+    setGuardandoRevision(true);
+    setErrorRevision(null);
+    try {
+      await cajaService.revisarTurno(detalle.id, notaRevision.trim());
+      showToast('success', 'Descuadre revisado', 'La nota quedó guardada en el turno.');
+      setDetalle(null);
+      cargar();
+    } catch (e) {
+      setErrorRevision(parseApiError(e));
+    } finally {
+      setGuardandoRevision(false);
+    }
   };
 
   const conFiltro = <T,>(setter: (valor: T) => void) => (valor: T) => {
@@ -178,7 +206,19 @@ export const HistorialTurnosPage: React.FC = () => {
                 accessor: (t) =>
                   t.efectivo_contado === null || t.efectivo_contado === undefined ? '—' : formatCOP(t.efectivo_contado),
               },
-              { header: 'Diferencia', render: (t) => <DiferenciaBadge turno={t} /> },
+              {
+                header: 'Diferencia',
+                render: (t) => (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <DiferenciaBadge turno={t} />
+                    {Number(t.diferencia ?? 0) !== 0 && (
+                      <Badge variant={t.estado_revision === 'revisado' ? 'info' : 'warning'}>
+                        {t.estado_revision === 'revisado' ? 'Revisado' : 'Por revisar'}
+                      </Badge>
+                    )}
+                  </div>
+                ),
+              },
               {
                 header: '',
                 align: 'right',
@@ -229,6 +269,26 @@ export const HistorialTurnosPage: React.FC = () => {
                 <> · Revisado{detalle.revisado_por_nombre ? ` por ${detalle.revisado_por_nombre}` : ''}</>
               )}
             </p>
+            {detalle.nota_revision && (
+              <MensajeFijo tono="info" titulo="Nota de la revisión" style={{ marginBottom: 12 }}>
+                {detalle.nota_revision}
+              </MensajeFijo>
+            )}
+            {isJefe && Number(detalle.diferencia ?? 0) !== 0 && detalle.estado_revision !== 'revisado' && (
+              <div style={{ marginBottom: 12 }}>
+                <Input
+                  label="Nota de la revisión"
+                  placeholder="Ej. Faltó registrar un vale de $5.000"
+                  value={notaRevision}
+                  maxLength={500}
+                  onChange={(e) => setNotaRevision(e.target.value)}
+                  error={errorRevision ?? undefined}
+                />
+                <Button variant="primary" size="sm" onClick={guardarRevision} isLoading={guardandoRevision}>
+                  Marcar como revisado
+                </Button>
+              </div>
+            )}
             {errorMovs ? (
               <ErrorCarga error={errorMovs} onReintentar={() => cargarMovimientos(detalle.id)} />
             ) : (

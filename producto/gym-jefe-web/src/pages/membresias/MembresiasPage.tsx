@@ -10,7 +10,6 @@ import {
   Clock,
   DollarSign,
   UserCheck,
-  Users,
   Edit2,
   Power,
   Trash2,
@@ -26,7 +25,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Modal, ConfirmDialog } from '../../components/ui/Modal';
 import { Drawer } from '../../components/ui/Drawer';
 import { MenuAcciones } from '../../components/ui/MenuAcciones';
-import { formatCOP } from '../../utils/formato';
+import { formatCOP, formatFechaHora } from '../../utils/formato';
 import { Table } from '../../components/ui/Table';
 import { formatFechaNegocio } from '../../utils/fechasBogota';
 import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
@@ -35,6 +34,7 @@ import { CobroMembresiaModal, DestinoCobro } from './CobroMembresiaModal';
 import { CrearPaqueteModal, traducirErrorPaquete } from './CrearPaqueteModal';
 import type { DeportistaBusquedaItem } from '../../types/comun.types';
 import {
+  GrupoMembresias,
   PlanResponse,
   MembresiaListItemResponse,
   MembresiaResponse,
@@ -42,6 +42,16 @@ import {
 } from '../../types/membresias.types';
 
 type TabMembresias = 'membresias' | 'planes';
+
+const GRUPOS: { valor: GrupoMembresias; etiqueta: string; vacio: string }[] = [
+  { valor: 'activas', etiqueta: 'Activas', vacio: 'No hay membresías activas.' },
+  { valor: 'vencidas', etiqueta: 'Vencidas', vacio: 'No hay membresías vencidas.' },
+  { valor: 'canceladas', etiqueta: 'Canceladas', vacio: 'No hay membresías canceladas.' },
+];
+
+/** El plan se define por cuántas personas cubre; la modalidad se deduce de ese número. */
+const tipoSegunCupo = (cupo: number): CrearPlanRequest['tipo'] =>
+  cupo >= 3 ? 'familiar' : cupo === 2 ? 'pareja' : 'individual';
 
 export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabInicial = 'membresias' }) => {
   const { showToast } = useToast();
@@ -58,6 +68,8 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
   const [totalMembresias, setTotalMembresias] = useState(0);
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
+  const [grupo, setGrupo] = useState<GrupoMembresias>('activas');
+  const [detalle, setDetalle] = useState<MembresiaListItemResponse | null>(null);
   const [isLoadingMembresias, setIsLoadingMembresias] = useState(false);
 
   // Planes state
@@ -148,6 +160,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
       const res = await membresiasService.getMembresias({
         skip: (page - 1) * 10,
         limit: 10,
+        grupo,
         q: q.length > 0 ? q : undefined,
       });
       setMembresias(res.items);
@@ -157,7 +170,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     } finally {
       setIsLoadingMembresias(false);
     }
-  }, [page, searchQuery]);
+  }, [page, searchQuery, grupo]);
 
   useEffect(() => {
     loadPlanes();
@@ -169,7 +182,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
 
   useEffect(() => {
     setPage(1);
-  }, [searchQuery]);
+  }, [searchQuery, grupo]);
 
   const abrirNuevoPlan = () => {
     setEditandoPlan(null);
@@ -440,44 +453,71 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
     }
   };
 
+  const accionesDe = (m: MembresiaListItemResponse) => [
+    {
+      etiqueta: 'Descongelar',
+      icono: <Sun size={15} />,
+      oculto: !m.congelamiento_activo,
+      onClick: () => {
+        setDetalle(null);
+        handleDescongelar(m.id);
+      },
+    },
+    {
+      etiqueta: 'Congelar',
+      icono: <Snowflake size={15} />,
+      oculto: m.congelamiento_activo,
+      onClick: () => {
+        setDetalle(null);
+        setSelectedMembresiaId(m.id);
+        setShowCongelarModal(true);
+      },
+    },
+    {
+      etiqueta: 'Cambiar plan',
+      icono: <RefreshCw size={15} />,
+      onClick: () => {
+        setDetalle(null);
+        setSelectedMembresiaId(m.id);
+        setNuevoPlanId(planesActivos.find((p) => p.id !== m.plan_id)?.id || planesActivos[0]?.id || '');
+        setShowCambiarPlanModal(true);
+      },
+    },
+    {
+      etiqueta: 'Cancelar membresía',
+      icono: <XCircle size={15} />,
+      peligro: true,
+      onClick: () => {
+        setDetalle(null);
+        setSelectedMembresiaId(m.id);
+        setShowCancelarModal(true);
+      },
+    },
+  ];
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Membresías</h1>
           <p className="page-subtitle">
-            Asigna planes, congela, cambia o cancela membresías
+            {activeTab === 'planes'
+              ? 'Los planes que vende el gimnasio y para cuántas personas son'
+              : 'Asigna planes, congela, cambia o cancela membresías'}
           </p>
         </div>
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {puedeCrearMembresia && (
-            <Button
-              variant="outline"
-              leftIcon={<Users size={16} />}
-              onClick={() => {
-                setPaquetePlanInicialId('');
-                setPaqueteTitularInicial(null);
-                setShowPaqueteModal(true);
-              }}
-            >
-              Plan grupal
+          {activeTab === 'membresias' && puedeCrearMembresia && (
+            <Button variant="primary" leftIcon={<UserCheck size={16} />} onClick={handleOpenAsignar}>
+              Asignar plan
             </Button>
           )}
-          <Button
-            variant="outline"
-            leftIcon={<UserCheck size={16} />}
-            onClick={handleOpenAsignar}
-          >
-            Asignar plan
-          </Button>
-          <Button
-            variant="primary"
-            leftIcon={<Plus size={16} />}
-            onClick={abrirNuevoPlan}
-          >
-            Nuevo plan
-          </Button>
+          {activeTab === 'planes' && (
+            <Button variant="primary" leftIcon={<Plus size={16} />} onClick={abrirNuevoPlan}>
+              Nuevo plan
+            </Button>
+          )}
         </div>
       </div>
 
@@ -487,7 +527,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
           className={`tab-btn ${activeTab === 'membresias' ? 'active' : ''}`}
           onClick={() => setActiveTab('membresias')}
         >
-          Membresías activas
+          Membresías
         </button>
         <button
           className={`tab-btn ${activeTab === 'planes' ? 'active' : ''}`}
@@ -499,13 +539,29 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
 
       {activeTab === 'membresias' ? (
         <>
-          <div style={{ marginBottom: 16, maxWidth: 420 }}>
-            <SearchInput
-              placeholder="Buscar por nombre o número de documento"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              aria-label="Buscar membresía por nombre o documento"
-            />
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ flex: '1 1 280px', maxWidth: 420 }}>
+              <SearchInput
+                placeholder="Buscar por nombre o número de documento"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Buscar membresía por nombre o documento"
+              />
+            </div>
+            <div className="segmented" role="radiogroup" aria-label="Filtrar membresías">
+              {GRUPOS.map((g) => (
+                <button
+                  key={g.valor}
+                  type="button"
+                  role="radio"
+                  aria-checked={grupo === g.valor}
+                  className={grupo === g.valor ? 'active' : ''}
+                  onClick={() => setGrupo(g.valor)}
+                >
+                  {g.etiqueta}
+                </button>
+              ))}
+            </div>
           </div>
           <Card>
           <Table<MembresiaListItemResponse>
@@ -547,7 +603,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                 align: 'right',
                 width: '150px',
                 render: (m) => (
-                  <div className="acciones-fila">
+                  <div className="acciones-fila" onClick={(e) => e.stopPropagation()}>
                     {puedeCobrar && !m.cancelada && (
                       <Button
                         variant="secondary"
@@ -558,44 +614,9 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
                         Renovar
                       </Button>
                     )}
-                    <MenuAcciones
-                      etiqueta={`Acciones de ${m.deportista_nombre}`}
-                      acciones={[
-                        {
-                          etiqueta: 'Descongelar',
-                          icono: <Sun size={15} />,
-                          oculto: !m.congelamiento_activo,
-                          onClick: () => handleDescongelar(m.id),
-                        },
-                        {
-                          etiqueta: 'Congelar',
-                          icono: <Snowflake size={15} />,
-                          oculto: m.congelamiento_activo,
-                          onClick: () => {
-                            setSelectedMembresiaId(m.id);
-                            setShowCongelarModal(true);
-                          },
-                        },
-                        {
-                          etiqueta: 'Cambiar plan',
-                          icono: <RefreshCw size={15} />,
-                          onClick: () => {
-                            setSelectedMembresiaId(m.id);
-                            setNuevoPlanId(planesActivos.find((p) => p.id !== m.plan_id)?.id || planesActivos[0]?.id || '');
-                            setShowCambiarPlanModal(true);
-                          },
-                        },
-                        {
-                          etiqueta: 'Cancelar membresía',
-                          icono: <XCircle size={15} />,
-                          peligro: true,
-                          onClick: () => {
-                            setSelectedMembresiaId(m.id);
-                            setShowCancelarModal(true);
-                          },
-                        },
-                      ]}
-                    />
+                    {!m.cancelada && (
+                      <MenuAcciones etiqueta={`Acciones de ${m.deportista_nombre}`} acciones={accionesDe(m)} />
+                    )}
                   </div>
                 ),
               },
@@ -603,6 +624,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
             data={membresias}
             isLoading={isLoadingMembresias}
             keyExtractor={(m) => m.id}
+            onRowClick={setDetalle}
             pagination={{
               currentPage: page,
               totalPages: Math.ceil(totalMembresias / 10) || 1,
@@ -611,7 +633,7 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
             emptyMessage={
               searchQuery.trim()
                 ? 'Ninguna membresía coincide con el nombre o número de documento buscado.'
-                : 'No hay membresías activas registradas.'
+                : GRUPOS.find((g) => g.valor === grupo)?.vacio
             }
           />
         </Card>
@@ -757,39 +779,19 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Select
-              label="Modalidad"
-              options={[
-                { value: 'individual', label: 'Individual (1 persona)' },
-                { value: 'pareja', label: 'Pareja (2 personas)' },
-                { value: 'familiar', label: 'Familiar' },
-              ]}
-              value={newPlan.tipo}
-              onChange={(e) => {
-                const tipo = e.target.value as CrearPlanRequest['tipo'];
-                const cupoSugerido =
-                  tipo === 'individual'
-                    ? 1
-                    : tipo === 'pareja'
-                      ? 2
-                      : Math.max(3, newPlan.cupo_personas || 3);
-                setCupoPlan(String(cupoSugerido));
-                setNewPlan({ ...newPlan, tipo, cupo_personas: cupoSugerido });
-              }}
-            />
-            <Input
-              label="Cupo máximo de personas"
-              type="text"
-              inputMode="numeric"
-              value={cupoPlan}
-              onChange={(e) => {
-                const limpio = e.target.value.replace(/\D/g, '').replace(/^0+/, '');
-                setCupoPlan(limpio);
-                setNewPlan({ ...newPlan, cupo_personas: limpio === '' ? 0 : Number(limpio) });
-              }}
-            />
-          </div>
+          <Input
+            label="¿Para cuántas personas es? *"
+            type="text"
+            inputMode="numeric"
+            value={cupoPlan}
+            hint="1 es un plan individual. Con 2 o más, un solo pago cubre a todas las personas."
+            onChange={(e) => {
+              const limpio = e.target.value.replace(/\D/g, '').replace(/^0+/, '');
+              const cupo = limpio === '' ? 0 : Number(limpio);
+              setCupoPlan(limpio);
+              setNewPlan({ ...newPlan, cupo_personas: cupo, tipo: tipoSegunCupo(cupo) });
+            }}
+          />
         </form>
       </Drawer>
 
@@ -842,6 +844,81 @@ export const MembresiasPage: React.FC<{ tabInicial?: TabMembresias }> = ({ tabIn
           onChange={(e) => setAsignarData({ ...asignarData, plan_id: e.target.value })}
         />
       </Drawer>
+
+      {/* Detalle de la membresía */}
+      <Modal
+        isOpen={!!detalle}
+        onClose={() => setDetalle(null)}
+        title="Detalle de la membresía"
+        footer={
+          detalle && !detalle.cancelada ? (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {accionesDe(detalle)
+                .filter((a) => !a.oculto)
+                .map((a) => (
+                  <Button key={a.etiqueta} variant={a.peligro ? 'danger' : 'outline'} size="sm" leftIcon={a.icono} onClick={a.onClick}>
+                    {a.etiqueta}
+                  </Button>
+                ))}
+              {puedeCobrar && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={<DollarSign size={14} />}
+                  onClick={() => {
+                    abrirCobro(detalle, detalle.deportista_nombre);
+                    setDetalle(null);
+                  }}
+                >
+                  Renovar
+                </Button>
+              )}
+            </div>
+          ) : undefined
+        }
+      >
+        {detalle && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
+              <div>
+                <div style={{ fontWeight: 500, fontSize: '1.05rem' }}>{detalle.deportista_nombre}</div>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>Doc. {detalle.deportista_documento}</div>
+              </div>
+              <EstadoDeportistaBadge estado={detalle.estado_calculado} detalle={{ dias: detalle.dias_restantes_o_vencido }} />
+            </div>
+            <div className="checkin-stats" style={{ marginBottom: 0 }}>
+              <div className="checkin-stat">
+                <small>Plan</small>
+                <strong style={{ fontSize: '1rem' }}>{detalle.plan_nombre}</strong>
+              </div>
+              <div className="checkin-stat">
+                <small>Precio vendido</small>
+                <strong style={{ fontSize: '1rem' }}>
+                  {detalle.plan_precio_vendido !== null && detalle.plan_precio_vendido !== undefined
+                    ? formatCOP(detalle.plan_precio_vendido)
+                    : '—'}
+                </strong>
+              </div>
+              <div className="checkin-stat">
+                <small>La adquirió</small>
+                <strong style={{ fontSize: '1rem' }}>{detalle.created_at ? formatFechaHora(detalle.created_at) : '—'}</strong>
+              </div>
+              <div className="checkin-stat">
+                <small>Vigente desde</small>
+                <strong style={{ fontSize: '1rem' }}>{formatFechaNegocio(detalle.fecha_inicio)}</strong>
+              </div>
+              <div className="checkin-stat">
+                <small>Vence</small>
+                <strong style={{ fontSize: '1rem' }}>{formatFechaNegocio(detalle.fecha_vencimiento)}</strong>
+              </div>
+              <div className="checkin-stat">
+                <small>Contacto</small>
+                <strong style={{ fontSize: '1rem' }}>{detalle.deportista_telefono || detalle.deportista_correo || '—'}</strong>
+              </div>
+            </div>
+          </>
+        )}
+      </Modal>
 
       {/* Modal: Congelar */}
       <Modal

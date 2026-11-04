@@ -54,6 +54,11 @@ class TurnoResumenDto(BaseModel):
 class TurnoHistorialDto(TurnoResumenDto):
     estado_revision: Optional[str] = None
     revisado_por_nombre: Optional[str] = None
+    nota_revision: Optional[str] = None
+
+
+class RevisarTurnoRequest(BaseModel):
+    nota: str = Field(..., min_length=4, max_length=500, description="Qué encontró el Jefe al revisar el descuadre")
 
 
 class ListadoTurnosResponse(BaseModel):

@@ -228,7 +228,7 @@ class CajaService:
             text(f"""
                 SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre as staff_nombre, t.base_inicial,
                        t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia,
-                       t.estado_revision, t.revisado_en, rev.nombre as revisado_por_nombre
+                       t.estado_revision, t.revisado_en, t.nota_revision, rev.nombre as revisado_por_nombre
                 FROM platform.turnos_caja t
                 JOIN platform.staff s ON s.id = t.staff_id
                 LEFT JOIN platform.staff rev ON rev.id = t.revisado_por
@@ -250,6 +250,7 @@ class CajaService:
                     **{**resumen.model_dump(), "revisado_en": turno["revisado_en"]},
                     estado_revision=turno["estado_revision"],
                     revisado_por_nombre=turno["revisado_por_nombre"],
+                    nota_revision=turno["nota_revision"],
                 )
             )
 
@@ -259,6 +260,61 @@ class CajaService:
             pagina=pagina,
             limite=limite,
             total_paginas=max(1, (total + limite - 1) // limite),
+        )
+
+    @classmethod
+    async def revisar_turno(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        staff_id: UUID,
+        staff_nombre: str,
+        turno_id: UUID,
+        nota: str,
+    ) -> None:
+        """GW-RF-10 CA2: el Jefe revisa un descuadre y deja una nota. Los valores del arqueo no cambian."""
+        fila = (
+            await session.execute(
+                text("""
+                    SELECT estado, diferencia, estado_revision FROM platform.turnos_caja
+                    WHERE id = :id AND gimnasio_id = :gym_id
+                    FOR UPDATE
+                """),
+                {"id": turno_id, "gym_id": gym_id},
+            )
+        ).mappings().first()
+        if not fila:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"codigo": "TURNO_NO_ENCONTRADO", "mensaje": "El turno no existe en este gimnasio."},
+            )
+        if fila["estado"] != "cerrado" or fila["diferencia"] is None or fila["diferencia"] == 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"codigo": "TURNO_SIN_DESCUADRE", "mensaje": "Solo se revisan turnos cerrados con descuadre."},
+            )
+        if fila["estado_revision"] == "revisado":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"codigo": "TURNO_YA_REVISADO", "mensaje": "Este descuadre ya fue revisado."},
+            )
+        await session.execute(
+            text("""
+                UPDATE platform.turnos_caja
+                SET estado_revision = 'revisado', revisado_por = :staff_id, revisado_en = now(), nota_revision = :nota
+                WHERE id = :id AND gimnasio_id = :gym_id
+            """),
+            {"staff_id": staff_id, "nota": nota.strip(), "id": turno_id, "gym_id": gym_id},
+        )
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=gym_id,
+            actor_id=staff_id,
+            actor_nombre=staff_nombre,
+            accion="REVISAR_DESCUADRE",
+            entidad="turnos_caja",
+            entidad_id=str(turno_id),
+            detalle={"diferencia": float(fila["diferencia"]), "nota": nota.strip()},
         )
 
     @classmethod

@@ -2,7 +2,7 @@
 Router de FastAPI para el Módulo 5: Membresías y Planes (RF-24 a RF-27, RF-42).
 Expositor de endpoints REST protegidos por permisos granulares en PostgreSQL.
 """
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -215,6 +215,9 @@ async def listar_membresias(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     staff: Annotated[AuthenticatedStaff, Depends(require_permission("membresias", "leer"))],
     estado: Optional[str] = Query(None, description="Filtro por estado derivado: activo, por_vencer, mora, vencido, congelado, cancelada"),
+    grupo: Optional[Literal["activas", "vencidas", "canceladas"]] = Query(
+        None, description="Activas (incluye congeladas), vencidas (incluye las que están en gracia) o canceladas"
+    ),
     q: Optional[str] = Query(None, description="Búsqueda por cédula o nombre del deportista"),
     skip: int = Query(0, ge=0, description="Offset de paginación"),
     limit: int = Query(50, ge=1, le=100, description="Cantidad máxima de registros por página"),
@@ -223,6 +226,7 @@ async def listar_membresias(
         session=session,
         gym_id=staff.gimnasio_id,
         estado=estado,
+        grupo=grupo,
         q=q,
         skip=skip,
         limit=limit,

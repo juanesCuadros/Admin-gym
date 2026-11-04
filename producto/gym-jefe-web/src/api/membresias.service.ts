@@ -48,6 +48,7 @@ export const membresiasService = {
     skip?: number;
     limit?: number;
     estado?: string;
+    grupo?: 'activas' | 'vencidas' | 'canceladas';
     q?: string;
   }): Promise<MembresiasPaginadasResponse> {
     const response = await apiClient.get<MembresiasPaginadasResponse>('/membresias', { params });
