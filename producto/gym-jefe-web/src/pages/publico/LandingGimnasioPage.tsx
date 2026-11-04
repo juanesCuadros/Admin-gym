@@ -240,19 +240,21 @@ export const LandingGimnasioPage: React.FC = () => {
   return (
     <div className="lp" style={estilo}>
       <header className={`lp-header ${conScroll ? 'lp-header-scroll' : ''}`}>
-        <a className="lp-marca lp-marca-header" href="#inicio">
-          {logo && <img src={logo} alt="" />}
-          <strong className="lp-marca-texto">{datos.nombre}</strong>
-        </a>
-        {secciones.length > 0 && (
-          <nav className="lp-nav" aria-label="Secciones">
-            {secciones.map((s) => (
-              <a key={s.id} href={`#${s.id}`}>
-                {s.etiqueta}
-              </a>
-            ))}
-          </nav>
-        )}
+        <div className="lp-header-fila">
+          <a className="lp-marca lp-marca-header" href="#inicio">
+            {logo && <img src={logo} alt="" />}
+            <strong className="lp-marca-texto">{datos.nombre}</strong>
+          </a>
+          {secciones.length > 0 && (
+            <nav className="lp-nav" aria-label="Secciones">
+              {secciones.map((s) => (
+                <a key={s.id} href={`#${s.id}`}>
+                  {s.etiqueta}
+                </a>
+              ))}
+            </nav>
+          )}
+        </div>
       </header>
 
       <main>
@@ -383,7 +385,7 @@ export const LandingGimnasioPage: React.FC = () => {
                   {direccion && (
                     <a
                       className="lp-boton lp-boton-borde"
-                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${datos.nombre}, ${direccion}`)}`}
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${direccion}, Colombia`)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -392,6 +394,15 @@ export const LandingGimnasioPage: React.FC = () => {
                     </a>
                   )}
                 </div>
+                {direccion && (
+                  <iframe
+                    className="lp-mapa"
+                    title={`Mapa: ${datos.nombre}, ${direccion}`}
+                    src={`https://www.google.com/maps?q=${encodeURIComponent(`${direccion}, Colombia`)}&output=embed`}
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
+                )}
               </section>
             )}
           </div>
