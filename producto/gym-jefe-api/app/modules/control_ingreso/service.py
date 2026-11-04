@@ -126,6 +126,13 @@ class ControlIngresoService:
             dias_umbral_por_vencer=dep.get("dias_umbral_por_vencer", 5)
         )
 
+        # Un pase de día pagado hoy da derecho a entrar hoy, aunque no haya membresía al día.
+        # A quien el gimnasio desactivó se le sigue negando.
+        if resultado_db != "abrio" and dep["activo"] and await cls._tiene_pase_dia_hoy(session, gym_id, deportista_id):
+            permite_abrir = True
+            resultado_db = "abrio"
+            mensaje_eval = "Ingreso con pase de día vigente hoy."
+
         # 4. Insertar evento de check-in en platform.checkins
         insert_query = text("""
             INSERT INTO platform.checkins (
@@ -168,6 +175,27 @@ class ControlIngresoService:
         on_commit(session, lambda: cls._emitir_evento_checkin(gym_id, response_dto))
 
         return response_dto
+
+    @staticmethod
+    async def _tiene_pase_dia_hoy(session: AsyncSession, gym_id: UUID, deportista_id: UUID) -> bool:
+        """Hay un pase de día sin anular, comprado hoy (día de Bogotá) a nombre de esta persona."""
+        inicio_utc, fin_utc = get_local_day_range_utc(today_local())
+        res = await session.execute(
+            text("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM platform.ventas v
+                    JOIN platform.venta_items i ON i.venta_id = v.id
+                    WHERE v.gimnasio_id = :gym_id
+                      AND v.deportista_id = :deportista_id
+                      AND v.anulada = false
+                      AND i.tipo = 'pase_dia'
+                      AND v.created_at BETWEEN :inicio_utc AND :fin_utc
+                )
+            """),
+            {"gym_id": gym_id, "deportista_id": deportista_id, "inicio_utc": inicio_utc, "fin_utc": fin_utc},
+        )
+        return bool(res.scalar_one())
 
     @classmethod
     async def checkin_manual(
