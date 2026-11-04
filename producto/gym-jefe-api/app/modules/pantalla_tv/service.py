@@ -272,7 +272,7 @@ class PantallaTvService:
 
         return RegenerarDeviceTokenResponse(
             device_token=raw_token,
-            mensaje="Token de dispositivo generado con éxito. Configure este token en la URL o cliente del televisor (?device_token=...). Por seguridad, no podrá consultarse nuevamente."
+            mensaje="Enlace del televisor generado. Cópialo ahora: por seguridad no se podrá volver a consultar."
         )
 
     @staticmethod

@@ -67,6 +67,8 @@ export const PantallaTvPage: React.FC = () => {
   } | null>(null);
 
   const [avisoIndex, setAvisoIndex] = useState(0);
+  // GW-RF-07 CA3: al (re)conectar o cambiar la configuración se recarga el estado actual por REST.
+  const [recargas, setRecargas] = useState(0);
   const wsClientRef = useRef<PantallaTvWebSocketClient | null>(null);
   const saludoTimeoutRef = useRef<any>(null);
 
@@ -93,7 +95,7 @@ export const PantallaTvPage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [activeSubdomain]);
+  }, [activeSubdomain, recargas]);
 
   // Connect WebSocket with device_token and handle auto-reconnect (RNF-06)
   useEffect(() => {
@@ -130,18 +132,8 @@ export const PantallaTvPage: React.FC = () => {
           saludoTimeoutRef.current = setTimeout(() => {
             setSaludoActivo(null);
           }, duracionMs);
-        } else if (event.tipo === 'CONFIG_ACTUALIZADA' && event.configuracion) {
-          setDisplayData((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  avisos: event.configuracion?.avisos || prev.avisos,
-                  tiempo_saludo_segundos:
-                    event.configuracion?.tiempo_saludo_segundos || prev.tiempo_saludo_segundos,
-                  logo_url: event.configuracion?.logo_url ?? prev.logo_url,
-                }
-              : null
-          );
+        } else if (event.tipo === 'CONFIG_ACTUALIZADA' || event.tipo === 'CONECTADO') {
+          setRecargas((n) => n + 1);
         }
       },
     });
@@ -578,18 +570,6 @@ export const PantallaTvPage: React.FC = () => {
                       marginBottom: 8,
                     }}
                   >
-                    <span
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: 'var(--radius-sm)',
-                        background: 'var(--primary-light)',
-                        color: 'var(--primary)',
-                        fontSize: '0.8rem',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {clase.tipo || 'General'}
-                    </span>
                     <span style={{ fontSize: '1.15rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
                       {clase.hora_inicio}
                     </span>
@@ -600,7 +580,7 @@ export const PantallaTvPage: React.FC = () => {
                   </h3>
 
                   <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.6)' }}>
-                    Instructor: {clase.entrenador_nombre || 'Por asignar'}
+                    {clase.entrenador_nombre ? `Instructor: ${clase.entrenador_nombre}` : ''}
                   </div>
                 </div>
 
@@ -625,7 +605,7 @@ export const PantallaTvPage: React.FC = () => {
                     }}
                   >
                     {clase.cupos_disponibles > 0
-                      ? `${clase.cupos_disponibles} de ${clase.cupo_maximo}`
+                      ? `${clase.cupos_disponibles}`
                       : 'COMPLETO'}
                   </span>
                 </div>

@@ -1,23 +1,45 @@
 import { apiClient } from './client';
 import { PantallaConfig } from '../types/tenant.types';
 
+/** Respuesta de `GET /pantalla-tv/display/{subdominio}` (`DisplayDataResponse` en pantalla_tv/schemas.py). */
+interface DisplayDataApi {
+  gimnasio_id: string;
+  gimnasio_nombre: string;
+  subdominio: string;
+  hora_local: string;
+  configuracion: PantallaConfig;
+  clases_hoy: Array<{
+    id: string;
+    nombre: string;
+    hora: string;
+    entrenador_nombre?: string | null;
+    cupos_disponibles: number;
+  }>;
+}
+
+/** Lo que pinta la Pantalla TV, ya filtrado por la configuración (avisos activos, bloques visibles). */
 export interface DisplayDataResponse {
   nombre_gimnasio: string;
   subdominio: string;
   logo_url: string | null;
-  hora_actual_bogota: string;
   avisos: string[];
   tiempo_saludo_segundos: number;
   clases_del_dia: Array<{
     id: string;
     nombre: string;
-    tipo: string;
     hora_inicio: string;
-    hora_fin?: string;
-    entrenador_nombre?: string;
-    cupo_maximo: number;
+    entrenador_nombre?: string | null;
     cupos_disponibles: number;
   }>;
+}
+
+/** Avisos activos en su orden, como texto para el carrusel. */
+export function textosAvisos(config: PantallaConfig | undefined): string[] {
+  if (!config || config.mostrar_avisos === false) return [];
+  return [...(config.avisos ?? [])]
+    .filter((a) => a.activo)
+    .sort((a, b) => a.orden - b.orden)
+    .map((a) => `${a.titulo} · ${a.contenido}`);
 }
 
 export interface PantallaTvWsEvent {
@@ -202,8 +224,25 @@ export class PantallaTvWebSocketClient {
 
 export const pantallaTvService = {
   async getDisplayData(subdominio: string): Promise<DisplayDataResponse> {
-    const response = await apiClient.get<DisplayDataResponse>(`/pantalla-tv/display/${subdominio}`);
-    return response.data;
+    const { data } = await apiClient.get<DisplayDataApi>(`/pantalla-tv/display/${subdominio}`);
+    const cfg = data.configuracion;
+    return {
+      nombre_gimnasio: data.gimnasio_nombre,
+      subdominio: data.subdominio,
+      logo_url: cfg?.logo_url ?? null,
+      avisos: textosAvisos(cfg),
+      tiempo_saludo_segundos: cfg?.tiempo_saludo_segundos ?? 8,
+      clases_del_dia:
+        cfg?.mostrar_clases === false
+          ? []
+          : data.clases_hoy.map((c) => ({
+              id: c.id,
+              nombre: c.nombre,
+              hora_inicio: c.hora,
+              entrenador_nombre: c.entrenador_nombre,
+              cupos_disponibles: c.cupos_disponibles,
+            })),
+    };
   },
 
   async getConfig(): Promise<PantallaConfig> {
