@@ -1,7 +1,9 @@
 import hmac
 import json
 import logging
-from datetime import datetime
+
+import jwt
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from uuid import UUID
 from fastapi import HTTPException, status
@@ -10,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from zoneinfo import ZoneInfo
 
 from app.core.audit import AuditService
+from app.core.config import settings
 from app.core.contexto_gimnasio import fijar_gimnasio_por_subdominio
 from app.core.database import on_commit
 from app.core.security import generate_secure_token, hash_token
@@ -28,8 +31,31 @@ from app.modules.pantalla_tv.schemas import (
 logger = logging.getLogger(__name__)
 
 
+TIPO_TOKEN_PANTALLA = "pantalla_tv"
+HORAS_TOKEN_PANTALLA = 16
+
+
 class PantallaTvService:
     """Lógica de negocio y persistencia para la Pantalla de Recepción (TV)."""
+
+    @staticmethod
+    def crear_token_de_sesion(gym_id: UUID) -> str:
+        """Credencial de la pantalla abierta desde el panel: solo sirve para este gimnasio y por una jornada."""
+        ahora = datetime.now(timezone.utc)
+        return jwt.encode(
+            {"typ": TIPO_TOKEN_PANTALLA, "gid": str(gym_id), "iat": ahora, "exp": ahora + timedelta(hours=HORAS_TOKEN_PANTALLA)},
+            settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+
+    @staticmethod
+    def _token_de_sesion_valido(token: str, gym_id: UUID) -> bool:
+        try:
+            datos = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        except jwt.PyJWTError:
+            return False
+        # Un token de inicio de sesión no abre la pantalla, ni el de otro gimnasio.
+        return datos.get("typ") == TIPO_TOKEN_PANTALLA and datos.get("gid") == str(gym_id)
 
     @staticmethod
     async def validar_device_token(session: AsyncSession, subdominio: str, token: str) -> Optional[dict]:
@@ -38,7 +64,7 @@ class PantallaTvService:
         con pantalla_device_token_hash en platform.tenant mediante comparación en tiempo constante (Ley 1581).
         """
         token_hash = hash_token(token.strip())
-        await fijar_gimnasio_por_subdominio(session, subdominio)
+        gym_id = await fijar_gimnasio_por_subdominio(session, subdominio)
         query = text("""
             SELECT id, nombre, subdominio, activo, pantalla_device_token_hash, pantalla_config
             FROM platform.tenant
@@ -49,6 +75,10 @@ class PantallaTvService:
 
         if not tenant or not tenant["activo"]:
             return None
+
+        # GW-RF-07 CA4: la pantalla abierta desde la sesión de recepción no se empareja.
+        if gym_id is not None and PantallaTvService._token_de_sesion_valido(token.strip(), gym_id):
+            return dict(tenant)
 
         # Si no se ha configurado token o el hash no coincide, se rechaza la conexión
         stored_hash = tenant["pantalla_device_token_hash"]

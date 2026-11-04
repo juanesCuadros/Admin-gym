@@ -70,12 +70,15 @@ class PantallaTvConnectionManager:
         Callback suscriptor de ControlIngresoService.
         Se ejecuta automáticamente vía hook 'on_commit' tras confirmarse el registro en base de datos.
         """
+        # GW-RF-07 CA1: la pantalla la ve todo el público; nunca muestra ingresos negados ni datos del documento.
+        if checkin.resultado == "negado":
+            return
+
         dep_data = None
         if checkin.deportista:
             dep_data = {
                 "id": str(checkin.deportista.id),
                 "nombre": checkin.deportista.nombre,
-                "documento": checkin.deportista.documento,
                 "estado_calculado": checkin.deportista.estado_calculado,
                 "dias_restantes_o_vencido": checkin.deportista.dias_restantes_o_vencido,
             }

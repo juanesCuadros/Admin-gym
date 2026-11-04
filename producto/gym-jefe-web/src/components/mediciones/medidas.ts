@@ -38,6 +38,9 @@ export const UNIDAD_MEDICION: Record<CampoMedicion, string> = {
 
 export const CAMPOS_MEDICION = Object.keys(MEDICION_VACIA) as CampoMedicion[];
 
+/** Lo que se escribe a mano. La grasa y el músculo los calcula el sistema. */
+export const CAMPOS_FORMULARIO = CAMPOS_MEDICION.filter((c) => c !== 'grasa_pct' && c !== 'masa_muscular');
+
 /** Convierte el formulario en la petición; `null` si no se escribió ninguna medida. */
 export function formularioAMedicion(form: Record<CampoMedicion, string>): RegistrarMedicionRequest | null {
   const data: RegistrarMedicionRequest = {};

@@ -317,6 +317,37 @@
   flex-shrink: 0;
 }
 
+.sidebar-cuenta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.sidebar-cuenta-texto {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  margin-left: 4px;
+}
+
+.sidebar-cuenta-nombre {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-cuenta-rol {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
 .sidebar-footer-card {
   display: flex;
   align-items: flex-start;

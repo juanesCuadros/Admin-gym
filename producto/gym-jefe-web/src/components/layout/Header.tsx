@@ -1,10 +1,9 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { KeyRound, LogOut, Menu, Moon, Sun } from 'lucide-react';
+import { Menu, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenantTheme } from '../../contexts/TenantThemeContext';
 import { useCajaTurno } from '../../contexts/CajaTurnoContext';
-import { Avatar } from '../ui/Avatar';
 import { BuscadorModulos } from './BuscadorModulos';
 
 interface HeaderProps {
@@ -13,15 +12,9 @@ interface HeaderProps {
   navegacionBloqueada?: boolean;
 }
 
-const NOMBRE_ROL: Record<string, string> = {
-  jefe: 'Jefe',
-  recepcionista: 'Recepcionista',
-  entrenador: 'Entrenador',
-};
-
-/** Header (§B3): nombre y logo · estado de caja · usuario con rol · salir. Sin selector de gimnasio. */
+/** Header (§B3): nombre y logo · estado de caja · buscador. La cuenta está en la barra de módulos. Sin selector de gimnasio. */
 export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, navegacionBloqueada = false }) => {
-  const { user, logout, hasPermission } = useAuth();
+  const { hasPermission } = useAuth();
   const { tenant, themeMode, toggleThemeMode } = useTenantTheme();
   const { turno, cargando, error, turnoAbierto } = useCajaTurno();
   const navigate = useNavigate();
@@ -91,33 +84,6 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, navegacionBloqu
         >
           {themeMode === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
         </button>
-
-        {user && (
-          <>
-            <span className="header-divider" aria-hidden="true" />
-            <div className="user-chip">
-              <Avatar name={user.nombre} />
-              <div className="user-chip-text">
-                <span className="user-chip-name" title={user.nombre}>
-                  {user.nombre}
-                </span>
-                <span className="user-chip-role">{NOMBRE_ROL[user.rol] ?? user.rol}</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="icon-btn ghost"
-              onClick={() => navigate('/cambiar-clave')}
-              title="Mi perfil · Cambiar contraseña"
-              aria-label="Cambiar contraseña"
-            >
-              <KeyRound size={17} />
-            </button>
-            <button type="button" className="icon-btn ghost" onClick={logout} title="Salir" aria-label="Salir">
-              <LogOut size={17} />
-            </button>
-          </>
-        )}
       </div>
     </header>
   );

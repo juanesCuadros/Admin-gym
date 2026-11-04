@@ -163,6 +163,24 @@ export const PantallaTvConfigPage: React.FC = () => {
     }
   };
 
+  /** Otra ventana conectada en vivo: la pantalla no pide clave porque se abre desde la sesión. */
+  const abrirPantalla = async () => {
+    // La ventana se abre antes de esperar la red: después, los navegadores la bloquean.
+    const ventana = window.open('about:blank', '_blank');
+    if (!ventana) {
+      showToast('warning', 'No se pudo abrir la pantalla', 'Permite las ventanas emergentes de este sitio e inténtalo de nuevo.');
+      return;
+    }
+    try {
+      const token = await pantallaTvService.crearSesion();
+      localStorage.setItem(`gymos_tv_device_token_${subdominio}`, token);
+      ventana.location.href = `/tv/${subdominio}`;
+    } catch (err) {
+      ventana.close();
+      showToast('error', 'No se pudo abrir la pantalla', toApiError(err).message);
+    }
+  };
+
   const probarSaludo = async () => {
     if (probando) return;
     setProbando(true);
@@ -188,13 +206,13 @@ export const PantallaTvConfigPage: React.FC = () => {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20, marginBottom: 20 }}>
-        <Card title="Abrir en el televisor" icon={<Tv size={18} />}>
+        <Card title="Ver la pantalla" icon={<Tv size={18} />}>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 12 }}>
-            Abre este enlace en el navegador del televisor y ponlo en pantalla completa. La primera vez pide el enlace con
-            clave que genera el Jefe.
+            Se abre en otra ventana, conectada en vivo a lo que pasa en recepción. Si no tienes televisor, déjala abierta y
+            cambia a la ventana del sistema solo cuando vayas a registrar un cliente o vender.
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Button variant="primary" rightIcon={<ExternalLink size={16} />} onClick={() => window.open(`/tv/${subdominio}`, '_blank', 'noopener')}>
+            <Button variant="primary" rightIcon={<ExternalLink size={16} />} onClick={abrirPantalla}>
               Abrir pantalla
             </Button>
             {puedeEditar && (
@@ -206,7 +224,7 @@ export const PantallaTvConfigPage: React.FC = () => {
         </Card>
 
         {esJefe && (
-          <Card title="Enlace del televisor" icon={<KeyRound size={18} />}>
+          <Card title="Conectar un televisor aparte" icon={<KeyRound size={18} />}>
             {enlaceNuevo ? (
               <>
                 <MensajeFijo tono="advertencia" style={{ marginBottom: 12 }}>
@@ -237,7 +255,7 @@ export const PantallaTvConfigPage: React.FC = () => {
             ) : (
               <>
                 <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 12 }}>
-                  Genera el enlace con clave que conecta el televisor. Generar uno nuevo desconecta el anterior.
+                  Solo si el televisor tiene su propio navegador, sin sesión abierta. Genera un enlace con clave para abrirlo allí; uno nuevo desconecta el anterior.
                 </p>
                 <Button variant="outline" leftIcon={<KeyRound size={16} />} onClick={() => setConfirmarToken(true)}>
                   Generar enlace

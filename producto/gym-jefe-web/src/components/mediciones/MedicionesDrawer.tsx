@@ -11,6 +11,7 @@ import { Cargando, ErrorCarga, MensajeFijo } from '../estados/Estados';
 import { formatFechaNegocio, hoyBogota } from '../../utils/fechasBogota';
 import type { MedicionCorporalResponse } from '../../types/deportistas.types';
 import {
+  CAMPOS_FORMULARIO,
   CAMPOS_MEDICION,
   type CampoMedicion,
   ETIQUETAS_MEDICION,
@@ -252,7 +253,7 @@ export const MedicionesDrawer: React.FC<MedicionesDrawerProps> = ({ deportista, 
             />
           </div>
           <div className="form-grid form-grid-movil-2">
-            {CAMPOS_MEDICION.map((k, i) => (
+            {CAMPOS_FORMULARIO.map((k, i) => (
               <div className="col-2" key={k}>
                 <Input
                   label={ETIQUETAS_MEDICION[k]}
@@ -273,6 +274,10 @@ export const MedicionesDrawer: React.FC<MedicionesDrawerProps> = ({ deportista, 
               {errorForm}
             </MensajeFijo>
           )}
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '4px 0 12px' }}>
+            El porcentaje de grasa y la masa muscular se calculan solos al guardar. Para que salgan, escribe el peso o la
+            cintura.
+          </p>
           <div className="form-callout-actions">
             <Button variant="secondary" size="sm" onClick={() => setFormAbierto(false)} disabled={guardando}>
               Cancelar

@@ -170,6 +170,15 @@ export const LandingGimnasioPage: React.FC = () => {
     };
   }, [subdominio]);
 
+  // El vidrio se oscurece al bajar: sobre fondos blancos el texto blanco dejaría de leerse.
+  const [conScroll, setConScroll] = useState(false);
+  useEffect(() => {
+    const alBajar = () => setConScroll(window.scrollY > 40);
+    alBajar();
+    window.addEventListener('scroll', alBajar, { passive: true });
+    return () => window.removeEventListener('scroll', alBajar);
+  }, []);
+
   const agendaPorDia = useMemo(() => {
     const dias: { dia: string; clases: PublicLandingResponse['agenda'] }[] = [];
     for (const c of datos?.agenda ?? []) {
@@ -230,9 +239,13 @@ export const LandingGimnasioPage: React.FC = () => {
 
   return (
     <div className="lp" style={estilo}>
-      <header className="lp-header">
-        <a className="lp-marca" href="#inicio">
-          {marca}
+      <header className={`lp-header ${conScroll ? 'lp-header-scroll' : ''}`}>
+        <a className="lp-marca lp-marca-header" href="#inicio">
+          {logo && <img src={logo} alt="" />}
+          <span className="lp-marca-texto">
+            <strong>{datos.nombre}</strong>
+            <small>{datos.subdominio}</small>
+          </span>
         </a>
         {secciones.length > 0 && (
           <nav className="lp-nav" aria-label="Secciones">

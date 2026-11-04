@@ -977,7 +977,7 @@ class DeportistasService:
         *,
         sexo: Optional[str],
         altura_cm: Optional[Decimal],
-        edad_anios: int,
+        edad_anios: Optional[int],
         peso: Optional[Decimal],
         cintura: Optional[Decimal],
         cadera: Optional[Decimal],
@@ -1018,7 +1018,8 @@ class DeportistasService:
                     # Fórmula RFM hombre
                     rfm_val = 64.0 - (20.0 * (alt / cintura_f))
 
-            if peso_f and alt > 0:
+            # Esta ecuación necesita la edad: sin fecha de nacimiento no se supone ninguna.
+            if peso_f and alt > 0 and edad_anios is not None:
                 alt_m = alt / 100.0
                 imc = peso_f / (alt_m * alt_m)
                 # Ecuación de Deurenberg diferenciada por sexo (sexo=1 hombre -> -16.2, sexo=0 mujer -> -5.4)
@@ -1119,7 +1120,7 @@ class DeportistasService:
 
         fecha_toma = req.fecha or cls._obtener_fecha_hoy_bogota()
         fecha_nac = dep_row["fecha_nacimiento"]
-        edad_anios = 28
+        edad_anios = None
         if fecha_nac:
             edad_anios = max(10, min(95, fecha_toma.year - fecha_nac.year - ((fecha_toma.month, fecha_toma.day) < (fecha_nac.month, fecha_nac.day))))
 

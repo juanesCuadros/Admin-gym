@@ -130,6 +130,16 @@ async def actualizar_config(
 
 
 @router.post(
+    "/sesion",
+    summary="Credencial para abrir la pantalla desde la sesión de recepción (RF-07 CA4)"
+)
+async def crear_sesion_pantalla(
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("control_ingreso", "leer"))],
+):
+    return {"token": PantallaTvService.crear_token_de_sesion(current_staff.gimnasio_id)}
+
+
+@router.post(
     "/regenerar-token",
     response_model=RegenerarDeviceTokenResponse,
     summary="Regenerar token de autenticación del dispositivo TV (Solo Jefe)"

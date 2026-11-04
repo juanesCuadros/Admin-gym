@@ -75,7 +75,7 @@ function calcularMedidasDerivadas(
   medidas: Record<ClaveMedicionBase, string>,
   sexo: SexoMedicion,
   alturaCmStr: string,
-  edadAnios: number
+  edadAnios: number | null
 ): MedidasDerivadas {
   const esMujer = sexo === 'F';
   const altNum = Number(alturaCmStr);
@@ -136,7 +136,8 @@ function calcularMedidasDerivadas(
     }
   }
 
-  if (imc !== null) {
+  // Esta ecuación necesita la edad: sin fecha de nacimiento no se supone ninguna.
+  if (imc !== null && edadAnios !== null) {
     bmiVal = 1.2 * imc + 0.23 * edadAnios - (esMujer ? 5.4 : 16.2);
   }
 
@@ -388,9 +389,9 @@ export const DeportistasPage: React.FC = () => {
   const dep = ficha?.deportista;
 
   const edadDeportista = useMemo(() => {
-    if (!dep?.fecha_nacimiento) return 28;
+    if (!dep?.fecha_nacimiento) return null;
     const e = edadEnBogota(dep.fecha_nacimiento);
-    return e !== null && e > 0 ? e : 28;
+    return e !== null && e > 0 ? e : null;
   }, [dep?.fecha_nacimiento]);
 
   const derivadas = useMemo(

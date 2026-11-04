@@ -24,7 +24,6 @@ import {
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
-import { esEstadoDeportista, presentarEstado } from '../../utils/estadoDeportista';
 import { formatDiaMes, ZONA_HORARIA } from '../../utils/formato';
 
 export const PantallaTvPage: React.FC = () => {
@@ -394,6 +393,7 @@ export const PantallaTvPage: React.FC = () => {
             )}
           </div>
 
+          {wsStatus !== 'conectado' && (
           <Button
             variant="secondary"
             size="sm"
@@ -403,6 +403,7 @@ export const PantallaTvPage: React.FC = () => {
           >
             Conectar
           </Button>
+          )}
 
           <Button
             variant="outline"
@@ -476,23 +477,10 @@ export const PantallaTvPage: React.FC = () => {
                   alignItems: 'center',
                 }}
               >
-                <span>Control de acceso</span>
-                {saludoActivo.estado && esEstadoDeportista(saludoActivo.estado) && (
-                  <span
-                    style={{
-                      background: 'rgba(255,255,255,0.2)',
-                      padding: '2px 8px',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                    }}
-                  >
-                    {presentarEstado(saludoActivo.estado, { dias: saludoActivo.diasRestantes }, formatDiaMes).texto}
-                  </span>
-                )}
+                <span>Te damos la bienvenida</span>
               </div>
-              <div style={{ fontSize: '2.4rem', fontWeight: 800, lineHeight: 1.2 }}>
-                {saludoActivo.mensaje}
+              <div style={{ fontSize: '2.8rem', fontWeight: 800, lineHeight: 1.2 }}>
+                ¡Bienvenido, {saludoActivo.nombre.trim().split(/\s+/)[0]}!
               </div>
             </div>
           </div>

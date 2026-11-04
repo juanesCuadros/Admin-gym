@@ -1,9 +1,17 @@
 import React, { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, Dumbbell, X } from 'lucide-react';
+import { ChevronDown, Dumbbell, KeyRound, LogOut, X } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 import { useTenantTheme } from '../../contexts/TenantThemeContext';
+import { Avatar } from '../ui/Avatar';
 import { ModuloNav, SubmoduloNav, moduloDeRuta } from '../../navegacion';
 import { useNavegacionVisible } from '../../hooks/useNavegacionVisible';
+
+const NOMBRE_ROL: Record<string, string> = {
+  jefe: 'Jefe',
+  recepcionista: 'Recepcionista',
+  entrenador: 'Entrenador',
+};
 
 interface SidebarProps {
   isOpen: boolean;
@@ -18,6 +26,7 @@ interface SidebarProps {
  */
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, bloqueada = false }) => {
   const { tenant } = useTenantTheme();
+  const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const grupos = useNavegacionVisible();
@@ -123,6 +132,33 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, bloqueada = f
             ))}
         </nav>
 
+        {/* Cuenta del usuario */}
+        {user && (
+          <div className="sidebar-cuenta">
+            <Avatar name={user.nombre} />
+            <div className="sidebar-cuenta-texto">
+              <span className="sidebar-cuenta-nombre" title={user.nombre}>
+                {user.nombre}
+              </span>
+              <span className="sidebar-cuenta-rol">{NOMBRE_ROL[user.rol] ?? user.rol}</span>
+            </div>
+            <button
+              type="button"
+              className="icon-btn ghost"
+              onClick={() => {
+                navigate('/cambiar-clave');
+                cerrarEnMovil();
+              }}
+              title="Cambiar contraseña"
+              aria-label="Cambiar contraseña"
+            >
+              <KeyRound size={17} />
+            </button>
+            <button type="button" className="icon-btn ghost" onClick={logout} title="Salir" aria-label="Salir">
+              <LogOut size={17} />
+            </button>
+          </div>
+        )}
       </aside>
     </>
   );

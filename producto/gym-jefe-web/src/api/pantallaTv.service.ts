@@ -255,6 +255,12 @@ export const pantallaTvService = {
     return response.data;
   },
 
+  /** GW-RF-07 CA4: abre la pantalla desde la sesión, sin emparejar. */
+  async crearSesion(): Promise<string> {
+    const res = await apiClient.post<{ token: string }>('/pantalla-tv/sesion');
+    return res.data.token;
+  },
+
   async regenerarDeviceToken(): Promise<{ device_token: string; mensaje: string }> {
     const response = await apiClient.post('/pantalla-tv/regenerar-token');
     return response.data;
