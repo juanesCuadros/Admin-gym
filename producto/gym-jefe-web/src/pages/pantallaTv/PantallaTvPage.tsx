@@ -1,18 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import {
-  Clock,
-  Calendar,
-  Sparkles,
-  ArrowLeft,
-  Maximize2,
-  Dumbbell,
-  CheckCircle,
-  AlertCircle,
-  Wifi,
-  WifiOff,
-  Key,
-} from 'lucide-react';
+import { ArrowLeft, Maximize2, Dumbbell, AlertCircle, Wifi, WifiOff } from 'lucide-react';
 import { useTenantTheme } from '../../contexts/TenantThemeContext';
 import {
   pantallaTvService,
@@ -24,7 +12,9 @@ import {
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
-import { formatDiaMes, ZONA_HORARIA } from '../../utils/formato';
+import { urlDeImagen } from '../../api/client';
+import { ZONA_HORARIA } from '../../utils/formato';
+import './pantalla.css';
 
 export const PantallaTvPage: React.FC = () => {
   const navigate = useNavigate();
@@ -61,9 +51,11 @@ export const PantallaTvPage: React.FC = () => {
   const [saludoActivo, setSaludoActivo] = useState<{
     nombre: string;
     mensaje: string;
-    estado?: string;
-    diasRestantes?: number;
+    /** Reinicia la animación si entra otra persona mientras se saluda a la anterior. */
+    clave: number;
   } | null>(null);
+  // Los controles estorban en un televisor: aparecen solo al mover el mouse.
+  const [controlesVisibles, setControlesVisibles] = useState(true);
 
   const [avisoIndex, setAvisoIndex] = useState(0);
   // GW-RF-07 CA3: al (re)conectar o cambiar la configuración se recarga el estado actual por REST.
@@ -75,6 +67,20 @@ export const PantallaTvPage: React.FC = () => {
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let temporizador = window.setTimeout(() => setControlesVisibles(false), 4000);
+    const alMover = () => {
+      setControlesVisibles(true);
+      window.clearTimeout(temporizador);
+      temporizador = window.setTimeout(() => setControlesVisibles(false), 3000);
+    };
+    window.addEventListener('mousemove', alMover);
+    return () => {
+      window.clearTimeout(temporizador);
+      window.removeEventListener('mousemove', alMover);
+    };
   }, []);
 
   // Fetch initial consolidated display data (RF-07)
@@ -123,8 +129,7 @@ export const PantallaTvPage: React.FC = () => {
           setSaludoActivo({
             nombre: event.deportista?.nombre || 'Deportista',
             mensaje: event.mensaje || '¡Bienvenido a entrenar!',
-            estado: event.deportista?.estado ?? event.deportista?.estado_calculado,
-            diasRestantes: event.deportista?.dias_restantes_o_vencido,
+            clave: Date.now(),
           });
 
           const duracionMs = (displayData?.tiempo_saludo_segundos || 8) * 1000;
@@ -272,335 +277,123 @@ export const PantallaTvPage: React.FC = () => {
     );
   }
 
+  const nombreGimnasio = displayData?.nombre_gimnasio || tenant.nombre;
+  const logo = urlDeImagen(displayData?.logo_url || tenant.logo_url);
+  const clases = displayData?.clases_del_dia ?? [];
+  const hora = new Intl.DateTimeFormat('es-CO', { timeZone: ZONA_HORARIA, hour: 'numeric', minute: '2-digit', hour12: true }).format(currentTime);
+  const fecha = new Intl.DateTimeFormat('es-CO', { timeZone: ZONA_HORARIA, weekday: 'long', day: 'numeric', month: 'long' }).format(currentTime);
+  const conectado = wsStatus === 'conectado';
+  // La ventana abierta desde el panel se cierra sola; en un televisor aparte se vuelve al sistema.
+  const abiertaDesdePanel = !!window.opener;
+  const estadoConexion = conectado ? (
+    <>
+      <Wifi size={15} /> En vivo
+    </>
+  ) : wsStatus === 'reconectando' ? (
+    <>
+      <WifiOff size={15} /> Reconectando{reconnectDetail ? ` · ${Math.round(reconnectDetail.delayMs / 1000)} s` : ''}
+    </>
+  ) : wsStatus === 'error_token' ? (
+    <>
+      <AlertCircle size={15} /> Código inválido · configurar
+    </>
+  ) : (
+    <>
+      <WifiOff size={15} /> Desconectado
+    </>
+  );
+  const claseEstado = conectado ? '' : wsStatus === 'error_token' || wsStatus === 'desconectado' ? 'error' : 'alerta';
+
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: '#070a11',
-        color: '#f8fafc',
-        display: 'flex',
-        flexDirection: 'column',
-        zIndex: 9999,
-        padding: '36px 48px',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Top TV Bar: Controls, Status & Gym Branding */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          paddingBottom: '24px',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate('/inicio')}
-            leftIcon={<ArrowLeft size={16} />}
-            style={{ color: 'rgba(255,255,255,0.7)' }}
-          >
-            Volver al sistema
-          </Button>
-
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 'var(--radius-sm)',
-              background: 'var(--primary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffffff',
-            }}
-          >
-            <Dumbbell size={26} />
-          </div>
-
-          <div>
-            <div style={{ fontSize: '1.6rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#ffffff' }}>
-              {displayData?.nombre_gimnasio || tenant.nombre}
+    <div className={`tv ${controlesVisibles ? '' : 'sin-cursor'}`}>
+      <header className="tv-cabecera">
+        <div className="tv-marca">
+          {logo ? (
+            <img className="tv-logo" src={logo} alt="" />
+          ) : (
+            <div className="tv-logo-vacio">
+              <Dumbbell size={34} />
             </div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--primary)' }}>
-              Lobby & Recepción en Vivo · GymOS ({activeSubdomain})
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          {/* WebSocket Status Indicator (RNF-06) */}
-          <div
-            onClick={() => setShowTokenModal(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 14px',
-              borderRadius: 'var(--radius-full)',
-              backgroundColor:
-                wsStatus === 'conectado'
-                  ? 'rgba(16, 185, 129, 0.15)'
-                  : wsStatus === 'reconectando' || wsStatus === 'conectando'
-                  ? 'rgba(245, 158, 11, 0.15)'
-                  : 'rgba(239, 68, 68, 0.15)',
-              border: `1px solid ${
-                wsStatus === 'conectado'
-                  ? 'rgba(16, 185, 129, 0.4)'
-                  : wsStatus === 'reconectando' || wsStatus === 'conectando'
-                  ? 'rgba(245, 158, 11, 0.4)'
-                  : 'rgba(239, 68, 68, 0.4)'
-              }`,
-              color:
-                wsStatus === 'conectado'
-                  ? '#10b981'
-                  : wsStatus === 'reconectando' || wsStatus === 'conectando'
-                  ? '#f59e0b'
-                  : '#ef4444',
-              fontSize: '0.8rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-            title="Configurar el código de la pantalla"
-          >
-            {wsStatus === 'conectado' ? (
-              <>
-                <Wifi size={14} />
-                <span>En vivo</span>
-              </>
-            ) : wsStatus === 'reconectando' ? (
-              <>
-                <WifiOff size={14} />
-                <span>
-                  Reconectando ({reconnectDetail?.attempt || 1}
-                  {reconnectDetail ? ` · ${reconnectDetail.delayMs / 1000}s` : ''})...
-                </span>
-              </>
-            ) : wsStatus === 'error_token' ? (
-              <>
-                <AlertCircle size={14} />
-                <span>Código inválido · configurar</span>
-              </>
-            ) : (
-              <>
-                <WifiOff size={14} />
-                <span>Desconectado</span>
-              </>
-            )}
-          </div>
-
-          {wsStatus !== 'conectado' && (
-          <Button
-            variant="secondary"
-            size="sm"
-            leftIcon={<Key size={14} />}
-            onClick={() => setShowTokenModal(true)}
-            style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-          >
-            Conectar
-          </Button>
           )}
-
-          <Button
-            variant="outline"
-            size="sm"
-            leftIcon={<Maximize2 size={16} />}
-            onClick={toggleFullScreen}
-            style={{ borderColor: 'rgba(255,255,255,0.2)', color: '#ffffff' }}
-          >
-            Pantalla completa
-          </Button>
-
-          {/* Clock */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              background: 'rgba(255,255,255,0.06)',
-              padding: '8px 20px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid rgba(255,255,255,0.1)',
-            }}
-          >
-            <Clock size={22} color="var(--accent)" />
-            <span style={{ fontSize: '1.75rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
-              {currentTime.toLocaleTimeString('es-CO', { timeZone: ZONA_HORARIA, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
-            </span>
-          </div>
+          <h1 className="tv-nombre">{nombreGimnasio}</h1>
         </div>
-      </div>
+        <div className="tv-reloj">
+          <div className="tv-hora">{hora}</div>
+          <div className="tv-fecha">{fecha}</div>
+        </div>
+      </header>
 
-      {/* Center Welcome Alert on Real-time Check-in */}
-      <div style={{ margin: '32px 0', minHeight: '120px' }}>
-        {saludoActivo ? (
-          <div
-            className="animate-fade-in"
-            style={{
-              background: 'linear-gradient(135deg, var(--primary) 0%, #1e1b4b 100%)',
-              border: '2px solid var(--primary-border)',
-              borderRadius: 'var(--radius-xl)',
-              padding: '28px 40px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 24,
-              boxShadow: '0 0 50px -10px var(--primary)',
-            }}
-          >
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: '50%',
-                background: 'rgba(255,255,255,0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <CheckCircle size={36} color="#ffffff" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div
-                style={{
-                  fontSize: '0.95rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.1em',
-                  opacity: 0.85,
-                  display: 'flex',
-                  gap: 12,
-                  alignItems: 'center',
-                }}
-              >
-                <span>Te damos la bienvenida</span>
-              </div>
-              <div style={{ fontSize: '2.8rem', fontWeight: 800, lineHeight: 1.2 }}>
-                ¡Bienvenido, {saludoActivo.nombre.trim().split(/\s+/)[0]}!
-              </div>
-            </div>
+      <main className={`tv-cuerpo ${clases.length === 0 ? 'una-columna' : ''}`}>
+        <section className="tv-portada">
+          <div className="tv-lema">
+            Bienvenido
+            <span>a entrenar</span>
           </div>
-        ) : avisos.length > 0 ? (
-          <div
-            style={{
-              background: 'rgba(255, 255, 255, 0.03)',
-              borderRadius: 'var(--radius-lg)',
-              border: '1px solid rgba(255,255,255,0.06)',
-              padding: '24px 32px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 16,
-            }}
-          >
-            <Sparkles size={28} color="var(--accent)" />
-            <div style={{ fontSize: '1.25rem', color: 'rgba(255,255,255,0.8)' }}>
+          {avisos.length > 0 && (
+            <div key={avisoIndex} className="tv-aviso">
               {avisos[avisoIndex % avisos.length]}
             </div>
-          </div>
-        ) : null}
-      </div>
-
-      {/* Main Grid: Today's Classes */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <Calendar size={22} color="var(--primary)" />
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ffffff' }}>
-            Clases de hoy
-          </h2>
-        </div>
-
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-            gap: 20,
-            flex: 1,
-          }}
-        >
-          {!displayData?.clases_del_dia || displayData.clases_del_dia.length === 0 ? (
-            <div
-              style={{
-                gridColumn: '1 / -1',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'rgba(255,255,255,0.4)',
-                fontSize: '1.2rem',
-              }}
-            >
-              No hay más clases programadas para el resto del día
-            </div>
-          ) : (
-            displayData.clases_del_dia.map((clase) => (
-              <div
-                key={clase.id}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  padding: '22px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: 8,
-                    }}
-                  >
-                    <span style={{ fontSize: '1.15rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
-                      {clase.hora_inicio}
-                    </span>
-                  </div>
-
-                  <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#ffffff', marginBottom: 4 }}>
-                    {clase.nombre}
-                  </h3>
-
-                  <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.6)' }}>
-                    {clase.entrenador_nombre ? `Instructor: ${clase.entrenador_nombre}` : ''}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginTop: 16,
-                    paddingTop: 14,
-                    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                  }}
-                >
-                  <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)' }}>
-                    Cupos disponibles
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '1.1rem',
-                      fontWeight: 800,
-                      color: clase.cupos_disponibles > 0 ? 'var(--success)' : 'var(--danger)',
-                    }}
-                  >
-                    {clase.cupos_disponibles > 0
-                      ? `${clase.cupos_disponibles}`
-                      : 'COMPLETO'}
-                  </span>
-                </div>
-              </div>
-            ))
           )}
+        </section>
+
+        {clases.length > 0 && (
+          <section className="tv-clases">
+            <h2 className="tv-clases-titulo">Clases de hoy</h2>
+            <div className="tv-lista">
+              {clases.slice(0, 6).map((clase) => (
+                <article key={clase.id} className="tv-clase">
+                  <div className="tv-clase-hora">{clase.hora_inicio}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="tv-clase-nombre">{clase.nombre}</div>
+                    {clase.entrenador_nombre && <div className="tv-clase-profe">Con {clase.entrenador_nombre}</div>}
+                  </div>
+                  <div className={`tv-cupos ${clase.cupos_disponibles > 0 ? '' : 'lleno'}`}>
+                    <strong>{clase.cupos_disponibles > 0 ? clase.cupos_disponibles : 'Completo'}</strong>
+                    {clase.cupos_disponibles > 0 && <span>cupos</span>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+      </main>
+
+      {saludoActivo && (
+        <div
+          className="tv-saludo"
+          key={saludoActivo.clave}
+          role="status"
+          style={{ '--tv-saludo-duracion': `${displayData?.tiempo_saludo_segundos || 8}s` } as React.CSSProperties}
+        >
+          <div className="tv-saludo-chico">¡Bienvenido,</div>
+          <div className="tv-saludo-nombre">{saludoActivo.nombre.trim().split(/\s+/)[0]}!</div>
+          <div className="tv-saludo-gimnasio">{nombreGimnasio}</div>
+          <div className="tv-saludo-barra" />
         </div>
+      )}
+
+      {!conectado && (
+        <button type="button" className={`tv-estado tv-aviso-conexion ${claseEstado}`} onClick={() => setShowTokenModal(true)}>
+          {estadoConexion}
+        </button>
+      )}
+
+      <div className={`tv-controles ${controlesVisibles ? '' : 'oculto'}`}>
+        {conectado && (
+          <span className="tv-estado" style={{ cursor: 'default' }}>
+            {estadoConexion}
+          </span>
+        )}
+        <button type="button" className="tv-control" onClick={toggleFullScreen}>
+          <Maximize2 size={15} /> Pantalla completa
+        </button>
+        <button
+          type="button"
+          className="tv-control"
+          onClick={() => (abiertaDesdePanel ? window.close() : navigate('/inicio'))}
+        >
+          <ArrowLeft size={15} /> {abiertaDesdePanel ? 'Cerrar' : 'Volver al sistema'}
+        </button>
       </div>
 
       {/* Modal: Device Token Configuration (Ley 1581 / RNF-06) */}

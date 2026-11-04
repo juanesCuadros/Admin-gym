@@ -1,0 +1,401 @@
+/* Pantalla del gimnasio: se ve de lejos, en un televisor o en una segunda ventana. Siempre oscura. */
+.tv {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(16px, 3vh, 36px);
+  padding: clamp(20px, 4vh, 48px) clamp(24px, 4vw, 72px);
+  overflow: hidden;
+  color: #f8fafc;
+  background:
+    radial-gradient(60vw 60vh at 88% -10%, color-mix(in srgb, var(--primary) 34%, transparent), transparent 70%),
+    radial-gradient(50vw 50vh at -5% 110%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 70%),
+    #05070d;
+}
+
+.tv.sin-cursor {
+  cursor: none;
+}
+
+.tv h1,
+.tv h2,
+.tv h3 {
+  color: inherit;
+  margin: 0;
+}
+
+/* ---------- Encabezado ---------- */
+.tv-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-shrink: 0;
+}
+
+.tv-marca {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 1.4vw, 22px);
+  min-width: 0;
+}
+
+.tv-logo {
+  height: clamp(52px, 8vh, 92px);
+  max-width: 26vw;
+  object-fit: contain;
+}
+
+.tv-logo-vacio {
+  display: grid;
+  place-items: center;
+  width: clamp(52px, 8vh, 92px);
+  height: clamp(52px, 8vh, 92px);
+  border-radius: 18px;
+  background: var(--primary);
+  color: #fff;
+}
+
+.tv-nombre {
+  font-size: clamp(1.5rem, 3vw, 2.7rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv-reloj {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.tv-hora {
+  font-size: clamp(2rem, 4.6vw, 4.4rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tv-fecha {
+  margin-top: 6px;
+  font-size: clamp(0.85rem, 1.25vw, 1.25rem);
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.tv-fecha::first-letter {
+  text-transform: uppercase;
+}
+
+/* ---------- Contenido ---------- */
+.tv-cuerpo {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: clamp(20px, 3vw, 56px);
+}
+
+.tv-cuerpo.una-columna {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tv-portada {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(16px, 3vh, 36px);
+  min-width: 0;
+}
+
+.tv-cuerpo.una-columna .tv-portada {
+  align-items: center;
+  text-align: center;
+}
+
+.tv-lema {
+  font-size: clamp(2.2rem, 5.4vw, 5.6rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.tv-lema span {
+  display: block;
+  color: var(--primary);
+}
+
+.tv-aviso {
+  max-width: 900px;
+  padding: clamp(16px, 2.4vh, 28px) clamp(18px, 2vw, 32px);
+  border-left: 5px solid var(--primary);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: clamp(1.05rem, 1.8vw, 1.8rem);
+  line-height: 1.35;
+  text-align: left;
+  animation: tv-entra 0.6s ease both;
+}
+
+.tv-clases {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tv-clases-titulo {
+  font-size: clamp(1.2rem, 2vw, 2rem);
+  font-weight: 800;
+  margin-bottom: clamp(10px, 2vh, 20px) !important;
+}
+
+.tv-lista {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(8px, 1.4vh, 14px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tv-clase {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(14px, 1.6vw, 28px);
+  padding: clamp(12px, 2vh, 22px) clamp(16px, 1.6vw, 28px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tv-clase-hora {
+  font-size: clamp(1.1rem, 1.9vw, 1.9rem);
+  font-weight: 800;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tv-clase-nombre {
+  font-size: clamp(1.1rem, 1.9vw, 1.9rem);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv-clase-profe {
+  margin-top: 2px;
+  font-size: clamp(0.8rem, 1.1vw, 1.1rem);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.tv-cupos {
+  text-align: right;
+  font-size: clamp(0.8rem, 1.1vw, 1.1rem);
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+}
+
+.tv-cupos strong {
+  display: block;
+  font-size: clamp(1.1rem, 1.9vw, 1.9rem);
+  color: #34d399;
+}
+
+.tv-cupos.lleno strong {
+  color: #f87171;
+}
+
+/* ---------- Saludo a pantalla completa ---------- */
+.tv-saludo {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(10px, 2vh, 24px);
+  padding: 5vw;
+  text-align: center;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 88%, #000), color-mix(in srgb, var(--primary) 42%, #05070d));
+  animation: tv-aparece 0.35s ease both;
+}
+
+.tv-saludo-chico {
+  font-size: clamp(1.3rem, 3vw, 3rem);
+  font-weight: 600;
+  opacity: 0.9;
+  animation: tv-entra 0.5s 0.05s ease both;
+}
+
+.tv-saludo-nombre {
+  font-size: clamp(3.4rem, 11vw, 11rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+  animation: tv-crece 0.6s cubic-bezier(0.2, 1.2, 0.3, 1) both;
+}
+
+.tv-saludo-gimnasio {
+  font-size: clamp(1.1rem, 2.2vw, 2.2rem);
+  opacity: 0.85;
+  animation: tv-entra 0.5s 0.15s ease both;
+}
+
+.tv-saludo-barra {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 8px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.85);
+  transform-origin: left;
+  animation: tv-tiempo var(--tv-saludo-duracion, 8s) linear both;
+}
+
+/* ---------- Controles: aparecen solo al mover el mouse ---------- */
+.tv-controles {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(10, 12, 18, 0.82);
+  transform: translateX(-50%);
+  transition: opacity 0.25s ease;
+}
+
+.tv-controles.oculto {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tv-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tv-control:hover,
+.tv-control:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.tv-estado {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+}
+
+.tv-estado.alerta {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+}
+
+.tv-estado.error {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+}
+
+/* Si se pierde la conexión hay que notarlo aunque nadie mueva el mouse. */
+.tv-aviso-conexion {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 6;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 760px), (max-aspect-ratio: 1/1) {
+  .tv {
+    overflow-y: auto;
+  }
+
+  .tv-cuerpo {
+    grid-template-columns: minmax(0, 1fr);
+    flex: none;
+  }
+
+  .tv-cupos span {
+    display: none;
+  }
+}
+
+@keyframes tv-aparece {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tv-entra {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tv-crece {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes tv-tiempo {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tv-aviso,
+  .tv-saludo,
+  .tv-saludo-chico,
+  .tv-saludo-nombre,
+  .tv-saludo-gimnasio {
+    animation: none;
+  }
+}
