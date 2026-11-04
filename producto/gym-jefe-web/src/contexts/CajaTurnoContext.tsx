@@ -25,11 +25,8 @@ const CajaTurnoContext = createContext<CajaTurnoContextType | undefined>(undefin
 
 export const CajaTurnoProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user, hasPermission } = useAuth();
-  // Contrato 2.8: si el login o /auth/me dicen que hay que abrir caja, no se espera a consultar el
-  // turno para mandar a la recepcionista a /caja; la consulta lo confirma (o lo corrige) después.
-  const requiereAbrirCaja = user?.requiere_abrir_caja === true;
   const [turno, setTurno] = useState<TurnoResumenDto | null>(null);
-  const [cargando, setCargando] = useState(!requiereAbrirCaja);
+  const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
 
   const puedeVerCaja = !!user && hasPermission('caja', 'leer');
@@ -52,7 +49,7 @@ export const CajaTurnoProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, [puedeVerCaja]);
 
   useEffect(() => {
-    setCargando(!requiereAbrirCaja);
+    setCargando(true);
     refrescar();
     // Solo al cambiar de usuario: el indicador de /auth/me no debe volver a disparar la consulta.
     // eslint-disable-next-line react-hooks/exhaustive-deps

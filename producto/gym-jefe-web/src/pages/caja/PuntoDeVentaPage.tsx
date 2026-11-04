@@ -365,8 +365,8 @@ export const PuntoDeVentaPage: React.FC = () => {
           <h1 className="page-title">Punto de venta</h1>
           <p className="page-subtitle">
             {turno && turnoAbierto
-              ? `Turno abierto desde ${formatFechaHora(turno.abierto_en)}`
-              : 'Venta de productos y pases ligada al turno de caja abierto'}
+              ? `Caja abierta desde ${formatFechaHora(turno.abierto_en)}`
+              : 'Venta de productos y pases. Para cobrar, la caja debe estar abierta'}
           </p>
         </div>
       </div>
@@ -384,15 +384,15 @@ export const PuntoDeVentaPage: React.FC = () => {
           }
           style={{ marginBottom: 20 }}
         >
-          Solo puede haber un turno abierto en el gimnasio. Para vender con tu usuario, cierra ese turno desde Caja y abre el
-          tuyo.
+          Solo puede haber una caja abierta en el gimnasio. Para vender con tu usuario, ciérrala desde Caja y abre la
+          tuya.
         </MensajeFijo>
       )}
 
       {!errorTurno && !hayTurnoEnGimnasio && (
         <MensajeFijo
           tono="advertencia"
-          titulo="No hay un turno de caja abierto"
+          titulo="La caja está cerrada"
           accion={
             <Link to="/caja" className="btn btn-primary btn-sm">
               Ir a caja
@@ -400,7 +400,7 @@ export const PuntoDeVentaPage: React.FC = () => {
           }
           style={{ marginBottom: 20 }}
         >
-          Para vender hay que abrir el turno primero.
+          Para vender hay que abrir la caja primero.
         </MensajeFijo>
       )}
 

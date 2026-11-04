@@ -152,6 +152,11 @@ Usa las funciones `platform.plan_actual`, `planes_disponibles`, `solicitud_plan_
 ### Pago mixto (migración 060)
 `POST /caja/ventas`, `POST /caja/pagos-membresia` y el `pago` de `/membresias/asignar` aceptan `tipo_medio: "mixto"` con `pagos: [{metodo, tipo_medio: efectivo|otro, monto}]` (mínimo dos). La suma debe ser exacta (`422 MEDIOS_NO_SUMAN_TOTAL`). `valor_recibido` se compara solo con la parte en efectivo. Las respuestas de venta traen `medios`. Anular devuelve a cada medio lo que se pagó con él: en una venta mixta se ignora `tipo_medio_reembolso`.
 
+### Turno de trabajo (migración 065)
+`GET /turnos-trabajo/mio`, `POST /turnos-trabajo/entrada` y `/salida`: cualquier persona del equipo, sobre su propio turno (`409 TURNO_TRABAJO_YA_ABIERTO`, `SIN_TURNO_TRABAJO_ABIERTO`). `GET /turnos-trabajo?desde&hasta&staff_id`: permiso `personal:leer`; trae los turnos y el resumen de horas por persona (los abiertos no suman). `POST /turnos-trabajo/{id}/cerrar`: solo el Jefe, body `{salida_en, motivo}`.
+
+`POST /pantalla-tv/sesion`: permiso `control_ingreso:leer`; credencial de 16 horas para abrir la pantalla desde la sesión (GW-RF-07 CA4). `requiere_abrir_caja` en `/auth/me` sigue existiendo, pero el panel ya no la usa.
+
 ### Usabilidad · Tandas 2 a 4 (GW)
 | Método y ruta | Qué hace |
 |---|---|

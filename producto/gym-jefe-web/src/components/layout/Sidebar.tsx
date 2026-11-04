@@ -4,6 +4,7 @@ import { ChevronDown, Dumbbell, KeyRound, LogOut, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenantTheme } from '../../contexts/TenantThemeContext';
 import { Avatar } from '../ui/Avatar';
+import { MiTurnoTrabajo } from './MiTurnoTrabajo';
 import { ModuloNav, SubmoduloNav, moduloDeRuta } from '../../navegacion';
 import { useNavegacionVisible } from '../../hooks/useNavegacionVisible';
 
@@ -16,15 +17,13 @@ const NOMBRE_ROL: Record<string, string> = {
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  /** Recepcionista sin turno abierto: solo puede abrir caja (§C1). */
-  bloqueada?: boolean;
 }
 
 /**
  * Sidebar (§B2): dos grupos, un módulo por permiso de lectura, acordeón solo en el módulo activo.
  * Los permisos se calculan en `useNavegacionVisible` (compartido con el buscador del Header).
  */
-export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, bloqueada = false }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const { tenant } = useTenantTheme();
   const { user, logout } = useAuth();
   const location = useLocation();
@@ -76,11 +75,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, bloqueada = f
 
         {/* Navegación */}
         <nav className="sidebar-nav">
-          {bloqueada && (
-            <p className="sidebar-bloqueada">Abre el turno de caja para habilitar el resto del sistema.</p>
-          )}
-          {!bloqueada &&
-            grupos.map(({ grupo, modulos }) => (
+          {grupos.map(({ grupo, modulos }) => (
               <div key={grupo.etiqueta} className="nav-seccion">
                 <div className="nav-grupo">{grupo.etiqueta}</div>
                 <div className="nav-lista">
@@ -132,7 +127,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, bloqueada = f
             ))}
         </nav>
 
-        {/* Cuenta del usuario */}
+        {/* Turno de trabajo y cuenta del usuario */}
+        {user && <MiTurnoTrabajo />}
         {user && (
           <div className="sidebar-cuenta">
             <Avatar name={user.nombre} />

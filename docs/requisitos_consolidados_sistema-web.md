@@ -79,7 +79,7 @@ Toda escritura sobre dinero, membresías, permisos o inventario se registra de f
 - CA1: El refresh token rota en cada uso; si se reutiliza uno ya rotado, se revoca toda su familia.
 - CA2: El login está atado al subdominio: un usuario del gimnasio A no entra en el subdominio de B.
 - CA3: Con contraseña temporal, el primer ingreso obliga a cambiarla.
-- CA4: Si un Recepcionista inicia sesión y no hay turno abierto, debe abrir caja antes de continuar. El Jefe y el Entrenador no tienen esa restricción.
+- CA4: ~~Si un Recepcionista inicia sesión y no hay turno abierto, debe abrir caja antes de continuar.~~ Reemplazado el 4-nov-2026: entra sin abrir caja y se le pide solo al cobrar (GW-RF-09 sigue exigiendo caja abierta para cobrar).
 - CA5: Aplica GW-RF-51 CA3.
 
 **GW-RF-00.2 Recuperar contraseña** — Must

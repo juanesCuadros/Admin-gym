@@ -248,7 +248,7 @@ export const GastosPage: React.FC = () => {
       </div>
       {actual === 'efectivo' && (
         <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
-          Sale del turno de caja que tengas abierto y se descuenta del arqueo.
+          Sale de la caja que tengas abierta y se descuenta del arqueo.
         </p>
       )}
     </div>

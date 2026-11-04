@@ -46,6 +46,7 @@ import { CargaInicialPage } from './pages/configuracion/CargaInicialPage';
 import { LandingGimnasioPage } from './pages/publico/LandingGimnasioPage';
 import { AvisosVencimientoPage } from './pages/membresias/AvisosVencimientoPage';
 import { GastosPage } from './pages/gastos/GastosPage';
+import { TurnosTrabajoPage } from './pages/personal/TurnosTrabajoPage';
 
 import { PantallaTvConfigPage } from './pages/controlIngreso/PantallaTvConfigPage';
 
@@ -142,6 +143,7 @@ export const App: React.FC = () => {
 
                     <Route element={<ProtectedRoute requiredSubmodule="personal" />}>
                       <Route path="/personal" element={<StaffPage />} />
+                      <Route path="/personal/turnos" element={<TurnosTrabajoPage />} />
                       <Route path="/personal/permisos" element={<PersonalPage />} />
                     </Route>
 
