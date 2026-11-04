@@ -227,7 +227,7 @@ export const SinPermiso: React.FC<{ detalle?: string }> = ({ detalle }) => (
     <p style={textoVacio}>
       {detalle ?? 'Tu acceso cambió. Si crees que es un error, pide al Jefe que revise tus permisos.'}
     </p>
-    <Link to="/" className="btn btn-primary">
+    <Link to="/inicio" className="btn btn-primary">
       Ir a inicio
     </Link>
   </div>

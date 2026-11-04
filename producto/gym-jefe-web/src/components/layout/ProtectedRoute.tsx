@@ -23,7 +23,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   if (!isAuthenticated) {
     // Conserva la ruta para volver después del login (§A2 · Sesión expirada).
     const destino = `${location.pathname}${location.search}`;
-    if (destino !== '/') sessionStorage.setItem(STORAGE.returnTo, destino);
+    if (destino !== '/inicio') sessionStorage.setItem(STORAGE.returnTo, destino);
     return <Navigate to="/login" replace state={{ from: destino }} />;
   }
 

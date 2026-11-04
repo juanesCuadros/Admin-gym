@@ -17,7 +17,7 @@ const MAX_LARGO = 50;
  * Configuración · Métodos de pago (GW-RF-47). `PUT /my-gym/metodos-pago` con `version`.
  * Quitar un método no altera los pagos ya registrados (el método se guarda como texto en cada pago).
  */
-export const ConfigMetodosPagoPage: React.FC = () => {
+export const ConfigMetodosPagoPage: React.FC<{ embebido?: boolean; onGuardado?: () => void }> = ({ embebido = false, onGuardado }) => {
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
   const puedeEditar = hasPermission('configuracion', 'editar');
@@ -67,6 +67,7 @@ export const ConfigMetodosPagoPage: React.FC = () => {
       const actualizado = await myGymService.actualizarMetodosPago({ version: info.version, metodos_pago: lista });
       setInfo(actualizado);
       showToast('success', exito);
+      onGuardado?.();
       return true;
     } catch (e) {
       setErrorGuardar(toApiError(e));
@@ -98,12 +99,12 @@ export const ConfigMetodosPagoPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
+      {!embebido && (<div className="page-header">
         <div>
           <h1 className="page-title">Métodos de pago</h1>
           <p className="page-subtitle">Medios que caja ofrece al cobrar ventas y membresías</p>
         </div>
-      </div>
+      </div>)}
 
       {cargando && !info ? (
         <Cargando filas={4} />

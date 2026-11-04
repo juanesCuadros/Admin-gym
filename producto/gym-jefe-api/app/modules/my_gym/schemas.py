@@ -10,6 +10,7 @@ Incluye:
 - Consulta paginada de auditoría con filtros (RF-49, RF-50)
 """
 from datetime import datetime
+from decimal import Decimal
 import re
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -243,6 +244,7 @@ class ActualizarInfoGymRequest(BaseModel):
     nombre: str = Field(..., min_length=2, max_length=150, description="Nombre comercial del gimnasio")
     direccion: Optional[str] = Field(None, max_length=250, description="Dirección física de la sede")
     ciudad: Optional[str] = Field(None, max_length=100, description="Ciudad de ubicación")
+    encargado_nombre: Optional[str] = Field(None, max_length=150, description="Quién está a cargo de la sede")
     telefono: Optional[str] = Field(None, max_length=50, description="Teléfono o celular de contacto")
     correo: Optional[EmailStr] = Field(None, description="Correo electrónico oficial de contacto")
     redes: Optional[Dict[str, Optional[str]]] = Field(
@@ -289,6 +291,7 @@ class InfoGymResponse(BaseModel):
     ciudad: Optional[str] = None
     telefono: Optional[str] = None
     correo: Optional[str] = None
+    encargado_nombre: Optional[str] = None
     redes: Dict[str, Any] = Field(default_factory=dict)
     horarios: Optional[Dict[str, str]] = None
     metodos_pago: List[str] = Field(default_factory=list)
@@ -333,6 +336,8 @@ class ActualizarBrandingRequest(BaseModel):
     secondary_color: Optional[str] = Field(None, max_length=30, description="Color secundario en hex")
     accent_color: Optional[str] = Field(None, max_length=30, description="Color de acento en hex")
     logo_url: Optional[str] = Field(None, description="URL pública del logotipo corporativo")
+    landing_titulo: Optional[str] = Field(None, max_length=120, description="Frase principal de la landing")
+    landing_descripcion: Optional[str] = Field(None, max_length=600, description="Texto de presentación de la landing")
     banner_url: Optional[str] = Field(None, description="URL pública del banner de sede")
 
     @field_validator("primary_color", "secondary_color", "accent_color", mode="before")
@@ -349,6 +354,40 @@ class ActualizarBrandingRequest(BaseModel):
     @classmethod
     def validar_campo_banner_url(cls, v: Optional[str]) -> Optional[str]:
         return validar_url_gym(v, "El banner")
+
+
+class PublicPlanItem(BaseModel):
+    nombre: str
+    precio: Decimal
+    duracion_dias: int
+    cupo_personas: int
+
+
+class PublicClaseItem(BaseModel):
+    nombre: str
+    descripcion: Optional[str] = None
+    duracion_minutos: int
+
+
+class PublicLandingResponse(BaseModel):
+    """Lo único que ve un visitante sin sesión."""
+    nombre: str
+    subdominio: str
+    logo_url: Optional[str] = None
+    banner_url: Optional[str] = None
+    primary_color: str
+    secondary_color: str
+    accent_color: str
+    titulo: Optional[str] = None
+    descripcion: Optional[str] = None
+    direccion: Optional[str] = None
+    ciudad: Optional[str] = None
+    telefono: Optional[str] = None
+    correo: Optional[str] = None
+    redes: Dict[str, Any] = Field(default_factory=dict)
+    horarios: Dict[str, str] = Field(default_factory=dict)
+    planes: List[PublicPlanItem] = Field(default_factory=list)
+    clases: List[PublicClaseItem] = Field(default_factory=list)
 
 
 class PublicBrandingResponse(BaseModel):

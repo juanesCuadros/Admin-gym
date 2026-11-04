@@ -48,6 +48,26 @@ export const myGymService = {
     return res.data;
   },
 
+  /** Pública: no exige sesión. */
+  async getPublicLanding(subdominio: string): Promise<import('../types/myGym.types').PublicLandingResponse> {
+    const res = await apiClient.get(`/my-gym/public-landing/${encodeURIComponent(subdominio)}`);
+    return res.data;
+  },
+
+  async subirImagen(tipo: 'logo' | 'banner', archivo: File): Promise<InfoGymResponse> {
+    const datos = new FormData();
+    datos.append('archivo', archivo);
+    const res = await apiClient.post<InfoGymResponse>(`/my-gym/imagen/${tipo}`, datos, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
+
+  async quitarImagen(tipo: 'logo' | 'banner'): Promise<InfoGymResponse> {
+    const res = await apiClient.delete<InfoGymResponse>(`/my-gym/imagen/${tipo}`);
+    return res.data;
+  },
+
   async getLanding(): Promise<LandingInfoResponse> {
     const res = await apiClient.get<LandingInfoResponse>('/my-gym/landing');
     return res.data;

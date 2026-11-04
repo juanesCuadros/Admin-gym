@@ -16,9 +16,9 @@ const REGEX_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function rutaDeRetorno(stateFrom: string | undefined): string {
   const guardada = sessionStorage.getItem(STORAGE.returnTo);
-  const destino = stateFrom || guardada || '/';
+  const destino = stateFrom || guardada || '/inicio';
   sessionStorage.removeItem(STORAGE.returnTo);
-  return destino.startsWith('/') ? destino : '/';
+  return destino.startsWith('/') && destino !== '/' ? destino : '/inicio';
 }
 
 export const LoginPage: React.FC = () => {

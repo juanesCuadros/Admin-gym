@@ -165,7 +165,7 @@ function disponible(info: InfoGymResponse, campo: CampoNumerico | CampoPrecio | 
  * Configuración · Parámetros (GW-RF-48). `PATCH /my-gym/parametros` con `version`.
  * Los campos del contrato 2.5 se muestran deshabilitados hasta que el backend los devuelva.
  */
-export const ConfigParametrosPage: React.FC = () => {
+export const ConfigParametrosPage: React.FC<{ embebido?: boolean; onGuardado?: () => void }> = ({ embebido = false, onGuardado }) => {
   const { hasPermission } = useAuth();
   const { showToast } = useToast();
   const puedeEditar = hasPermission('configuracion', 'editar');
@@ -288,6 +288,7 @@ export const ConfigParametrosPage: React.FC = () => {
       setForm(infoAForm(nuevaInfo));
       setTocados({});
       showToast('success', 'Parámetros guardados', 'Aplican desde la siguiente evaluación.');
+      onGuardado?.();
     } catch (err) {
       setErrorGuardar(toApiError(err));
     } finally {
@@ -299,12 +300,14 @@ export const ConfigParametrosPage: React.FC = () => {
 
   return (
     <div>
-      <div className="page-header">
+      {!embebido && (
+        <div className="page-header">
         <div>
           <h1 className="page-title">Parámetros</h1>
           <p className="page-subtitle">Reglas del gimnasio. Cada cambio aplica de inmediato y queda en la auditoría.</p>
         </div>
       </div>
+      )}
 
       {!puedeEditar && (
         <MensajeFijo tono="info" style={{ marginBottom: 16 }}>

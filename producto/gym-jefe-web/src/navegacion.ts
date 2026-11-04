@@ -51,7 +51,7 @@ export const NAVEGACION: GrupoNav[] = [
   {
     etiqueta: 'Operación',
     modulos: [
-      { id: 'inicio', etiqueta: 'Inicio', ruta: '/', icono: LayoutDashboard, submodulo: null },
+      { id: 'inicio', etiqueta: 'Inicio', ruta: '/inicio', icono: LayoutDashboard, submodulo: null },
       {
         id: 'control_ingreso',
         etiqueta: 'Control de ingreso',
@@ -159,13 +159,10 @@ export const NAVEGACION: GrupoNav[] = [
         submodulos: [
           { id: 'configuracion.general', etiqueta: 'General', ruta: '/configuracion' },
           { id: 'configuracion.landing', etiqueta: 'Landing', ruta: '/configuracion/landing' },
-          { id: 'configuracion.metodos_pago', etiqueta: 'Métodos de pago', ruta: '/configuracion/metodos-pago' },
-          { id: 'configuracion.parametros', etiqueta: 'Parámetros', ruta: '/configuracion/parametros' },
           { id: 'configuracion.suscripcion', etiqueta: 'Mi suscripción', ruta: '/configuracion/suscripcion', soloJefe: true },
           { id: 'configuracion.carga_inicial', etiqueta: 'Carga inicial', ruta: '/configuracion/carga-inicial', soloJefe: true },
         ],
       },
-      { id: 'auditoria', etiqueta: 'Auditoría', ruta: '/auditoria', icono: ScrollText, submodulo: null, soloJefe: true },
     ],
   },
 ];

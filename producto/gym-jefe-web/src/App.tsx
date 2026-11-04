@@ -41,11 +41,9 @@ import { PersonalPage } from './pages/personal/PersonalPage';
 import { StaffPage } from './pages/personal/StaffPage';
 import { ConfigGeneralPage } from './pages/configuracion/ConfigGeneralPage';
 import { ConfigLandingPage } from './pages/configuracion/ConfigLandingPage';
-import { ConfigMetodosPagoPage } from './pages/configuracion/ConfigMetodosPagoPage';
-import { ConfigParametrosPage } from './pages/configuracion/ConfigParametrosPage';
 import { MiSuscripcionPage } from './pages/configuracion/MiSuscripcionPage';
 import { CargaInicialPage } from './pages/configuracion/CargaInicialPage';
-import { AuditoriaPage } from './pages/auditoria/AuditoriaPage';
+import { LandingGimnasioPage } from './pages/publico/LandingGimnasioPage';
 
 import { PantallaTvConfigPage } from './pages/controlIngreso/PantallaTvConfigPage';
 
@@ -71,6 +69,7 @@ export const App: React.FC = () => {
             <EventosGlobales />
             <Routes>
               {/* Públicas, fuera del layout autenticado */}
+              <Route path="/" element={<LandingGimnasioPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/recuperar" element={<RecuperarPage />} />
               <Route path="/recuperar/:token" element={<NuevaClavePage />} />
@@ -86,7 +85,7 @@ export const App: React.FC = () => {
               {/* Aplicación autenticada */}
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppLayout />}>
-                  <Route path="/" element={<DashboardPage />} />
+                  <Route path="/inicio" element={<DashboardPage />} />
 
                   {/* Submódulos apagados con VITE_MODULOS_ACTIVOS: su ruta lleva a Inicio */}
                   <Route element={<RutaModuloActivo />}>
@@ -142,8 +141,8 @@ export const App: React.FC = () => {
                     <Route element={<ProtectedRoute requiredSubmodule="configuracion" />}>
                       <Route path="/configuracion" element={<ConfigGeneralPage />} />
                       <Route path="/configuracion/landing" element={<ConfigLandingPage />} />
-                      <Route path="/configuracion/metodos-pago" element={<ConfigMetodosPagoPage />} />
-                      <Route path="/configuracion/parametros" element={<ConfigParametrosPage />} />
+                      <Route path="/configuracion/metodos-pago" element={<Navigate to="/configuracion" replace />} />
+                      <Route path="/configuracion/parametros" element={<Navigate to="/configuracion" replace />} />
                     </Route>
 
                     {/* Mi suscripción: solo el Jefe (contrato 2.6) */}
@@ -153,14 +152,11 @@ export const App: React.FC = () => {
                       <Route path="/configuracion/carga-inicial" element={<CargaInicialPage />} />
                     </Route>
 
-                    <Route element={<ProtectedRoute soloJefe />}>
-                      <Route path="/auditoria" element={<AuditoriaPage />} />
-                    </Route>
                   </Route>
                 </Route>
               </Route>
 
-              <Route path="*" element={<Navigate to="/" replace />} />
+              <Route path="*" element={<Navigate to="/inicio" replace />} />
             </Routes>
           </AuthProvider>
         </TenantThemeProvider>

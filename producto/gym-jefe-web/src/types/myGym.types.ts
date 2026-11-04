@@ -24,6 +24,7 @@ export interface InfoGymResponse extends ParametrosContrato25 {
   ciudad?: string | null;
   telefono?: string | null;
   correo?: string | null;
+  encargado_nombre?: string | null;
   redes: Record<string, string | null>;
   horarios?: Record<string, string> | null;
   metodos_pago: string[];
@@ -44,8 +45,30 @@ export interface ActualizarInfoGymRequest {
   ciudad?: string | null;
   telefono?: string | null;
   correo?: string | null;
+  encargado_nombre?: string | null;
   redes?: Record<string, string | null>;
   horarios?: Record<string, string>;
+}
+
+/** Lo único que ve un visitante sin sesión en la landing del gimnasio. */
+export interface PublicLandingResponse {
+  nombre: string;
+  subdominio: string;
+  logo_url?: string | null;
+  banner_url?: string | null;
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  titulo?: string | null;
+  descripcion?: string | null;
+  direccion?: string | null;
+  ciudad?: string | null;
+  telefono?: string | null;
+  correo?: string | null;
+  redes: Record<string, string>;
+  horarios: Record<string, string>;
+  planes: { nombre: string; precio: number | string; duracion_dias: number; cupo_personas: number }[];
+  clases: { nombre: string; descripcion?: string | null; duracion_minutos: number }[];
 }
 
 export interface ActualizarBrandingRequest {
@@ -55,6 +78,8 @@ export interface ActualizarBrandingRequest {
   accent_color?: string | null;
   logo_url?: string | null;
   banner_url?: string | null;
+  landing_titulo?: string;
+  landing_descripcion?: string;
 }
 
 export interface ActualizarMetodosPagoRequest {

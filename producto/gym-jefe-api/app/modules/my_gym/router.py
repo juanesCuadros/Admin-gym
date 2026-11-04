@@ -9,15 +9,17 @@ Exposiciones:
 - Control de Concurrencia Optimista (OCC)
 """
 from datetime import date
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response, UploadFile, status
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
 from app.core.dependencies import AuthenticatedStaff, get_current_staff, require_permission, require_role
 from app.modules.my_gym.schemas import (
+    PublicLandingResponse,
     ActualizarBrandingRequest,
     ActualizarInfoGymRequest,
     ActualizarMetodosPagoRequest,
@@ -35,7 +37,7 @@ from app.modules.my_gym.schemas import (
     PublicBrandingResponse,
     SolicitudPlanCreadaResponse,
 )
-from app.modules.my_gym.service import MyGymService
+from app.modules.my_gym.service import MAX_BYTES_IMAGEN, MyGymService
 
 router = APIRouter(prefix="/my-gym", tags=["11. Configuración MyGymOS"])
 
@@ -64,6 +66,58 @@ async def obtener_public_branding(
         session=session,
         subdominio=subdominio
     )
+
+
+@router.get(
+    "/public-landing/{subdominio}",
+    response_model=PublicLandingResponse,
+    summary="Datos públicos de la landing del gimnasio, sin autenticación",
+)
+async def obtener_public_landing(
+    subdominio: str,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    return await MyGymService.obtener_public_landing(session=session, subdominio=subdominio)
+
+
+@router.get("/public-imagen/{subdominio}/{tipo}", summary="Logo o banner público del gimnasio")
+async def obtener_imagen_publica(
+    subdominio: str,
+    tipo: Literal["logo", "banner"],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    contenido, media_type = await MyGymService.obtener_imagen_publica(session, subdominio, tipo)
+    return Response(
+        content=contenido,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.post("/imagen/{tipo}", response_model=InfoGymResponse, summary="Subir el logo o el banner de la landing")
+async def subir_imagen(
+    tipo: Literal["logo", "banner"],
+    archivo: UploadFile,
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("configuracion", "editar"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    # Se lee un byte de más para detectar el exceso sin cargar archivos enormes en memoria.
+    contenido = await archivo.read(MAX_BYTES_IMAGEN + 1)
+    fila = await session.execute(
+        text("SELECT subdominio FROM platform.tenant WHERE id = :gym_id"), {"gym_id": current_staff.gimnasio_id}
+    )
+    return await MyGymService.subir_imagen(
+        session, current_staff.gimnasio_id, fila.scalar_one(), tipo, contenido, current_staff
+    )
+
+
+@router.delete("/imagen/{tipo}", response_model=InfoGymResponse, summary="Quitar el logo o el banner de la landing")
+async def quitar_imagen(
+    tipo: Literal["logo", "banner"],
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("configuracion", "editar"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    return await MyGymService.quitar_imagen(session, current_staff.gimnasio_id, tipo, current_staff)
 
 
 # ------------------------------------------------------------------------------

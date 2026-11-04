@@ -9,10 +9,11 @@ Implementa:
 - Control de Concurrencia Optimista (OCC) con version en todas las mutaciones
 """
 import io
+import hashlib
 import json
 import math
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 import qrcode
@@ -23,10 +24,14 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditService
+from app.core.email.plantillas import url_sistema_web
 from app.core.contexto_gimnasio import fijar_gimnasio_por_subdominio
 from app.core.dependencies import AuthenticatedStaff, gimnasio_suspendido_exception
 from app.core.timezone import get_local_day_range_utc
 from app.modules.my_gym.schemas import (
+    PublicClaseItem,
+    PublicLandingResponse,
+    PublicPlanItem,
     ActualizarBrandingRequest,
     ActualizarInfoGymRequest,
     ActualizarMetodosPagoRequest,
@@ -53,6 +58,9 @@ from app.modules.my_gym.schemas import (
 def _entero_o_none(valor: Any) -> Optional[int]:
     """Precio en COP enteros; NULL en la base = sin configurar."""
     return int(valor) if valor is not None else None
+
+
+MAX_BYTES_IMAGEN = 3 * 1024 * 1024
 
 
 class MyGymService:
@@ -153,7 +161,7 @@ class MyGymService:
         """Obtiene la configuración integral del gimnasio."""
         stmt = text("""
             SELECT id, nombre, subdominio, zona_horaria, direccion, ciudad,
-                   telefono, correo, redes, horarios, metodos_pago,
+                   telefono, correo, encargado_nombre, redes, horarios, metodos_pago,
                    dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer,
                    duracion_sesion_minutos, minimo_dias_congelamiento, permitir_descuentos,
                    tope_descuento_pct, ventana_reserva_dias, limite_cancelar_reserva_horas,
@@ -179,6 +187,7 @@ class MyGymService:
             direccion=row["direccion"],
             ciudad=row["ciudad"],
             telefono=row["telefono"],
+            encargado_nombre=row["encargado_nombre"],
             correo=row["correo"],
             redes=cls._parse_json_field(row["redes"], {}),
             horarios=cls._parse_json_field(row["horarios"], None),
@@ -222,13 +231,14 @@ class MyGymService:
                 ciudad = :ciudad,
                 telefono = :telefono,
                 correo = :correo,
+                encargado_nombre = :encargado_nombre,
                 redes = CAST(:redes AS jsonb),
                 horarios = CAST(:horarios AS jsonb),
                 version = version + 1,
                 updated_at = now()
             WHERE id = :gym_id AND version = :version_esperada
             RETURNING id, nombre, subdominio, zona_horaria, direccion, ciudad,
-                      telefono, correo, redes, horarios, metodos_pago,
+                      telefono, correo, encargado_nombre, redes, horarios, metodos_pago,
                       dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer,
                       duracion_sesion_minutos, branding, version, activo, updated_at
         """)
@@ -241,6 +251,7 @@ class MyGymService:
             "ciudad": data.ciudad,
             "telefono": data.telefono,
             "correo": str(data.correo) if data.correo else None,
+            "encargado_nombre": (data.encargado_nombre or "").strip() or None,
             "redes": redes_json,
             "horarios": horarios_json
         })
@@ -297,6 +308,7 @@ class MyGymService:
             direccion=row["direccion"],
             ciudad=row["ciudad"],
             telefono=row["telefono"],
+            encargado_nombre=row["encargado_nombre"],
             correo=row["correo"],
             redes=cls._parse_json_field(row["redes"], {}),
             horarios=cls._parse_json_field(row["horarios"], None),
@@ -467,7 +479,7 @@ class MyGymService:
                 updated_at = now()
             WHERE id = :gym_id AND version = :version_esperada
             RETURNING id, nombre, subdominio, zona_horaria, direccion, ciudad,
-                      telefono, correo, redes, horarios, metodos_pago,
+                      telefono, correo, encargado_nombre, redes, horarios, metodos_pago,
                       dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer,
                       duracion_sesion_minutos, branding, version, activo, updated_at
         """)
@@ -522,6 +534,7 @@ class MyGymService:
             direccion=row["direccion"],
             ciudad=row["ciudad"],
             telefono=row["telefono"],
+            encargado_nombre=row["encargado_nombre"],
             correo=row["correo"],
             redes=cls._parse_json_field(row["redes"], {}),
             horarios=cls._parse_json_field(row["horarios"], None),
@@ -568,6 +581,10 @@ class MyGymService:
             current_branding["logo_url"] = data.logo_url
         if data.banner_url is not None:
             current_branding["banner_url"] = data.banner_url
+        if data.landing_titulo is not None:
+            current_branding["landing_titulo"] = data.landing_titulo.strip()
+        if data.landing_descripcion is not None:
+            current_branding["landing_descripcion"] = data.landing_descripcion.strip()
 
         update_stmt = text("""
             UPDATE platform.tenant
@@ -576,7 +593,7 @@ class MyGymService:
                 updated_at = now()
             WHERE id = :gym_id AND version = :version_esperada
             RETURNING id, nombre, subdominio, zona_horaria, direccion, ciudad,
-                      telefono, correo, redes, horarios, metodos_pago,
+                      telefono, correo, encargado_nombre, redes, horarios, metodos_pago,
                       dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer,
                       duracion_sesion_minutos, branding, version, activo, updated_at
         """)
@@ -621,6 +638,7 @@ class MyGymService:
             direccion=row["direccion"],
             ciudad=row["ciudad"],
             telefono=row["telefono"],
+            encargado_nombre=row["encargado_nombre"],
             correo=row["correo"],
             redes=cls._parse_json_field(row["redes"], {}),
             horarios=cls._parse_json_field(row["horarios"], None),
@@ -638,6 +656,157 @@ class MyGymService:
     # --------------------------------------------------------------------------
     # RF-46: MI LANDING Y QR (SOLO LECTURA)
     # --------------------------------------------------------------------------
+
+    @classmethod
+    async def obtener_public_landing(cls, session: AsyncSession, subdominio: str) -> PublicLandingResponse:
+        """Solo datos pensados para el público: nada de usuarios, cifras internas ni configuración."""
+        base = await cls.obtener_public_branding(session, subdominio)  # también rechaza gimnasio bloqueado
+        row = (
+            await session.execute(
+                text("""
+                    SELECT id, direccion, ciudad, telefono, correo, redes, horarios, branding
+                    FROM platform.tenant WHERE subdominio = :subdominio
+                """),
+                {"subdominio": subdominio.lower()},
+            )
+        ).mappings().one()
+        branding = cls._parse_json_field(row["branding"], {})
+        planes = await session.execute(
+            text("""
+                SELECT nombre, precio, duracion_dias, cupo_personas FROM platform.planes
+                WHERE gimnasio_id = :gym_id AND activo = true ORDER BY precio
+            """),
+            {"gym_id": row["id"]},
+        )
+        clases = await session.execute(
+            text("""
+                SELECT nombre, descripcion, duracion_minutos FROM platform.catalogo_clases
+                WHERE gimnasio_id = :gym_id AND activo = true ORDER BY lower(nombre)
+            """),
+            {"gym_id": row["id"]},
+        )
+        return PublicLandingResponse(
+            nombre=base.nombre,
+            subdominio=base.subdominio,
+            logo_url=base.logo_url,
+            banner_url=branding.get("banner_url"),
+            primary_color=base.primary_color,
+            secondary_color=base.secondary_color,
+            accent_color=base.accent_color,
+            titulo=branding.get("landing_titulo") or None,
+            descripcion=branding.get("landing_descripcion") or None,
+            direccion=row["direccion"],
+            ciudad=row["ciudad"],
+            telefono=row["telefono"],
+            correo=row["correo"],
+            redes={k: v for k, v in cls._parse_json_field(row["redes"], {}).items() if v},
+            horarios=cls._parse_json_field(row["horarios"], {}) or {},
+            planes=[PublicPlanItem(**dict(f)) for f in planes.mappings().all()],
+            clases=[PublicClaseItem(**dict(f)) for f in clases.mappings().all()],
+        )
+
+    @staticmethod
+    def _tipo_de_imagen(contenido: bytes) -> Optional[str]:
+        """Se decide por los primeros bytes, no por lo que declare el navegador. SVG no se admite: puede traer scripts."""
+        if contenido.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "image/png"
+        if contenido.startswith(b"\xff\xd8\xff"):
+            return "image/jpeg"
+        if contenido[:4] == b"RIFF" and contenido[8:12] == b"WEBP":
+            return "image/webp"
+        return None
+
+    @classmethod
+    async def _guardar_url_imagen(
+        cls, session: AsyncSession, gimnasio_id: UUID, tipo: str, url: Optional[str], current_staff: AuthenticatedStaff, accion: str
+    ) -> InfoGymResponse:
+        clave = f"{tipo}_url"
+        fila = (
+            await session.execute(
+                text("SELECT branding FROM platform.tenant WHERE id = :gym_id FOR UPDATE"), {"gym_id": gimnasio_id}
+            )
+        ).mappings().one()
+        branding = cls._parse_json_field(fila["branding"], {})
+        if url:
+            branding[clave] = url
+        else:
+            branding.pop(clave, None)
+        await session.execute(
+            text("""
+                UPDATE platform.tenant
+                SET branding = CAST(:branding AS jsonb), version = version + 1, updated_at = now()
+                WHERE id = :gym_id
+            """),
+            {"branding": json.dumps(branding), "gym_id": gimnasio_id},
+        )
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=gimnasio_id,
+            actor_id=current_staff.staff_id,
+            actor_nombre=current_staff.nombre,
+            accion=accion,
+            entidad="gym_imagenes",
+            entidad_id=tipo,
+            detalle={"tipo": tipo},
+        )
+        return await cls.obtener_info(session, gimnasio_id)
+
+    @classmethod
+    async def subir_imagen(
+        cls, session: AsyncSession, gimnasio_id: UUID, subdominio: str, tipo: str, contenido: bytes, current_staff: AuthenticatedStaff
+    ) -> InfoGymResponse:
+        if len(contenido) > MAX_BYTES_IMAGEN:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail={"codigo": "IMAGEN_MUY_GRANDE", "mensaje": "La imagen no puede pesar más de 3 MB."},
+            )
+        media_type = cls._tipo_de_imagen(contenido)
+        if not media_type:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"codigo": "IMAGEN_NO_VALIDA", "mensaje": "Sube una imagen PNG, JPG o WEBP."},
+            )
+        await session.execute(
+            text("""
+                INSERT INTO platform.gym_imagenes (gimnasio_id, tipo, contenido, media_type)
+                VALUES (:gym_id, :tipo, :contenido, :media_type)
+                ON CONFLICT (gimnasio_id, tipo)
+                DO UPDATE SET contenido = EXCLUDED.contenido, media_type = EXCLUDED.media_type, updated_at = now()
+            """),
+            {"gym_id": gimnasio_id, "tipo": tipo, "contenido": contenido, "media_type": media_type},
+        )
+        # La versión en la URL hace que el navegador pida la imagen nueva.
+        huella = hashlib.sha256(contenido).hexdigest()[:12]
+        url = f"/api/v1/my-gym/public-imagen/{subdominio}/{tipo}?v={huella}"
+        return await cls._guardar_url_imagen(session, gimnasio_id, tipo, url, current_staff, "SUBIR_IMAGEN_LANDING")
+
+    @classmethod
+    async def quitar_imagen(
+        cls, session: AsyncSession, gimnasio_id: UUID, tipo: str, current_staff: AuthenticatedStaff
+    ) -> InfoGymResponse:
+        await session.execute(
+            text("DELETE FROM platform.gym_imagenes WHERE gimnasio_id = :gym_id AND tipo = :tipo"),
+            {"gym_id": gimnasio_id, "tipo": tipo},
+        )
+        return await cls._guardar_url_imagen(session, gimnasio_id, tipo, None, current_staff, "QUITAR_IMAGEN_LANDING")
+
+    @staticmethod
+    async def obtener_imagen_publica(session: AsyncSession, subdominio: str, tipo: str) -> Tuple[bytes, str]:
+        gym_id = await fijar_gimnasio_por_subdominio(session, subdominio)
+        fila = None
+        if gym_id:
+            fila = (
+                await session.execute(
+                    text("SELECT contenido, media_type FROM platform.gym_imagenes WHERE gimnasio_id = :gym_id AND tipo = :tipo"),
+                    {"gym_id": gym_id, "tipo": tipo},
+                )
+            ).mappings().first()
+        if not fila:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"codigo": "IMAGEN_NO_ENCONTRADA", "mensaje": "La imagen no existe."},
+            )
+        return bytes(fila["contenido"]), fila["media_type"]
 
     @classmethod
     async def _construir_landing_url(
@@ -658,10 +827,7 @@ class MyGymService:
 
         subdominio = row["subdominio"]
         landing_slug = row["landing_slug"]
-        if landing_slug:
-            landing_url = f"https://gymos.io/gym/{landing_slug}"
-        else:
-            landing_url = f"https://{subdominio}.gymos.io"
+        landing_url = url_sistema_web(subdominio, "/")
 
         return subdominio, landing_slug, landing_url
 

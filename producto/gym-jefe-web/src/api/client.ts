@@ -2,6 +2,13 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
+/** Las imágenes subidas se guardan con ruta `/api/...`: en local la API está en otro origen. */
+export function urlDeImagen(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  if (!url.startsWith('/api/')) return url;
+  return `${new URL(BASE_URL, window.location.href).origin}${url}`;
+}
+
 // Claves de almacenamiento. Pendiente de decisión (§C6): hoy los tokens viven en localStorage;
 // lo correcto sería refresh en cookie HttpOnly y access en memoria. No se cambia todavía.
 export const STORAGE = {

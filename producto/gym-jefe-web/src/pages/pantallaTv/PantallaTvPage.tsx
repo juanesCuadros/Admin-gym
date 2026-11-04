@@ -264,7 +264,7 @@ export const PantallaTvPage: React.FC = () => {
             </Button>
           </form>
           <div style={{ marginTop: 24 }}>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/')} leftIcon={<ArrowLeft size={14} />}>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/inicio')} leftIcon={<ArrowLeft size={14} />}>
               Volver al sistema
             </Button>
           </div>
@@ -301,7 +301,7 @@ export const PantallaTvPage: React.FC = () => {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/inicio')}
             leftIcon={<ArrowLeft size={16} />}
             style={{ color: 'rgba(255,255,255,0.7)' }}
           >
