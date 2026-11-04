@@ -19,7 +19,7 @@ import { PantallaTvPage } from './pages/pantallaTv/PantallaTvPage';
 // Operación
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { ControlIngresoPage } from './pages/controlIngreso/ControlIngresoPage';
-import { IngresosHoyPage } from './pages/controlIngreso/IngresosHoyPage';
+import { HistorialIngresosPage } from './pages/controlIngreso/HistorialIngresosPage';
 import { CajaPage } from './pages/caja/CajaPage';
 import { PuntoDeVentaPage } from './pages/caja/PuntoDeVentaPage';
 import { HistorialTurnosPage } from './pages/caja/HistorialTurnosPage';
@@ -91,7 +91,8 @@ export const App: React.FC = () => {
                   <Route element={<RutaModuloActivo />}>
                     <Route element={<ProtectedRoute requiredSubmodule="control_ingreso" />}>
                       <Route path="/control-ingreso" element={<ControlIngresoPage />} />
-                      <Route path="/control-ingreso/ingresos-hoy" element={<IngresosHoyPage />} />
+                      <Route path="/control-ingreso/historial" element={<HistorialIngresosPage />} />
+                      <Route path="/control-ingreso/ingresos-hoy" element={<Navigate to="/control-ingreso/historial" replace />} />
                       <Route path="/control-ingreso/pantalla-tv" element={<PantallaTvConfigPage />} />
                     </Route>
 

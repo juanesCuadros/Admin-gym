@@ -11,6 +11,8 @@ from app.core.audit import AuditService
 from app.core.database import on_commit
 from app.core.timezone import get_local_day_range_utc, now_local, today_local
 from app.modules.control_ingreso.schemas import (
+    HistorialIngresosResponse,
+    ResumenHistorialIngresosDto,
     CheckinItemHistorialDto,
     CheckinManualRequest,
     CheckinResponseDto,
@@ -278,8 +280,55 @@ class ControlIngresoService:
         """
         hoy = today_local()
         inicio_utc, fin_utc = get_local_day_range_utc(hoy)
+        st = await cls._estadisticas_rango(session, gym_id, inicio_utc, fin_utc)
 
-        # 1. Resumen y totales del día
+        resumen = ResumenIngresosHoyDto(
+            fecha=hoy,
+            total_ingresos=st["total"] or 0,
+            accesos_abiertos=st["abrio"] or 0,
+            alertas_mora=st["alerta"] or 0,
+            accesos_negados=st["negado"] or 0,
+            cortesias=st["cortesia"] or 0,
+            adentro_ahora=st["adentro_ahora"] or 0,
+        )
+        items = await cls._listar_rango(session, gym_id, inicio_utc, fin_utc, limit, offset)
+        return ListadoIngresosHoyResponse(resumen=resumen, items=items)
+
+    @classmethod
+    async def obtener_historial(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        desde: date,
+        hasta: date,
+        limit: int = 50,
+        offset: int = 0
+    ) -> HistorialIngresosResponse:
+        """Resumen y listado de ingresos entre dos días de Bogotá, ambos incluidos."""
+        if hasta < desde:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"codigo": "RANGO_FECHAS_INVALIDO", "mensaje": "La fecha inicial no puede ser posterior a la final."}
+            )
+        inicio_utc, _ = get_local_day_range_utc(desde)
+        _, fin_utc = get_local_day_range_utc(hasta)
+        st = await cls._estadisticas_rango(session, gym_id, inicio_utc, fin_utc)
+
+        return HistorialIngresosResponse(
+            desde=desde,
+            hasta=hasta,
+            resumen=ResumenHistorialIngresosDto(
+                total_registros=st["total"] or 0,
+                accesos_abiertos=st["abrio"] or 0,
+                alertas_mora=st["alerta"] or 0,
+                accesos_negados=st["negado"] or 0,
+                cortesias=st["cortesia"] or 0,
+            ),
+            items=await cls._listar_rango(session, gym_id, inicio_utc, fin_utc, limit, offset),
+        )
+
+    @staticmethod
+    async def _estadisticas_rango(session: AsyncSession, gym_id: UUID, inicio_utc: datetime, fin_utc: datetime):
         stats_query = text("""
             SELECT 
                 COUNT(*) as total,
@@ -296,19 +345,17 @@ class ControlIngresoService:
             "inicio_utc": inicio_utc,
             "fin_utc": fin_utc
         })
-        st = res_stats.mappings().first()
+        return res_stats.mappings().first()
 
-        resumen = ResumenIngresosHoyDto(
-            fecha=hoy,
-            total_ingresos=st["total"] or 0,
-            accesos_abiertos=st["abrio"] or 0,
-            alertas_mora=st["alerta"] or 0,
-            accesos_negados=st["negado"] or 0,
-            cortesias=st["cortesia"] or 0,
-            adentro_ahora=st["adentro_ahora"] or 0,
-        )
-
-        # 2. Listado cronológico de accesos
+    @staticmethod
+    async def _listar_rango(
+        session: AsyncSession,
+        gym_id: UUID,
+        inicio_utc: datetime,
+        fin_utc: datetime,
+        limit: int,
+        offset: int
+    ) -> List[CheckinItemHistorialDto]:
         items_query = text("""
             SELECT 
                 c.id, c.tipo, c.metodo, c.resultado, c.motivo_cortesia, c.ts_utc, c.salida_ts,
@@ -352,8 +399,7 @@ class ControlIngresoService:
                 salida_ts=salida_dt_local,
                 permanencia_minutos=permanencia,
             ))
-
-        return ListadoIngresosHoyResponse(resumen=resumen, items=items)
+        return items
 
     @classmethod
     async def registrar_salida(

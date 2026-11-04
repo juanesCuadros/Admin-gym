@@ -4,6 +4,7 @@ import {
   CheckinHuellaRequest,
   IngresoCortesiaRequest,
   CheckinResponseDto,
+  HistorialIngresosResponse,
   ListadoIngresosHoyResponse,
   SalidaRequest,
   SalidaResponseDto,
@@ -29,6 +30,17 @@ export const controlIngresoService = {
   /** Resumen del día y listado paginado (más reciente primero). El backend admite `limit` hasta 100. */
   async getIngresosHoy(params?: { limit?: number; offset?: number }): Promise<ListadoIngresosHoyResponse> {
     const response = await apiClient.get<ListadoIngresosHoyResponse>('/control-ingreso/ingresos-hoy', { params });
+    return response.data;
+  },
+
+  /** Ingresos entre dos días de Bogotá, ambos incluidos, con su resumen. */
+  async getHistorial(params: {
+    desde: string;
+    hasta: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<HistorialIngresosResponse> {
+    const response = await apiClient.get<HistorialIngresosResponse>('/control-ingreso/historial', { params });
     return response.data;
   },
 

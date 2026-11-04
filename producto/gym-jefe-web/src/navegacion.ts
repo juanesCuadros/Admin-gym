@@ -60,7 +60,7 @@ export const NAVEGACION: GrupoNav[] = [
         submodulo: 'control_ingreso',
         submodulos: [
           { id: 'control_ingreso.checkin', etiqueta: 'Check-in', ruta: '/control-ingreso' },
-          { id: 'control_ingreso.ingresos_hoy', etiqueta: 'Ingresos de hoy', ruta: '/control-ingreso/ingresos-hoy' },
+          { id: 'control_ingreso.historial', etiqueta: 'Historial de ingresos', ruta: '/control-ingreso/historial' },
           { id: 'control_ingreso.pantalla_tv', etiqueta: 'Pantalla TV', ruta: '/control-ingreso/pantalla-tv' },
         ],
       },

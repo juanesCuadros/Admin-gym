@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query
@@ -10,6 +11,7 @@ from app.core.dependencies import (
 )
 from app.modules.control_ingreso.schemas import (
     CheckinHuellaRequest,
+    HistorialIngresosResponse,
     CheckinManualRequest,
     CheckinResponseDto,
     DeportistaCheckinDto,
@@ -117,6 +119,29 @@ async def obtener_ingresos_hoy(
     return await ControlIngresoService.obtener_ingresos_hoy(
         session=session,
         gym_id=current_staff.gimnasio_id,
+        limit=limit,
+        offset=offset
+    )
+
+
+@router.get(
+    "/historial",
+    response_model=HistorialIngresosResponse,
+    summary="Historial de ingresos por rango de fechas de Bogotá (RF-01.5)"
+)
+async def obtener_historial_ingresos(
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("control_ingreso", "leer"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    desde: date = Query(..., description="Primer día del rango (YYYY-MM-DD, Bogotá)"),
+    hasta: date = Query(..., description="Último día del rango, incluido (YYYY-MM-DD, Bogotá)"),
+    limit: int = Query(50, ge=1, le=100, description="Cantidad máxima de registros a devolver"),
+    offset: int = Query(0, ge=0, description="Desplazamiento para paginación")
+):
+    return await ControlIngresoService.obtener_historial(
+        session=session,
+        gym_id=current_staff.gimnasio_id,
+        desde=desde,
+        hasta=hasta,
         limit=limit,
         offset=offset
     )

@@ -101,3 +101,18 @@ class ResumenIngresosHoyDto(BaseModel):
 class ListadoIngresosHoyResponse(BaseModel):
     resumen: ResumenIngresosHoyDto
     items: List[CheckinItemHistorialDto]
+
+
+class ResumenHistorialIngresosDto(BaseModel):
+    total_registros: int
+    accesos_abiertos: int
+    alertas_mora: int
+    accesos_negados: int
+    cortesias: int
+
+
+class HistorialIngresosResponse(BaseModel):
+    desde: date
+    hasta: date
+    resumen: ResumenHistorialIngresosDto
+    items: List[CheckinItemHistorialDto]

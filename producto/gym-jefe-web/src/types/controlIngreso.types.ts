@@ -68,6 +68,19 @@ export interface ListadoIngresosHoyResponse {
   items: CheckinItemHistorialDto[];
 }
 
+export interface HistorialIngresosResponse {
+  desde: string;
+  hasta: string;
+  resumen: {
+    total_registros: number;
+    accesos_abiertos: number;
+    alertas_mora: number;
+    accesos_negados: number;
+    cortesias: number;
+  };
+  items: CheckinItemHistorialDto[];
+}
+
 /** Contrato 2.2 · `POST /control-ingreso/salida`. */
 export interface SalidaRequest {
   deportista_id: string;

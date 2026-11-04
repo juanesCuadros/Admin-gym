@@ -12,17 +12,15 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Avatar } from '../../components/ui/Avatar';
-import { Badge } from '../../components/ui/Badge';
 import { MensajeFijo } from '../../components/estados/Estados';
 import { EstadoDeportistaBadge } from '../../components/ui/EstadoDeportistaBadge';
 import { formatHora } from '../../utils/formato';
 import { formatFechaNegocio, hoyBogota } from '../../utils/fechasBogota';
-import { CheckinItemHistorialDto, CheckinResponseDto, ResumenIngresosHoyDto } from '../../types/controlIngreso.types';
+import { CheckinResponseDto, ResumenIngresosHoyDto } from '../../types/controlIngreso.types';
 import { DeportistaResponse, MembresiaFichaResponse } from '../../types/deportistas.types';
 import { FormularioDeportista, PlanAsignacionInicial } from '../deportistas/FormularioDeportista';
 import { CobroMembresiaModal, DestinoCobro } from '../membresias/CobroMembresiaModal';
 import { PanelAdentro } from './PanelAdentro';
-import { presentarResultado } from './formatoIngreso';
 
 const TITULO_RESULTADO: Record<string, string> = {
   abrio: 'Acceso permitido',
@@ -35,9 +33,6 @@ const CLASE_RESULTADO: Record<string, 'ok' | 'warn' | 'bad'> = {
   alerta_mora: 'warn',
   negado: 'bad',
 };
-
-/** Cuántos ingresos recientes se muestran en la columna derecha. */
-const INGRESOS_RECIENTES = 8;
 
 export const ControlIngresoPage: React.FC = () => {
   const { showToast } = useToast();
@@ -62,7 +57,6 @@ export const ControlIngresoPage: React.FC = () => {
   const [cobro, setCobro] = useState<DestinoCobro | null>(null);
 
   const [resumen, setResumen] = useState<ResumenIngresosHoyDto | null>(null);
-  const [recientes, setRecientes] = useState<CheckinItemHistorialDto[]>([]);
   const [recargarAdentro, setRecargarAdentro] = useState(0);
 
   // Cortesía
@@ -70,16 +64,14 @@ export const ControlIngresoPage: React.FC = () => {
   const [motivoCortesia, setMotivoCortesia] = useState('');
   const [errorCortesia, setErrorCortesia] = useState<string | null>(null);
 
-  /** Resumen del día + últimos ingresos en una sola consulta. */
+  /** Tarjetas del día. El detalle vive en Historial de ingresos. */
   const cargarHoy = useCallback(async () => {
     try {
-      const data = await controlIngresoService.getIngresosHoy({ limit: INGRESOS_RECIENTES });
+      const data = await controlIngresoService.getIngresosHoy({ limit: 1 });
       setResumen(data.resumen);
-      setRecientes(data.items);
     } catch {
       // Es complementario: si falla, no se muestra (nunca un número inventado).
       setResumen(null);
-      setRecientes([]);
     }
   }, []);
 
@@ -344,41 +336,24 @@ export const ControlIngresoPage: React.FC = () => {
             <>
               <div className="checkin-stats">
                 <div className="checkin-stat">
-                  <small>Registros</small>
-                  <strong>{resumen.total_ingresos}</strong>
+                  <small>Ingresos</small>
+                  <strong>{resumen.accesos_abiertos + resumen.alertas_mora}</strong>
+                </div>
+                <div className="checkin-stat">
+                  <small>Negados</small>
+                  <strong>{resumen.accesos_negados}</strong>
                 </div>
                 <div className="checkin-stat">
                   <small>Adentro ahora</small>
                   <strong>{resumen.adentro_ahora}</strong>
                 </div>
-              </div>
-
-              {recientes.length === 0 ? (
-                <p className="texto-vacio" style={{ textAlign: 'center', padding: '12px 0' }}>
-                  Aún no hay ingresos hoy.
-                </p>
-              ) : (
-                <div>
-                  {recientes.map((i) => {
-                    const r = presentarResultado(i.resultado);
-                    const nombre = i.deportista_nombre ?? (i.tipo === 'cortesia' ? 'Cortesía' : 'Sin identificar');
-                    return (
-                      <div className="feed-item" key={i.id}>
-                        <span className="feed-hora">{formatHora(i.ts_local)}</span>
-                        <Avatar name={nombre} size="sm" />
-                        <span className="feed-nombre" title={nombre}>
-                          {nombre}
-                        </span>
-                        <Badge variant={i.tipo === 'cortesia' ? 'info' : r.variante}>
-                          {i.tipo === 'cortesia' ? 'Cortesía' : r.variante === 'warning' ? 'Alerta' : r.texto}
-                        </Badge>
-                      </div>
-                    );
-                  })}
+                <div className="checkin-stat">
+                  <small>Cortesías</small>
+                  <strong>{resumen.cortesias}</strong>
                 </div>
-              )}
-              <Link to="/control-ingreso/ingresos-hoy" className="feed-ver-todos">
-                Ver todos los ingresos de hoy
+              </div>
+              <Link to="/control-ingreso/historial" className="feed-ver-todos">
+                Ver historial de ingresos
               </Link>
             </>
           ) : (
