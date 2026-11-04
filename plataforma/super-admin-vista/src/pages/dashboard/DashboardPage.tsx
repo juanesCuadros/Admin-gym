@@ -180,7 +180,7 @@ export const DashboardPage: React.FC = () => {
     <PageContainer>
       <PageHeader
         title="Torre de Control"
-        subtitle="Supervisión global de la red SaaS GymOS, estado de ingresos y monitoreo de clientes."
+        subtitle="Supervisión global de la red SaaS GymDesk, estado de ingresos y monitoreo de clientes."
         actions={
           <div style={{ display: 'flex', gap: '10px' }}>
             <Link to="/audit">
@@ -365,7 +365,7 @@ export const DashboardPage: React.FC = () => {
           onRetry={loadDashboardData}
           onRowClick={(row) => navigate(`/gyms/${row.id}`)}
           emptyTitle="No hay gimnasios registrados aún"
-          emptyDescription="Comienza dando de alta el primer centro deportivo cliente de GymOS con el asistente."
+          emptyDescription="Comienza dando de alta el primer centro deportivo cliente de GymDesk con el asistente."
           emptyAction={
             <Link to="/gyms/new">
               <Button variant="primary" leftIcon={<PlusCircle size={16} />}>

@@ -62,7 +62,7 @@ function TarjetaPlan({ plan }: { plan: PlanPublico }) {
 export default function Planes() {
   useTituloPagina('Planes')
   const [estado, setEstado] = useState<Estado>({ fase: 'cargando' })
-  const whatsapp = enlaceWhatsApp('Hola, quiero información sobre los planes de GymOS.')
+  const whatsapp = enlaceWhatsApp('Hola, quiero información sobre los planes de GymDesk.')
 
   const cargar = useCallback(async (signal?: { cancelado: boolean }) => {
     setEstado({ fase: 'cargando' })
@@ -126,7 +126,7 @@ export default function Planes() {
         <h2>Cómo se paga</h2>
         <p>
           El pago es manual, por transferencia. No hay pasarela de pago ni cobros automáticos a tarjeta.
-          Después de transferir, el equipo de GymOS confirma el pago y activa tu plan.
+          Después de transferir, el equipo de GymDesk confirma el pago y activa tu plan.
         </p>
         <p className="texto-suave">
           Los precios están en pesos colombianos. Puedes empezar con la prueba gratis y elegir un plan después.

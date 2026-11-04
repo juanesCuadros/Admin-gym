@@ -54,7 +54,7 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
   const { importDataset } = useExercises();
   const { success, error: toastError } = useToast();
 
-  const [datasetNombre, setDatasetNombre] = useState<string>('GymOS Standard v1');
+  const [datasetNombre, setDatasetNombre] = useState<string>('GymDesk Standard v1');
   const [modoActualizacion, setModoActualizacion] = useState<string>('true');
   const [jsonText, setJsonText] = useState<string>(JSON.stringify(sampleDataset, null, 2));
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -192,7 +192,7 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
               <TextInput
                 value={datasetNombre}
                 onChange={(e) => setDatasetNombre(e.target.value)}
-                placeholder="ej. Wger / GymOS Oficial"
+                placeholder="ej. Wger / GymDesk Oficial"
               />
             </FormField>
 

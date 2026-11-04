@@ -5,9 +5,9 @@ import { enlaceWhatsApp } from '@/config'
 
 function Logo() {
   return (
-    <Link to="/" className="logo" aria-label="GymOS, ir al inicio">
+    <Link to="/" className="logo" aria-label="GymDesk, ir al inicio">
       <span className="logo-marca" aria-hidden="true">G</span>
-      <span>GymOS</span>
+      <span>GymDesk</span>
     </Link>
   )
 }
@@ -16,7 +16,7 @@ export default function Layout() {
   const [menuAbierto, setMenuAbierto] = useState(false)
   const botonMenuRef = useRef<HTMLButtonElement>(null)
   const { pathname } = useLocation()
-  const whatsapp = enlaceWhatsApp('Hola, quiero saber más de GymOS para mi gimnasio.')
+  const whatsapp = enlaceWhatsApp('Hola, quiero saber más de GymDesk para mi gimnasio.')
 
   const primeraCarga = useRef(true)
 
@@ -76,7 +76,7 @@ export default function Layout() {
 
       <footer className="pie">
         <div className="contenedor pie-fila">
-          <p>GymOS · Software para gimnasios en Colombia</p>
+          <p>GymDesk · Software para gimnasios en Colombia</p>
           <nav aria-label="Legal y contacto" className="pie-enlaces">
             <Link to="/terminos">Términos</Link>
             <Link to="/privacidad">Privacidad</Link>

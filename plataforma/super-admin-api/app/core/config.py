@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # API
-    PROJECT_NAME: str = "GymOS Super-Admin Backend"
+    PROJECT_NAME: str = "GymDesk Super-Admin Backend"
     API_V1_STR: str = "/api/v1"
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8000
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
 
     # Correo saliente: "log" (desarrollo: solo registra en el log) o "resend" (API de Resend)
     CORREO_MODO: str = "log"
-    CORREO_REMITENTE: str = "GymOS <no-responder@gymdeskcolombia.com>"
+    CORREO_REMITENTE: str = "GymDesk <no-responder@gymdeskcolombia.com>"
     RESEND_API_KEY: Optional[str] = None
 
     # Exportación al cancelar (SA-RF-30): carpeta del servidor propio y URL pública de la API

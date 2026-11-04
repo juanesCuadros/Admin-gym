@@ -11,7 +11,7 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
-    PROJECT_NAME: str = "GymOS - Sistema Web del Gimnasio"
+    PROJECT_NAME: str = "GymDesk - Sistema Web del Gimnasio"
     VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     # Correo saliente (app/core/email): 'log' escribe el correo en el log; 'resend' lo envía por Resend.
     EMAIL_MODO: str = "log"
     RESEND_API_KEY: str = ""
-    EMAIL_REMITENTE: str = "GymOS <onboarding@resend.dev>"
+    EMAIL_REMITENTE: str = "GymDesk <onboarding@resend.dev>"
     # Base de la URL pública del Sistema Web. Admite el marcador {subdominio}
     # (p. ej. https://{subdominio}.gymos.co); sin marcador se agrega ?subdominio=.
     APP_URL_BASE: str = "http://localhost:3000"

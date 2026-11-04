@@ -86,10 +86,10 @@ class SignupUseCases:
         enlace = f"{settings.URL_CONFIRMACION_REGISTRO.rstrip('/')}/{token}"
         self.correo.enviar(
             registro.jefe_correo,
-            "Confirma el registro de tu gimnasio en GymOS",
+            "Confirma el registro de tu gimnasio en GymDesk",
             (
                 f"Hola {registro.jefe_nombre}:\n\n"
-                f"Para crear {registro.nombre_gimnasio} en GymOS con la prueba gratis, confirma tu correo "
+                f"Para crear {registro.nombre_gimnasio} en GymDesk con la prueba gratis, confirma tu correo "
                 f"en este enlace (vale {settings.SIGNUP_TOKEN_HORAS} horas y sirve una sola vez):\n\n{enlace}\n\n"
                 "Si no fuiste tú, ignora este mensaje."
             ),

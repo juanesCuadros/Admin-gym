@@ -34,7 +34,7 @@ def correo_recuperacion_password(destinatario: str, nombre: str, gimnasio: str, 
         f"Abre este enlace para crear una nueva contraseña:\n\n{enlace}\n\n"
         f"El enlace sirve una sola vez y vence en {vigencia}. Si pides otro, este deja de servir.\n"
         f"Si no fuiste tú, ignora este correo: tu contraseña no cambia.\n\n"
-        f"— {gimnasio} · GymOS"
+        f"— {gimnasio} · GymDesk"
     )
 
     html = f"""<!doctype html>
@@ -45,7 +45,7 @@ def correo_recuperacion_password(destinatario: str, nombre: str, gimnasio: str, 
   <p style="font-size:13px;color:#555;">Si el botón no funciona, copia este enlace:<br>{escape(enlace)}</p>
   <p>El enlace sirve una sola vez y vence en {escape(vigencia)}. Si pides otro, este deja de servir.<br>
      Si no fuiste tú, ignora este correo: tu contraseña no cambia.</p>
-  <p style="color:#555;">— {escape(gimnasio)} · GymOS</p>
+  <p style="color:#555;">— {escape(gimnasio)} · GymDesk</p>
 </body></html>"""
 
     return Correo(destinatario=destinatario, asunto=asunto, texto=texto, html=html)

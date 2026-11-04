@@ -6,7 +6,7 @@ export default function Terminos() {
   return (
     <PaginaLegal titulo="Términos del servicio">
       <p>
-        Estos términos regulan el uso de GymOS, el software para gimnasios que se ofrece en {DOMINIO_BASE}.
+        Estos términos regulan el uso de GymDesk, el software para gimnasios que se ofrece en {DOMINIO_BASE}.
         Al registrar tu gimnasio aceptas estos términos y la <Link to="/privacidad">política de privacidad</Link>.
       </p>
 
@@ -18,14 +18,14 @@ export default function Terminos() {
 
       <h2>2. El servicio</h2>
       <p>
-        GymOS es un software que se usa desde el navegador. Cada gimnasio tiene su propia dirección
+        GymDesk es un software que se usa desde el navegador. Cada gimnasio tiene su propia dirección
         (tugimnasio.{DOMINIO_BASE}) y sus datos separados de los de los demás gimnasios.
       </p>
 
       <h2>3. Registro y cuenta</h2>
       <ul>
         <li>
-          Quien registra el gimnasio queda como su jefe dentro de GymOS y responde por las cuentas que cree para
+          Quien registra el gimnasio queda como su jefe dentro de GymDesk y responde por las cuentas que cree para
           su personal.
         </li>
         <li>Los datos del registro deben ser reales. El gimnasio se crea solo después de confirmar el correo.</li>
@@ -42,7 +42,7 @@ export default function Terminos() {
       <h2>5. Planes y pagos</h2>
       <ul>
         <li>Los precios están en pesos colombianos y se publican en la <Link to="/planes">página de planes</Link>.</li>
-        <li>El pago es manual, por transferencia. El equipo de GymOS confirma cada pago y activa o renueva el plan.</li>
+        <li>El pago es manual, por transferencia. El equipo de GymDesk confirma cada pago y activa o renueva el plan.</li>
         <li>
           Si el pago no llega en la fecha de corte, el gimnasio sigue funcionando con aviso durante 3 días y desde
           el día 4 queda bloqueado hasta que se registre el pago.
@@ -69,7 +69,7 @@ export default function Terminos() {
 
       <h2>7. Uso aceptable</h2>
       <p>
-        No está permitido usar GymOS para actividades ilegales, intentar acceder a datos de otros gimnasios ni
+        No está permitido usar GymDesk para actividades ilegales, intentar acceder a datos de otros gimnasios ni
         afectar el funcionamiento del servicio.
       </p>
 

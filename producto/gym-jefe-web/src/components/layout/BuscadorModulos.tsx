@@ -127,9 +127,9 @@ export const BuscadorModulos: React.FC<{ deshabilitado?: boolean }> = ({ deshabi
 
   return (
     <>
-      <button type="button" className="search-trigger" onClick={() => setAbierto(true)} aria-label="Buscar en GymOS">
+      <button type="button" className="search-trigger" onClick={() => setAbierto(true)} aria-label="Buscar en GymDesk">
         <Search size={16} />
-        <span>Buscar en GymOS</span>
+        <span>Buscar en GymDesk</span>
         <kbd className="kbd">{esMac ? '⌘' : 'Ctrl'} K</kbd>
       </button>
 

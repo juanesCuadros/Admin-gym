@@ -100,7 +100,7 @@ function mapearCampos(detalles: unknown): Record<string, string> {
   for (const item of detalles) {
     if (!item || typeof item !== 'object') continue;
     const it = item as { campo?: string; mensaje?: string; loc?: unknown[]; msg?: string };
-    // Formato del backend GymOS: { campo: "body -> correo", mensaje }
+    // Formato del backend GymDesk: { campo: "body -> correo", mensaje }
     // Formato crudo de FastAPI: { loc: ["body","correo"], msg }
     const ruta = it.campo ?? (Array.isArray(it.loc) ? it.loc.map(String).join(' -> ') : '');
     const nombre = ruta
@@ -116,7 +116,7 @@ function mapearCampos(detalles: unknown): Record<string, string> {
 
 /**
  * Convierte cualquier error en `ApiError`.
- * Entiende el formato del backend GymOS `{ error: { codigo, mensaje, detalles } }`
+ * Entiende el formato del backend GymDesk `{ error: { codigo, mensaje, detalles } }`
  * y el formato crudo de FastAPI `{ detail: ... }`.
  */
 export function toApiError(error: unknown): ApiError {

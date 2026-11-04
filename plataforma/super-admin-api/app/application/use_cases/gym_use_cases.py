@@ -145,7 +145,7 @@ class GymUseCases:
         access_url = f"{settings.url_gimnasio(subdomain)}/login"
 
         whatsapp_text = (
-            f"¡Hola {data.jefe.nombre}! Bienvenido a GymOS para {gym.nombre}.\n\n"
+            f"¡Hola {data.jefe.nombre}! Bienvenido a GymDesk para {gym.nombre}.\n\n"
             f"Tus credenciales de acceso como Administrador son:\n"
             f"👉 Enlace: {access_url}\n"
             f"👤 Usuario: {cuenta_jefe.correo}\n"

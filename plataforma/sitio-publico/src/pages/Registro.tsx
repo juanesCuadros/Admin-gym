@@ -188,7 +188,7 @@ export default function Registro() {
           <h1 ref={tituloExitoRef} tabIndex={-1}>Revisa tu correo</h1>
           <p>{enviado.mensaje}</p>
           <p className="texto-suave">
-            Busca un mensaje de GymOS en <strong>{enviado.correo}</strong>. Si no lo ves en unos minutos, revisa la
+            Busca un mensaje de GymDesk en <strong>{enviado.correo}</strong>. Si no lo ves en unos minutos, revisa la
             carpeta de spam o de promociones. El enlace sirve una sola vez.
           </p>
           <div className="acciones">
@@ -204,7 +204,7 @@ export default function Registro() {
 
   return (
     <section className="contenedor seccion estrecho">
-      <h1>Prueba GymOS gratis</h1>
+      <h1>Prueba GymDesk gratis</h1>
       <p className="texto-suave">
         Llena tus datos y te enviamos un enlace para confirmar tu correo. Tu gimnasio se crea cuando lo confirmes.
         Los campos con <span aria-hidden="true">*</span><span className="solo-lector">asterisco</span> son
@@ -248,7 +248,7 @@ export default function Registro() {
             onChange={cambiar('jefe_nombre')}
             onBlur={salir('jefe_nombre')}
             error={error('jefe_nombre')}
-            ayuda="Serás el jefe del gimnasio en GymOS."
+            ayuda="Serás el jefe del gimnasio en GymDesk."
           />
           <Campo
             id="jefe_correo"
@@ -262,7 +262,7 @@ export default function Registro() {
             onChange={cambiar('jefe_correo')}
             onBlur={salir('jefe_correo')}
             error={error('jefe_correo')}
-            ayuda="Aquí llega el enlace de confirmación. Con este correo entrarás a GymOS."
+            ayuda="Aquí llega el enlace de confirmación. Con este correo entrarás a GymDesk."
           />
           <Campo
             id="telefono"

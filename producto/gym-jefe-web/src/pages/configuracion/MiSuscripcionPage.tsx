@@ -129,7 +129,7 @@ export const MiSuscripcionPage: React.FC = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">Mi suscripción</h1>
-          <p className="page-subtitle">Tu plan de GymOS, el uso actual y cambio de plan</p>
+          <p className="page-subtitle">Tu plan de GymDesk, el uso actual y cambio de plan</p>
         </div>
       </div>
 

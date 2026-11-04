@@ -30,7 +30,7 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
     try {
       await login({ correo: correo.trim(), password });
-      success('Bienvenido al panel de Super Administrador de GymOS.');
+      success('Bienvenido al panel de Super Administrador de GymDesk.');
       navigate('/');
     } catch (err) {
       const parsed = parseApiError(err);
@@ -92,7 +92,7 @@ export const LoginPage: React.FC = () => {
               marginBottom: '6px',
             }}
           >
-            GymOS Super Admin
+            GymDesk Super Admin
           </h1>
           <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
             Panel privado de supervisión y gestión integral

@@ -271,7 +271,7 @@ export const EntrenamientoPage: React.FC<{ tabInicial?: TabEntrenamiento }> = ({
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                     <Badge variant={ej.propio ? 'primary' : 'neutral'}>
-                      {ej.propio ? 'Personalizado' : 'GymOS'}
+                      {ej.propio ? 'Personalizado' : 'GymDesk'}
                     </Badge>
                     <span style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>
                       {ej.equipo || 'Libre'}

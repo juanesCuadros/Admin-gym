@@ -76,7 +76,7 @@ export default function Inicio() {
           <p className="etiqueta">Software para gimnasios en Colombia</p>
           <h1>Maneja tu gimnasio desde un solo lugar</h1>
           <p className="heroe-texto">
-            GymOS reúne la recepción, las membresías, la caja, los clientes, las clases y los reportes de tu gimnasio.
+            GymDesk reúne la recepción, las membresías, la caja, los clientes, las clases y los reportes de tu gimnasio.
             Funciona en el navegador: no tienes que instalar nada.
           </p>
           <div className="acciones">
@@ -87,7 +87,7 @@ export default function Inicio() {
       </section>
 
       <section className="contenedor seccion" aria-labelledby="titulo-modulos">
-        <h2 id="titulo-modulos">Lo que hace GymOS por tu gimnasio</h2>
+        <h2 id="titulo-modulos">Lo que hace GymDesk por tu gimnasio</h2>
         <p className="texto-suave intro">
           Cada gimnasio trabaja en su propio espacio, con sus datos separados de los demás.
         </p>
@@ -118,7 +118,7 @@ export default function Inicio() {
           </ol>
           <p className="texto-suave">
             La prueba no pide tarjeta. Si decides seguir, eliges un plan y pagas por transferencia; el equipo de
-            GymOS confirma el pago y tu gimnasio sigue funcionando con lo que ya registraste.
+            GymDesk confirma el pago y tu gimnasio sigue funcionando con lo que ya registraste.
           </p>
         </div>
       </section>

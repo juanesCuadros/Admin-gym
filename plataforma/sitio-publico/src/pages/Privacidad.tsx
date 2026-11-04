@@ -7,7 +7,7 @@ export default function Privacidad() {
   return (
     <PaginaLegal titulo="Política de privacidad y tratamiento de datos personales">
       <p>
-        Esta política explica cómo GymOS trata los datos personales de quienes registran un gimnasio en
+        Esta política explica cómo GymDesk trata los datos personales de quienes registran un gimnasio en
         este sitio, conforme a la Ley 1581 de 2012 de protección de datos personales de Colombia y sus normas
         reglamentarias.
       </p>
@@ -33,7 +33,7 @@ export default function Privacidad() {
 
       <h2>3. Para qué los usamos</h2>
       <ul>
-        <li>Verificar tu correo y crear tu gimnasio en GymOS con la prueba gratis.</li>
+        <li>Verificar tu correo y crear tu gimnasio en GymDesk con la prueba gratis.</li>
         <li>Darte acceso a tu cuenta y enviarte mensajes sobre el servicio, como avisos de vencimiento o pagos.</li>
         <li>Evitar el abuso de la prueba gratis, que es una por correo y por teléfono.</li>
         <li>Contactarte para el paso de la prueba a un plan de pago si así lo decides.</li>
@@ -42,8 +42,8 @@ export default function Privacidad() {
 
       <h2>4. Datos de los clientes de tu gimnasio</h2>
       <p>
-        Los datos de los clientes que tu gimnasio registra dentro de GymOS los decide y controla el gimnasio.
-        En ese caso el gimnasio es el responsable del tratamiento frente a sus clientes y GymOS actúa como
+        Los datos de los clientes que tu gimnasio registra dentro de GymDesk los decide y controla el gimnasio.
+        En ese caso el gimnasio es el responsable del tratamiento frente a sus clientes y GymDesk actúa como
         encargado: los guarda y los procesa solo para prestar el servicio. Cada gimnasio debe contar con la
         autorización de sus clientes para tratar sus datos.
       </p>
@@ -81,7 +81,7 @@ export default function Privacidad() {
 
       <h2>8. Cuánto tiempo los guardamos</h2>
       <p>
-        Mientras tu gimnasio use GymOS. Si cancelas, puedes descargar una copia de tus datos durante 30 días;
+        Mientras tu gimnasio use GymDesk. Si cancelas, puedes descargar una copia de tus datos durante 30 días;
         después de ese plazo los datos del gimnasio pueden eliminarse de forma definitiva.{' '}
         <Pendiente>plazo de conservación de los registros de prueba no confirmados</Pendiente>
       </p>

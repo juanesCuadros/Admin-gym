@@ -64,7 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           )}
           <div className="sidebar-brand-text">
             <span className="sidebar-brand-name" title={tenant.nombre}>
-              {tenant.nombre || 'GymOS'}
+              {tenant.nombre || 'GymDesk'}
             </span>
             <span className="sidebar-brand-sub">{tenant.subdominio || 'Operations'}</span>
           </div>

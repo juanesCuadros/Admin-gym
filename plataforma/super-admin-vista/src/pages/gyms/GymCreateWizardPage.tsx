@@ -492,7 +492,7 @@ export const GymCreateWizardPage: React.FC = () => {
           <div>
             <h3 style={{ fontSize: 'var(--font-size-xl)', marginBottom: '4px' }}>Paso 1: Identidad y subdominio</h3>
             <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: '24px' }}>
-              Nombre del gimnasio y dirección web en GymOS. El subdominio no se puede cambiar después.
+              Nombre del gimnasio y dirección web en GymDesk. El subdominio no se puede cambiar después.
             </p>
 
             <FormField label="Nombre del gimnasio" required error={errors.nombre}>

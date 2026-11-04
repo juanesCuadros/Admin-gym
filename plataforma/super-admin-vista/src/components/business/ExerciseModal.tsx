@@ -120,7 +120,7 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={isEdit ? 'Editar Ejercicio Global' : 'Nuevo Ejercicio Global (RF-22)'}
-      description="Los ejercicios globales están disponibles para todos los gimnasios del SaaS GymOS."
+      description="Los ejercicios globales están disponibles para todos los gimnasios del SaaS GymDesk."
       maxWidth="560px"
       footer={
         <>

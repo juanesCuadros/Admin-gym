@@ -67,14 +67,14 @@ function EnlaceInvalido({ error }: { error: ErrorApi | null }) {
 }
 
 function PruebaYaUsada({ mensaje }: { mensaje: string }) {
-  const whatsapp = enlaceWhatsApp('Hola, quiero activar GymOS y me dice que ya usé la prueba gratis.')
+  const whatsapp = enlaceWhatsApp('Hola, quiero activar GymDesk y me dice que ya usé la prueba gratis.')
   return (
     <div className="tarjeta resultado">
       <h1>Ya existe una prueba con estos datos</h1>
       <p>{mensaje}</p>
       <p className="texto-suave">
-        La prueba gratis es una por correo y por teléfono. Si quieres seguir usando GymOS o crees que es un error,
-        contacta al equipo de GymOS.
+        La prueba gratis es una por correo y por teléfono. Si quieres seguir usando GymDesk o crees que es un error,
+        contacta al equipo de GymDesk.
       </p>
       <div className="acciones">
         {whatsapp && (
@@ -164,7 +164,7 @@ function FormularioPassword({
     <>
       <h1>Crea tu contraseña</h1>
       <p>
-        Último paso para crear <strong>{info.nombre_gimnasio}</strong> en GymOS. Su dirección será parecida
+        Último paso para crear <strong>{info.nombre_gimnasio}</strong> en GymDesk. Su dirección será parecida
         a <strong className="direccion">{info.subdominio_sugerido}.{DOMINIO_BASE}</strong>; te mostramos la
         definitiva al terminar.
       </p>

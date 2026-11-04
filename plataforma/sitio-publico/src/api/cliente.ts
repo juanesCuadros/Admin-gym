@@ -25,7 +25,7 @@ export class ErrorApi extends Error {
 }
 
 const MENSAJE_SIN_CONEXION =
-  'No pudimos comunicarnos con GymOS. Revisa tu conexión a internet e inténtalo de nuevo.'
+  'No pudimos comunicarnos con GymDesk. Revisa tu conexión a internet e inténtalo de nuevo.'
 const MENSAJE_GENERICO = 'Ocurrió un error inesperado. Inténtalo de nuevo en unos minutos.'
 
 interface CuerpoError {

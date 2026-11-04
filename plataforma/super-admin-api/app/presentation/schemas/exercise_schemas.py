@@ -35,7 +35,7 @@ class ExerciseDatasetItem(BaseModel):
     archivo_url: Optional[str] = None
 
 class ExerciseImportRequest(BaseModel):
-    dataset_nombre: str = Field(..., description="Nombre del dataset, ej: Wger / GymOS Standard v1")
+    dataset_nombre: str = Field(..., description="Nombre del dataset, ej: Wger / GymDesk Standard v1")
     ejercicios: List[ExerciseDatasetItem] = Field(..., min_length=1)
     modo_actualizacion: bool = Field(True, description="Si es True, actualiza los existentes; si es False, ignora los existentes")
 

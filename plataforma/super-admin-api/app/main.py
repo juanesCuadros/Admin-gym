@@ -41,9 +41,9 @@ async def lifespan(app: FastAPI):
             )
             db.add(new_admin)
             db.commit()
-            print(f"[GymOS] Super Admin inicial creado: {settings.FIRST_SUPERADMIN_EMAIL}")
+            print(f"[GymDesk] Super Admin inicial creado: {settings.FIRST_SUPERADMIN_EMAIL}")
     except Exception as e:
-        print(f"[GymOS] Advertencia en inicialización: {e}")
+        print(f"[GymDesk] Advertencia en inicialización: {e}")
     finally:
         db.close()
 
@@ -56,7 +56,7 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description="""
-# GymOS - Backend del Módulo de Super Administrador (Ola 1 - MVP)
+# GymDesk - Backend del Módulo de Super Administrador (Ola 1 - MVP)
 
 Plataforma SaaS multi-tenant diseñada para la administración y supervisión de gimnasios,
 con aprovisionamiento asistido, control financiero estricto, catálogo multimedia global

@@ -124,7 +124,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                   lineHeight: 1.1,
                 }}
               >
-                GymOS
+                GymDesk
               </div>
               <div
                 style={{
@@ -240,7 +240,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           }}
         >
           <span style={{ fontWeight: 'var(--font-weight-medium)', color: 'var(--color-text-secondary)' }}>
-            GymOS Platform v1.0.0
+            GymDesk Platform v1.0.0
           </span>
           <span>SaaS B2B Fitness — Ola 1</span>
         </div>

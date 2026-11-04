@@ -6,7 +6,7 @@ Un solo punto de salida: `email_adaptador.enviar(Correo)`. Dos modos, elegidos p
 |---|---|
 | `EMAIL_MODO` | `log` (por defecto) o `resend` |
 | `RESEND_API_KEY` | La clave de Resend; empieza por `re_` |
-| `EMAIL_REMITENTE` | Por ejemplo `GymOS <no-reply@tudominio.com>` |
+| `EMAIL_REMITENTE` | Por ejemplo `GymDesk <no-reply@tudominio.com>` |
 | `APP_URL_BASE` | Base del enlace al Sistema Web. Admite `{subdominio}`: `https://{subdominio}.gymos.co`. Sin marcador (`http://localhost:3000`) se agrega `?subdominio=` |
 
 Reglas:
@@ -19,7 +19,7 @@ Reglas:
 
 1. Crear la clave en <https://resend.com/api-keys> (permiso *Sending access*). Guardarla como `RESEND_API_KEY` en el `.env` del VPS, nunca en el repo.
 2. Verificar el dominio en <https://resend.com/domains>: agregar los registros DNS (SPF, DKIM y opcionalmente DMARC) que Resend indique y esperar a que marque *Verified*.
-3. Poner `EMAIL_REMITENTE="GymOS <no-reply@tudominio.com>"` con una dirección de ese dominio.
+3. Poner `EMAIL_REMITENTE="GymDesk <no-reply@tudominio.com>"` con una dirección de ese dominio.
 4. Cambiar `EMAIL_MODO=resend` y reiniciar `gym-jefe-api`.
 
 > Sin dominio verificado, el remitente de prueba `onboarding@resend.dev` **solo entrega a la dirección de la cuenta de Resend**. Por eso el modo por defecto es `log`.
@@ -29,5 +29,5 @@ Para probar el envío real sin tocar el flujo de recuperación:
 ```bash
 python -c "
 import asyncio; from app.core.email import email_adaptador, Correo
-print(asyncio.run(email_adaptador.enviar(Correo('tu@correo.com', 'Prueba GymOS', 'Hola', '<p>Hola</p>'))))"
+print(asyncio.run(email_adaptador.enviar(Correo('tu@correo.com', 'Prueba GymDesk', 'Hola', '<p>Hola</p>'))))"
 ```

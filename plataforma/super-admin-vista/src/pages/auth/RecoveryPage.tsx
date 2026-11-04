@@ -103,7 +103,7 @@ export const RecoveryPage: React.FC = () => {
                 marginBottom: '24px',
               }}
             >
-              Si el correo <strong>{correo}</strong> corresponde a un usuario activo de GymOS, hemos enviado un enlace para restablecer tu contraseña.
+              Si el correo <strong>{correo}</strong> corresponde a un usuario activo de GymDesk, hemos enviado un enlace para restablecer tu contraseña.
             </p>
             <Link to="/login">
               <Button variant="secondary" fullWidth>
