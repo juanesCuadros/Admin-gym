@@ -36,7 +36,7 @@ function enlaceWhatsApp(valor: string): string | null {
 }
 
 const seccion: React.CSSProperties = { maxWidth: 1080, margin: '0 auto', padding: '48px 20px' };
-const tituloSeccion: React.CSSProperties = { fontSize: '1.6rem', fontWeight: 600, margin: '0 0 20px' };
+const tituloSeccion: React.CSSProperties = { color: '#111827', fontSize: '1.6rem', fontWeight: 600, margin: '0 0 20px' };
 const rejilla: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 };
 
 /**
@@ -122,7 +122,7 @@ export const LandingGimnasioPage: React.FC = () => {
         }}
       >
         <div style={{ ...seccion, padding: '72px 20px' }}>
-          <h1 style={{ fontSize: 'clamp(2rem, 6vw, 3.25rem)', fontWeight: 700, margin: '0 0 14px', maxWidth: 760 }}>
+          <h1 style={{ color: '#fff', fontSize: 'clamp(2rem, 6vw, 3.25rem)', fontWeight: 700, margin: '0 0 14px', maxWidth: 760 }}>
             {datos.titulo || datos.nombre}
           </h1>
           {datos.descripcion && <p style={{ fontSize: '1.1rem', maxWidth: 680, margin: '0 0 24px', whiteSpace: 'pre-line' }}>{datos.descripcion}</p>}
