@@ -11,7 +11,7 @@ export const EncabezadoGimnasio: React.FC<{ subtitulo?: string }> = ({ subtitulo
         <img
           src={tenant.logo_url}
           alt=""
-          style={{ width: 56, height: 56, borderRadius: 'var(--radius-md)', objectFit: 'cover', marginBottom: 14 }}
+          style={{ display: 'block', height: 72, maxWidth: 220, objectFit: 'contain', margin: '0 auto 14px' }}
         />
       ) : (
         <div
