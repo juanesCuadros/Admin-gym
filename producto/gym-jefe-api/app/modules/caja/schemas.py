@@ -62,10 +62,16 @@ class VentaItemRequest(BaseModel):
     precio_unitario: Optional[Decimal] = Field(
         None,
         ge=0,
-        description="Precio unitario para pases de día o clase. Para 'producto', se ignora y se toma platform.productos.precio."
+        description="Precio del pase cuando el gimnasio no tiene uno configurado. Para productos y pases con precio configurado se ignora."
     )
     precio_cobrado: Optional[Decimal] = Field(None, ge=0, description="Precio unitario cobrado si tiene descuento")
     motivo_descuento: Optional[str] = Field(None, max_length=255, description="Motivo obligatorio si precio_cobrado < precio_lista")
+
+
+class PreciosPasesResponse(BaseModel):
+    """Precio del pase en COP. null = el gimnasio no lo configuró y quien cobra lo escribe."""
+    pase_dia: Optional[int] = None
+    pase_clase: Optional[int] = None
 
 
 class RegistrarVentaRequest(BaseModel):

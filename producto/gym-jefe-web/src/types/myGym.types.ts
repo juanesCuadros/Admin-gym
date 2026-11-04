@@ -10,6 +10,9 @@ export interface ParametrosContrato25 {
   tope_descuento_pct?: number;
   ventana_reserva_dias?: number;
   limite_cancelar_reserva_horas?: number;
+  /** Precio del pase de día y del pase de clase en COP. null = sin configurar. */
+  precio_pase_dia?: number | null;
+  precio_pase_clase?: number | null;
 }
 
 export interface InfoGymResponse extends ParametrosContrato25 {

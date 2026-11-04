@@ -16,7 +16,7 @@ import { Cargando, ErrorCarga, MensajeFijo } from '../../components/estados/Esta
 import { formatCOP, formatFechaHora, formatMiles } from '../../utils/formato';
 import type { ProductoResponse } from '../../types/inventario.types';
 import type { InfoGymResponse } from '../../types/myGym.types';
-import type { VentaItemRequest, VentaResponseDto } from '../../types/caja.types';
+import type { PreciosPasesResponse, VentaItemRequest, VentaResponseDto } from '../../types/caja.types';
 import type { DeportistaBusquedaItem } from '../../types/comun.types';
 
 /** Línea del carrito. Los productos toman el precio de lista; los pases, el precio que se digita. */
@@ -26,8 +26,10 @@ interface LineaCarrito {
   producto?: ProductoResponse;
   descripcion: string;
   cantidad: number;
-  /** Precio de lista (producto) o precio digitado (pase), en COP enteros. */
+  /** Precio de lista (producto o pase con precio configurado) o precio digitado (pase), en COP enteros. */
   precio: number;
+  /** Pase con precio configurado en Parámetros: no se edita. */
+  precioFijo?: boolean;
   /** Contrato 1.2: precio cobrado si hay descuento. Vacío = precio de lista. */
   precioCobrado: string;
   motivoDescuento: string;
@@ -77,6 +79,8 @@ export const PuntoDeVentaPage: React.FC = () => {
 
   // Configuración del gimnasio (métodos de pago y descuentos). Puede fallar por permiso: no bloquea la venta.
   const [info, setInfo] = useState<InfoGymResponse | null>(null);
+  // Precio configurado de los pases; null = se escribe al cobrar. Si no carga, se escribe a mano (el backend manda).
+  const [preciosPases, setPreciosPases] = useState<PreciosPasesResponse | null>(null);
 
   // Venta
   const [lineas, setLineas] = useState<LineaCarrito[]>([]);
@@ -137,6 +141,13 @@ export const PuntoDeVentaPage: React.FC = () => {
       .catch(() => setInfo(null));
   }, [puedeVerConfig]);
 
+  useEffect(() => {
+    cajaService
+      .getPreciosPases()
+      .then(setPreciosPases)
+      .catch(() => setPreciosPases(null));
+  }, []);
+
   // Cualquier cambio en lo que se cobra invalida la clave anterior (es otra operación).
   useEffect(() => {
     setIdempotencyKey(null);
@@ -157,7 +168,8 @@ export const PuntoDeVentaPage: React.FC = () => {
     if (l.cantidad < 1) return 'La cantidad debe ser al menos 1.';
     if (l.tipo === 'producto' && l.producto && l.cantidad > l.producto.stock)
       return `Solo hay ${l.producto.stock} en stock.`;
-    if (l.tipo !== 'producto' && (!Number.isFinite(l.precio) || l.precio <= 0)) return 'Escribe el precio del pase.';
+    if (l.tipo !== 'producto' && !l.precioFijo && (!Number.isFinite(l.precio) || l.precio <= 0))
+      return 'Escribe el precio del pase.';
     if (descuentosPermitidos && l.tipo === 'producto' && l.precioCobrado.trim() !== '') {
       const c = entero(l.precioCobrado);
       if (c === null || c < 0) return 'El precio cobrado no es válido.';
@@ -206,6 +218,7 @@ export const PuntoDeVentaPage: React.FC = () => {
 
   const agregarPase = (tipo: 'pase_dia' | 'pase_clase') => {
     setRecibo(null);
+    const configurado = preciosPases?.[tipo] ?? null;
     setLineas((prev) => [
       ...prev,
       {
@@ -213,7 +226,8 @@ export const PuntoDeVentaPage: React.FC = () => {
         tipo,
         descripcion: ETIQUETA_PASE[tipo],
         cantidad: 1,
-        precio: 0,
+        precio: configurado ?? 0,
+        precioFijo: configurado !== null,
         precioCobrado: '',
         motivoDescuento: '',
       },
@@ -254,7 +268,7 @@ export const PuntoDeVentaPage: React.FC = () => {
           item.precio_cobrado = cobrado;
           item.motivo_descuento = l.motivoDescuento.trim();
         }
-      } else {
+      } else if (!l.precioFijo) {
         item.precio_unitario = l.precio;
       }
       return item;
@@ -496,7 +510,7 @@ export const PuntoDeVentaPage: React.FC = () => {
                       <div className="linea-top">
                         <div className="linea-nombre">
                           {l.descripcion}
-                          {l.tipo === 'producto' && <small>{formatCOP(l.precio)} c/u</small>}
+                          {(l.tipo === 'producto' || l.precioFijo) && <small>{formatCOP(l.precio)} c/u</small>}
                         </div>
                         <div className="cantidad">
                           {l.cantidad <= 1 ? (
@@ -525,7 +539,7 @@ export const PuntoDeVentaPage: React.FC = () => {
                         <div className="linea-total">{formatCOP(precioFinal(l) * l.cantidad)}</div>
                       </div>
 
-                      {l.tipo !== 'producto' && (
+                      {l.tipo !== 'producto' && !l.precioFijo && (
                         <div className="linea-extra uno">
                           <Input
                             label="Precio del pase (COP)"

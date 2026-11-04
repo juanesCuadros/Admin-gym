@@ -513,6 +513,20 @@ class CajaService:
     # =========================================================================
 
     @classmethod
+    async def precios_pases(cls, session: AsyncSession, gym_id: UUID) -> Dict[str, Optional[int]]:
+        """Precio configurado del pase de día y del pase de clase (COP); None = sin configurar."""
+        res = await session.execute(
+            text("SELECT precio_pase_dia, precio_pase_clase FROM platform.tenant WHERE id = :gym_id"),
+            {"gym_id": gym_id},
+        )
+        row = res.mappings().first() or {}
+        dia, clase = row.get("precio_pase_dia"), row.get("precio_pase_clase")
+        return {
+            "pase_dia": int(dia) if dia is not None else None,
+            "pase_clase": int(clase) if clase is not None else None,
+        }
+
+    @classmethod
     async def registrar_venta(
         cls,
         session: AsyncSession,
@@ -551,7 +565,7 @@ class CajaService:
             if not it.producto_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={"codigo": "PRODUCTO_ID_REQUERIDO", "mensaje": f"El ítem '{it.descripcion}' es tipo 'producto' pero no incluye producto_id"}
+                    detail={"codigo": "PRODUCTO_ID_REQUERIDO", "mensaje": f"Elige el producto del inventario para '{it.descripcion}'."}
                 )
 
         product_ids_sorted = sorted(list({it.producto_id for it in items_producto}))
@@ -574,7 +588,7 @@ class CajaService:
                 if pid not in productos_map:
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND,
-                        detail={"codigo": "PRODUCTO_NO_ENCONTRADO", "mensaje": f"Producto con ID {pid} no encontrado en el inventario"}
+                        detail={"codigo": "PRODUCTO_NO_ENCONTRADO", "mensaje": "Uno de los productos ya no está en el inventario. Recarga e inténtalo de nuevo."}
                     )
                 if not productos_map[pid]["activo"]:
                     raise HTTPException(
@@ -601,17 +615,21 @@ class CajaService:
         # 4. Cálculo de Precios Autoritativos, Descuentos y Subtotales
         items_procesados = []
         total_calculado = Decimal("0.0")
+        precios_pases = await cls.precios_pases(session, gym_id)
 
         for it in data.items:
             if it.tipo == "producto":
                 # REGLA DE SEGURIDAD: Precio lista tomado directo de platform.productos.precio
                 precio_lista = Decimal(str(productos_map[it.producto_id]["precio"]))
+            elif precios_pases[it.tipo] is not None:
+                # Precio del pase configurado por el gimnasio: es el precio de lista, como el de un producto.
+                precio_lista = Decimal(precios_pases[it.tipo])
             else:
-                # Pases de día y pases de clase toman el valor base enviado
+                # Pase sin precio configurado: se toma el valor que escribe quien cobra
                 if it.precio_unitario is None:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail={"codigo": "PRECIO_UNITARIO_REQUERIDO", "mensaje": f"Debe proporcionar precio_unitario para '{it.descripcion}'"}
+                        detail={"codigo": "PRECIO_UNITARIO_REQUERIDO", "mensaje": f"Escribe el precio de '{it.descripcion}'."}
                     )
                 precio_lista = it.precio_unitario
 
@@ -954,12 +972,12 @@ class CajaService:
         if not data.membresia_id and not data.paquete_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"codigo": "DESTINO_PAGO_REQUERIDO", "mensaje": "Debe especificar membresia_id o paquete_id"}
+                detail={"codigo": "DESTINO_PAGO_REQUERIDO", "mensaje": "Elige la membresía o el paquete que se va a pagar."}
             )
         if data.membresia_id and data.paquete_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"codigo": "DESTINO_PAGO_AMBIGUO", "mensaje": "Especifique membresia_id o paquete_id, no ambos"}
+                detail={"codigo": "DESTINO_PAGO_AMBIGUO", "mensaje": "Elige solo una cosa para pagar: la membresía o el paquete."}
             )
 
         hoy = today_local()

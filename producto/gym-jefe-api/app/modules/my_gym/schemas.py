@@ -207,6 +207,9 @@ class ActualizarParametrosRequest(BaseModel):
         ge=0,
         description="Horas antes del inicio de la clase para cancelar la reserva [>=0]"
     )
+    # Precio de los pases en COP enteros. Enviar null lo deja sin configurar (el punto de venta lo pide a mano).
+    precio_pase_dia: Optional[int] = Field(None, ge=0, le=100_000_000, description="Precio del pase de día en COP")
+    precio_pase_clase: Optional[int] = Field(None, ge=0, le=100_000_000, description="Precio del pase de clase en COP")
 
     @model_validator(mode="after")
     def validar_tope_y_minimo_congelamiento(self) -> "ActualizarParametrosRequest":
@@ -226,6 +229,8 @@ class ParametrosTenantResponse(BaseModel):
     tope_descuento_pct: int = 0
     ventana_reserva_dias: int = 7
     limite_cancelar_reserva_horas: int = 2
+    precio_pase_dia: Optional[int] = None
+    precio_pase_clase: Optional[int] = None
     version: int
 
 
@@ -297,6 +302,8 @@ class InfoGymResponse(BaseModel):
     tope_descuento_pct: int = 0
     ventana_reserva_dias: int = 7
     limite_cancelar_reserva_horas: int = 2
+    precio_pase_dia: Optional[int] = None
+    precio_pase_clase: Optional[int] = None
     branding: Dict[str, Any] = Field(default_factory=dict)
     version: int
     activo: bool

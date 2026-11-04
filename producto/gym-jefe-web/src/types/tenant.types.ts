@@ -1,6 +1,16 @@
 /** Configuración de la pantalla TV (`/pantalla-tv/config`). */
+/** Aviso del carrusel de la Pantalla TV (`AvisoPantallaItem` del backend). */
+export interface AvisoPantalla {
+  id: string;
+  titulo: string;
+  contenido: string;
+  activo: boolean;
+  orden: number;
+}
+
+/** `GET/PUT /pantalla-tv/config` (`PantallaConfigDto`). */
 export interface PantallaConfig {
-  avisos: string[];
+  avisos: AvisoPantalla[];
   logo_url: string | null;
   tiempo_saludo_segundos: number;
   mostrar_clases: boolean;

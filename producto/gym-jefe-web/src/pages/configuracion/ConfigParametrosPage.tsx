@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Cargando, Conflicto, ErrorCarga, MensajeFijo } from '../../components/estados/Estados';
 import { useCambiosSinGuardar } from '../../hooks/useCambiosSinGuardar';
+import { formatCOP } from '../../utils/formato';
 import type { ActualizarParametrosRequest, InfoGymResponse } from '../../types/myGym.types';
 
 /** Parámetros numéricos. `contrato: true` = campo del contrato 2.5, aún no expuesto por el backend actual. */
@@ -127,7 +128,16 @@ const GRUPOS: Array<{ titulo: string; campos: DefCampo[] }> = [
   },
 ];
 
-type FormParametros = Record<CampoNumerico, string> & { permitir_descuentos: boolean | null };
+type CampoPrecio = 'precio_pase_dia' | 'precio_pase_clase';
+
+/** Precios de los pases (COP). Vacío = sin configurar: en el punto de venta se escribe al cobrar. */
+const PRECIOS_PASES: Array<{ campo: CampoPrecio; etiqueta: string; ayuda: string }> = [
+  { campo: 'precio_pase_dia', etiqueta: 'Pase de día', ayuda: 'Entrada de un día para quien no tiene membresía.' },
+  { campo: 'precio_pase_clase', etiqueta: 'Pase de clase', ayuda: 'Una clase para quien no tiene membresía activa.' },
+];
+
+type FormParametros = Record<CampoNumerico, string> &
+  Record<CampoPrecio, string> & { permitir_descuentos: boolean | null };
 
 function infoAForm(i: InfoGymResponse): FormParametros {
   const txt = (v: number | undefined) => (v === undefined || v === null ? '' : String(v));
@@ -141,11 +151,13 @@ function infoAForm(i: InfoGymResponse): FormParametros {
     ventana_reserva_dias: txt(i.ventana_reserva_dias),
     limite_cancelar_reserva_horas: txt(i.limite_cancelar_reserva_horas),
     permitir_descuentos: i.permitir_descuentos ?? null,
+    precio_pase_dia: i.precio_pase_dia === undefined || i.precio_pase_dia === null ? '' : String(i.precio_pase_dia),
+    precio_pase_clase: i.precio_pase_clase === undefined || i.precio_pase_clase === null ? '' : String(i.precio_pase_clase),
   };
 }
 
 /** ¿El backend ya expone el campo? Los del contrato 2.5 llegan `undefined` mientras no esté unido. */
-function disponible(info: InfoGymResponse, campo: CampoNumerico | 'permitir_descuentos'): boolean {
+function disponible(info: InfoGymResponse, campo: CampoNumerico | CampoPrecio | 'permitir_descuentos'): boolean {
   return (info as unknown as Record<string, unknown>)[campo] !== undefined;
 }
 
@@ -162,7 +174,7 @@ export const ConfigParametrosPage: React.FC = () => {
   const [form, setForm] = useState<FormParametros | null>(null);
   const [cargando, setCargando] = useState(true);
   const [errorCarga, setErrorCarga] = useState<unknown>(null);
-  const [tocados, setTocados] = useState<Partial<Record<CampoNumerico, boolean>>>({});
+  const [tocados, setTocados] = useState<Partial<Record<CampoNumerico | CampoPrecio, boolean>>>({});
   const [guardando, setGuardando] = useState(false);
   const [errorGuardar, setErrorGuardar] = useState<ApiError | null>(null);
 
@@ -229,14 +241,24 @@ export const ConfigParametrosPage: React.FC = () => {
     errores.tope_dias_congelamiento = 'El tope no puede ser menor que el mínimo por congelamiento.';
   }
 
+  const erroresPrecio: Partial<Record<CampoPrecio, string>> = {};
+  for (const p of PRECIOS_PASES) {
+    const v = form[p.campo].trim();
+    if (v === '' || !disponible(info, p.campo)) continue;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0) erroresPrecio[p.campo] = 'Escribe un valor en pesos, sin decimales, o déjalo vacío.';
+  }
+
   const errorDe = (c: CampoNumerico) => (tocados[c] ? errores[c] : undefined) ?? errorGuardar?.campos[c];
+  const errorPrecioDe = (c: CampoPrecio) => (tocados[c] ? erroresPrecio[c] : undefined) ?? errorGuardar?.campos[c];
 
   const guardar = async (e: React.FormEvent) => {
     e.preventDefault();
-    const todos: Partial<Record<CampoNumerico, boolean>> = {};
+    const todos: Partial<Record<CampoNumerico | CampoPrecio, boolean>> = {};
     definiciones.forEach((d) => (todos[d.campo] = true));
+    PRECIOS_PASES.forEach((p) => (todos[p.campo] = true));
     setTocados(todos);
-    if (Object.keys(errores).length > 0 || guardando) return;
+    if (Object.keys(errores).length > 0 || Object.keys(erroresPrecio).length > 0 || guardando) return;
     setGuardando(true);
     setErrorGuardar(null);
 
@@ -255,6 +277,9 @@ export const ConfigParametrosPage: React.FC = () => {
     if (disponible(info, 'ventana_reserva_dias')) datos.ventana_reserva_dias = Number(form.ventana_reserva_dias);
     if (disponible(info, 'limite_cancelar_reserva_horas'))
       datos.limite_cancelar_reserva_horas = Number(form.limite_cancelar_reserva_horas);
+    for (const p of PRECIOS_PASES) {
+      if (disponible(info, p.campo)) datos[p.campo] = form[p.campo].trim() === '' ? null : Number(form[p.campo]);
+    }
 
     try {
       const res = await myGymService.actualizarParametros(datos);
@@ -342,6 +367,33 @@ export const ConfigParametrosPage: React.FC = () => {
               })}
             </Card>
           ))}
+          {PRECIOS_PASES.some((p) => disponible(info, p.campo)) && (
+            <Card title="Precios de los pases">
+              {PRECIOS_PASES.map((p) => (
+                <div key={p.campo}>
+                  <Input
+                    label={`${p.etiqueta} (COP)`}
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    step={100}
+                    value={form[p.campo]}
+                    placeholder="Sin configurar"
+                    onChange={(e) => setForm({ ...form, [p.campo]: e.target.value })}
+                    onBlur={() => setTocados((t) => ({ ...t, [p.campo]: true }))}
+                    error={errorPrecioDe(p.campo)}
+                    disabled={!puedeEditar || guardando}
+                  />
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: -8, marginBottom: 14 }}>
+                    {p.ayuda}{' '}
+                    {form[p.campo].trim() !== '' && !erroresPrecio[p.campo]
+                      ? `Caja cobrará ${formatCOP(Number(form[p.campo]))}.`
+                      : 'Vacío: caja escribe el precio al cobrar.'}
+                  </p>
+                </div>
+              ))}
+            </Card>
+          )}
         </div>
 
         {puedeEditar && (

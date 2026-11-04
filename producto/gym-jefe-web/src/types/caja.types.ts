@@ -54,6 +54,12 @@ export interface TurnoResumenDto {
   descuadre_atribuido_a_nombre?: string | null;
 }
 
+/** `GET /caja/precios-pases`. null = el gimnasio no lo configuró y se escribe al cobrar. */
+export interface PreciosPasesResponse {
+  pase_dia: number | null;
+  pase_clase: number | null;
+}
+
 export interface VentaItemRequest {
   tipo: 'producto' | 'pase_dia' | 'pase_clase';
   producto_id?: string;

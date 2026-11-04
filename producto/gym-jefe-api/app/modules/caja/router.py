@@ -19,6 +19,7 @@ from app.modules.caja.schemas import (
     EgresoResponseDto,
     HistorialMovimientosTurnoResponse,
     PagoMembresiaResponseDto,
+    PreciosPasesResponse,
     RegistrarEgresoRequest,
     RegistrarPagoMembresiaRequest,
     RegistrarVentaRequest,
@@ -176,6 +177,18 @@ async def obtener_movimientos_turno(
 # =============================================================================
 # 2. PUNTO DE VENTA (POS) Y KARDEX (RF-11, RF-12)
 # =============================================================================
+
+@router.get(
+    "/precios-pases",
+    response_model=PreciosPasesResponse,
+    summary="Precio configurado del pase de día y del pase de clase (null = se escribe al cobrar)"
+)
+async def obtener_precios_pases(
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("caja", "leer"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)]
+):
+    return PreciosPasesResponse(**await CajaService.precios_pases(session, current_staff.gimnasio_id))
+
 
 @router.post(
     "/ventas",

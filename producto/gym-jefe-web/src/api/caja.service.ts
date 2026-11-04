@@ -12,9 +12,16 @@ import {
   RegistrarEgresoRequest,
   EgresoResponseDto,
   HistorialMovimientosTurnoResponse,
+  PreciosPasesResponse,
 } from '../types/caja.types';
 
 export const cajaService = {
+  /** Precio configurado de los pases (Configuración · Parámetros). */
+  async getPreciosPases(): Promise<PreciosPasesResponse> {
+    const response = await apiClient.get<PreciosPasesResponse>('/caja/precios-pases');
+    return response.data;
+  },
+
   async abrirTurno(data: AbrirTurnoRequest): Promise<TurnoResumenDto> {
     const response = await apiClient.post<TurnoResumenDto>('/caja/turnos/abrir', data);
     return response.data;

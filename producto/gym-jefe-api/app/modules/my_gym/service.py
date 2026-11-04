@@ -50,6 +50,11 @@ from app.modules.my_gym.schemas import (
 )
 
 
+def _entero_o_none(valor: Any) -> Optional[int]:
+    """Precio en COP enteros; NULL en la base = sin configurar."""
+    return int(valor) if valor is not None else None
+
+
 class MyGymService:
     """Lógica de negocio y persistencia para la configuración y auditoría del gimnasio."""
 
@@ -152,6 +157,7 @@ class MyGymService:
                    dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer,
                    duracion_sesion_minutos, minimo_dias_congelamiento, permitir_descuentos,
                    tope_descuento_pct, ventana_reserva_dias, limite_cancelar_reserva_horas,
+                   precio_pase_dia, precio_pase_clase,
                    branding, version, activo, updated_at
             FROM platform.tenant
             WHERE id = :gym_id
@@ -186,6 +192,8 @@ class MyGymService:
             tope_descuento_pct=row.get("tope_descuento_pct", 0),
             ventana_reserva_dias=row.get("ventana_reserva_dias", 7),
             limite_cancelar_reserva_horas=row.get("limite_cancelar_reserva_horas", 2),
+            precio_pase_dia=_entero_o_none(row["precio_pase_dia"]),
+            precio_pase_clase=_entero_o_none(row["precio_pase_clase"]),
             branding=cls._parse_json_field(row["branding"], {}),
             version=row["version"],
             activo=row["activo"],
@@ -327,12 +335,15 @@ class MyGymService:
                 tope_descuento_pct = COALESCE(:tope_descuento, tope_descuento_pct),
                 ventana_reserva_dias = COALESCE(:ventana_reserva, ventana_reserva_dias),
                 limite_cancelar_reserva_horas = COALESCE(:limite_cancelar, limite_cancelar_reserva_horas),
+                precio_pase_dia = CASE WHEN :fijar_pase_dia THEN CAST(:precio_pase_dia AS numeric) ELSE precio_pase_dia END,
+                precio_pase_clase = CASE WHEN :fijar_pase_clase THEN CAST(:precio_pase_clase AS numeric) ELSE precio_pase_clase END,
                 version = version + 1,
                 updated_at = now()
             WHERE id = :gym_id AND version = :version_esperada
             RETURNING dias_gracia_mora, tope_dias_congelamiento, dias_umbral_por_vencer, duracion_sesion_minutos,
                       minimo_dias_congelamiento, permitir_descuentos, tope_descuento_pct,
-                      ventana_reserva_dias, limite_cancelar_reserva_horas, version
+                      ventana_reserva_dias, limite_cancelar_reserva_horas,
+                      precio_pase_dia, precio_pase_clase, version
         """)
 
         try:
@@ -349,6 +360,11 @@ class MyGymService:
                     "tope_descuento": data.tope_descuento_pct,
                     "ventana_reserva": data.ventana_reserva_dias,
                     "limite_cancelar": data.limite_cancelar_reserva_horas,
+                    # Solo los precios que vienen en la petición cambian; null explícito los deja sin configurar.
+                    "fijar_pase_dia": "precio_pase_dia" in data.model_fields_set,
+                    "precio_pase_dia": data.precio_pase_dia,
+                    "fijar_pase_clase": "precio_pase_clase" in data.model_fields_set,
+                    "precio_pase_clase": data.precio_pase_clase,
                 })
                 row = res.mappings().first()
         except IntegrityError as exc:
@@ -403,6 +419,8 @@ class MyGymService:
                 "tope_descuento_pct": row["tope_descuento_pct"],
                 "ventana_reserva_dias": row["ventana_reserva_dias"],
                 "limite_cancelar_reserva_horas": row["limite_cancelar_reserva_horas"],
+                "precio_pase_dia": _entero_o_none(row["precio_pase_dia"]),
+                "precio_pase_clase": _entero_o_none(row["precio_pase_clase"]),
                 "version_anterior": data.version,
                 "version_nueva": row["version"]
             }
@@ -418,6 +436,8 @@ class MyGymService:
             tope_descuento_pct=row["tope_descuento_pct"],
             ventana_reserva_dias=row["ventana_reserva_dias"],
             limite_cancelar_reserva_horas=row["limite_cancelar_reserva_horas"],
+            precio_pase_dia=_entero_o_none(row["precio_pase_dia"]),
+            precio_pase_clase=_entero_o_none(row["precio_pase_clase"]),
             version=row["version"]
         )
 
