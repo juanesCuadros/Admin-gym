@@ -1,3 +1,4 @@
+import type { CatalogoClase } from '../types/clases.types';
 import { apiClient } from './client';
 import {
   ClasesPaginadasResponse,
@@ -10,6 +11,21 @@ import {
 } from '../types/clases.types';
 
 export const clasesService = {
+  async getCatalogo(): Promise<CatalogoClase[]> {
+    const response = await apiClient.get<CatalogoClase[]>('/clases/catalogo');
+    return response.data;
+  },
+
+  async crearEnCatalogo(data: Omit<CatalogoClase, 'id' | 'activo'>): Promise<CatalogoClase> {
+    const response = await apiClient.post<CatalogoClase>('/clases/catalogo', data);
+    return response.data;
+  },
+
+  async actualizarEnCatalogo(id: string, data: Omit<CatalogoClase, 'id'>): Promise<CatalogoClase> {
+    const response = await apiClient.put<CatalogoClase>(`/clases/catalogo/${id}`, data);
+    return response.data;
+  },
+
   async getClases(params?: {
     skip?: number;
     limit?: number;

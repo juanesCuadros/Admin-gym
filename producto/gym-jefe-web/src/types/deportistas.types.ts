@@ -177,6 +177,24 @@ export interface FichaDeportistaResponse {
   };
 }
 
+export interface DeportistaMedicionItem {
+  id: string;
+  nombre: string;
+  documento: string;
+  sexo?: string | null;
+  altura_cm?: number | string | null;
+  ultima_fecha?: string | null;
+  peso?: number | string | null;
+  grasa_pct?: number | string | null;
+  masa_muscular?: number | string | null;
+  total_mediciones: number;
+}
+
+export interface DeportistasConMedicionesResponse {
+  items: DeportistaMedicionItem[];
+  total: number;
+}
+
 export interface RegistrarMedicionRequest {
   fecha?: string;
   sexo?: 'M' | 'F' | 'otro';

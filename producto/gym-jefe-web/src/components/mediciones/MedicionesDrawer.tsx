@@ -6,7 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { Drawer } from '../ui/Drawer';
 import { Button } from '../ui/Button';
-import { Input } from '../ui/Input';
+import { Input, Select } from '../ui/Input';
 import { Cargando, ErrorCarga, MensajeFijo } from '../estados/Estados';
 import { formatFechaNegocio, hoyBogota } from '../../utils/fechasBogota';
 import type { MedicionCorporalResponse } from '../../types/deportistas.types';
@@ -110,6 +110,8 @@ export const MedicionesDrawer: React.FC<MedicionesDrawerProps> = ({ deportista, 
 
   const [formAbierto, setFormAbierto] = useState(false);
   const [form, setForm] = useState(MEDICION_VACIA);
+  const [sexo, setSexo] = useState('');
+  const [estatura, setEstatura] = useState('');
   const [errorForm, setErrorForm] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const enviandoRef = useRef(false);
@@ -136,7 +138,17 @@ export const MedicionesDrawer: React.FC<MedicionesDrawerProps> = ({ deportista, 
     setMediciones([]);
     setFormAbierto(false);
     setPestana('progreso');
+    setSexo('');
+    setEstatura('');
     cargar();
+    // Si la ficha ya los tiene, no se vuelven a pedir.
+    deportistasService
+      .getFicha(deportistaId)
+      .then((ficha) => {
+        setSexo(ficha.deportista.sexo ?? '');
+        setEstatura(ficha.deportista.altura_cm ? String(ficha.deportista.altura_cm) : '');
+      })
+      .catch(() => undefined);
   }, [deportistaId, cargar]);
 
   // Medidas con al menos un dato: solo esas se ofrecen en la gráfica.
@@ -159,6 +171,12 @@ export const MedicionesDrawer: React.FC<MedicionesDrawerProps> = ({ deportista, 
       setErrorForm('Escribe al menos una medida.');
       return;
     }
+    if (!sexo || !(Number(estatura) > 0)) {
+      setErrorForm('Indica el sexo y la estatura: con ellos se calculan la grasa y el músculo.');
+      return;
+    }
+    data.sexo = sexo as 'M' | 'F' | 'otro';
+    data.altura_cm = Number(estatura);
     enviandoRef.current = true;
     setGuardando(true);
     setErrorForm(null);
@@ -210,6 +228,28 @@ export const MedicionesDrawer: React.FC<MedicionesDrawerProps> = ({ deportista, 
           <div className="form-callout-head">
             <Scale size={16} />
             <span>Nueva medición · {formatFechaNegocio(hoyBogota())}</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Select
+              label="Sexo *"
+              value={sexo}
+              disabled={guardando}
+              onChange={(e) => setSexo(e.target.value)}
+              options={[
+                { value: '', label: 'Selecciona' },
+                { value: 'F', label: 'Femenino' },
+                { value: 'M', label: 'Masculino' },
+                { value: 'otro', label: 'Otro (no se calcula grasa ni músculo)' },
+              ]}
+            />
+            <Input
+              label="Estatura (cm) *"
+              type="number"
+              min={1}
+              value={estatura}
+              disabled={guardando}
+              onChange={(e) => setEstatura(e.target.value)}
+            />
           </div>
           <div className="form-grid form-grid-movil-2">
             {CAMPOS_MEDICION.map((k, i) => (

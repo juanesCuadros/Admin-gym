@@ -17,6 +17,8 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
+import { MensajeFijo, VacioInicial } from '../../components/estados/Estados';
+import { useAuth } from '../../contexts/AuthContext';
 import { Modal } from '../../components/ui/Modal';
 import { Drawer } from '../../components/ui/Drawer';
 import { Table } from '../../components/ui/Table';
@@ -29,6 +31,7 @@ import {
   ProgramarClaseRequest,
   ReservaResponse,
 } from '../../types/clases.types';
+import type { CatalogoClase } from '../../types/clases.types';
 
 export const ClasesPage: React.FC = () => {
   const { showToast } = useToast();
@@ -59,6 +62,67 @@ export const ClasesPage: React.FC = () => {
   const [showReservarModal, setShowReservarModal] = useState(false);
 
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Catálogo: las clases que ofrece el gimnasio
+  const { hasPermission: puede } = useAuth();
+  const [pestana, setPestana] = useState<'agenda' | 'catalogo'>('agenda');
+  const [catalogo, setCatalogo] = useState<CatalogoClase[]>([]);
+  const [formCatalogo, setFormCatalogo] = useState<Partial<CatalogoClase> | null>(null);
+  const [errorCatalogo, setErrorCatalogo] = useState<string | null>(null);
+  const catalogoActivo = catalogo.filter((c) => c.activo);
+
+  const loadCatalogo = useCallback(async () => {
+    try {
+      setCatalogo(await clasesService.getCatalogo());
+    } catch {
+      setCatalogo([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCatalogo();
+  }, [loadCatalogo]);
+
+  const guardarCatalogo = async () => {
+    if (!formCatalogo) return;
+    const nombre = (formCatalogo.nombre ?? '').trim();
+    const cupo = Number(formCatalogo.cupo_sugerido);
+    const duracion = Number(formCatalogo.duracion_minutos);
+    if (nombre.length < 2) return setErrorCatalogo('Escribe el nombre de la clase.');
+    if (!(cupo > 0) || !(duracion > 0)) return setErrorCatalogo('El cupo y la duración deben ser mayores a 0.');
+    setIsProcessing(true);
+    setErrorCatalogo(null);
+    const datos = { nombre, descripcion: formCatalogo.descripcion?.trim() || null, cupo_sugerido: cupo, duracion_minutos: duracion };
+    try {
+      if (formCatalogo.id) {
+        await clasesService.actualizarEnCatalogo(formCatalogo.id, { ...datos, activo: formCatalogo.activo ?? true });
+      } else {
+        await clasesService.crearEnCatalogo(datos);
+      }
+      showToast('success', 'Catálogo actualizado', nombre);
+      setFormCatalogo(null);
+      loadCatalogo();
+    } catch (err) {
+      setErrorCatalogo(parseApiError(err));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const cambiarEstadoCatalogo = async (c: CatalogoClase) => {
+    try {
+      await clasesService.actualizarEnCatalogo(c.id, { ...c, activo: !c.activo });
+      loadCatalogo();
+    } catch (err) {
+      showToast('error', 'No se pudo actualizar la clase', parseApiError(err));
+    }
+  };
+
+  const elegirDelCatalogo = (id: string) => {
+    const c = catalogoActivo.find((x) => x.id === id);
+    if (!c) return;
+    setFormData((f) => ({ ...f, nombre: c.nombre, tipo: c.nombre, cupo: c.cupo_sugerido, duracion_minutos: c.duracion_minutos }));
+  };
 
   const loadClases = useCallback(async () => {
     setIsLoading(true);
@@ -157,18 +221,80 @@ export const ClasesPage: React.FC = () => {
         <div>
           <h1 className="page-title">Clases</h1>
           <p className="page-subtitle">
-            Agenda, cupos, reservas y asistencia
+            {pestana === 'agenda' ? 'Agenda, cupos, reservas y asistencia' : 'Las clases que ofrece el gimnasio'}
           </p>
         </div>
 
-        <Button
-          variant="primary"
-          leftIcon={<Plus size={16} />}
-          onClick={() => setShowProgramarModal(true)}
-        >
-          Programar clase
-        </Button>
+        {pestana === 'agenda' ? (
+          <Button variant="primary" leftIcon={<Plus size={16} />} onClick={() => setShowProgramarModal(true)}>
+            Programar clase
+          </Button>
+        ) : (
+          puede('clases', 'crear') && (
+            <Button
+              variant="primary"
+              leftIcon={<Plus size={16} />}
+              onClick={() => {
+                setErrorCatalogo(null);
+                setFormCatalogo({ nombre: '', descripcion: '', cupo_sugerido: 20, duracion_minutos: 60 });
+              }}
+            >
+              Nueva clase
+            </Button>
+          )
+        )}
       </div>
+
+      <div className="tabs-nav">
+        <button className={`tab-btn ${pestana === 'agenda' ? 'active' : ''}`} onClick={() => setPestana('agenda')}>
+          Programar
+        </button>
+        <button className={`tab-btn ${pestana === 'catalogo' ? 'active' : ''}`} onClick={() => setPestana('catalogo')}>
+          Catálogo ({catalogoActivo.length})
+        </button>
+      </div>
+
+      {pestana === 'catalogo' ? (
+        catalogo.length === 0 ? (
+          <VacioInicial
+            titulo="Aún no hay clases en el catálogo"
+            descripcion="Crea las clases que ofrece el gimnasio, como Zumba o Spinning, y al programarlas sus datos se llenan solos."
+          />
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+            {catalogo.map((c) => (
+              <div key={c.id} className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <Badge variant={c.activo ? 'success' : 'neutral'}>{c.activo ? 'Activa' : 'Inactiva'}</Badge>
+                  {puede('clases', 'editar') && (
+                    <MenuAcciones
+                      etiqueta={`Acciones de ${c.nombre}`}
+                      acciones={[
+                        {
+                          etiqueta: 'Editar',
+                          onClick: () => {
+                            setErrorCatalogo(null);
+                            setFormCatalogo(c);
+                          },
+                        },
+                        { etiqueta: c.activo ? 'Desactivar' : 'Activar', onClick: () => cambiarEstadoCatalogo(c) },
+                      ]}
+                    />
+                  )}
+                </div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 500, marginBottom: 6 }}>{c.nombre}</h3>
+                {c.descripcion && (
+                  <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', marginBottom: 12 }}>{c.descripcion}</p>
+                )}
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  {c.cupo_sugerido} cupos · {c.duracion_minutos} minutos
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        <>
 
       {/* Classes Table */}
       <Card>
@@ -262,6 +388,60 @@ export const ClasesPage: React.FC = () => {
         />
       </Card>
 
+        </>
+      )}
+
+      <Modal
+        isOpen={!!formCatalogo}
+        onClose={() => setFormCatalogo(null)}
+        title={formCatalogo?.id ? 'Editar clase' : 'Nueva clase'}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setFormCatalogo(null)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={guardarCatalogo} isLoading={isProcessing}>
+              Guardar
+            </Button>
+          </>
+        }
+      >
+        {formCatalogo && (
+          <>
+            <Input
+              label="Nombre *"
+              placeholder="Ej. Zumba"
+              value={formCatalogo.nombre ?? ''}
+              maxLength={100}
+              onChange={(e) => setFormCatalogo({ ...formCatalogo, nombre: e.target.value })}
+            />
+            <Input
+              label="Descripción"
+              value={formCatalogo.descripcion ?? ''}
+              maxLength={300}
+              onChange={(e) => setFormCatalogo({ ...formCatalogo, descripcion: e.target.value })}
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Input
+                label="Cupo sugerido *"
+                type="number"
+                min={1}
+                value={String(formCatalogo.cupo_sugerido ?? '')}
+                onChange={(e) => setFormCatalogo({ ...formCatalogo, cupo_sugerido: Number(e.target.value) })}
+              />
+              <Input
+                label="Duración (minutos) *"
+                type="number"
+                min={1}
+                value={String(formCatalogo.duracion_minutos ?? '')}
+                onChange={(e) => setFormCatalogo({ ...formCatalogo, duracion_minutos: Number(e.target.value) })}
+              />
+            </div>
+            {errorCatalogo && <MensajeFijo tono="error">{errorCatalogo}</MensajeFijo>}
+          </>
+        )}
+      </Modal>
+
       {/* Modal: Programar Clase */}
       <Drawer
         isOpen={showProgramarModal}
@@ -279,6 +459,17 @@ export const ClasesPage: React.FC = () => {
         }
       >
         <form onSubmit={handleProgramar}>
+          {catalogoActivo.length > 0 && (
+            <Select
+              label="Clase del catálogo"
+              value=""
+              onChange={(e) => elegirDelCatalogo(e.target.value)}
+              options={[
+                { value: '', label: 'Elige para llenar los datos' },
+                ...catalogoActivo.map((c) => ({ value: c.id, label: c.nombre })),
+              ]}
+            />
+          )}
           <Input
             label="Nombre de la clase *"
             placeholder="Ej. Spinning de la mañana"
@@ -290,14 +481,18 @@ export const ClasesPage: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Select
               label="Disciplina"
-              options={[
-                { value: 'Spinning', label: 'Spinning' },
-                { value: 'Yoga', label: 'Yoga' },
-                { value: 'Crossfit', label: 'Crossfit' },
-                { value: 'Pilates', label: 'Pilates' },
-                { value: 'Funcional', label: 'Funcional' },
-                { value: 'Zumba', label: 'Zumba' },
-              ]}
+              options={
+                catalogoActivo.length > 0
+                  ? catalogoActivo.map((c) => ({ value: c.nombre, label: c.nombre }))
+                  : [
+                      { value: 'Spinning', label: 'Spinning' },
+                      { value: 'Yoga', label: 'Yoga' },
+                      { value: 'Crossfit', label: 'Crossfit' },
+                      { value: 'Pilates', label: 'Pilates' },
+                      { value: 'Funcional', label: 'Funcional' },
+                      { value: 'Zumba', label: 'Zumba' },
+                    ]
+              }
               value={formData.tipo}
               onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
             />

@@ -281,6 +281,24 @@ class RegistrarMedicionRequest(BaseModel):
         return self
 
 
+class DeportistaMedicionItem(BaseModel):
+    id: UUID
+    nombre: str
+    documento: str
+    sexo: Optional[str] = None
+    altura_cm: Optional[Decimal] = None
+    ultima_fecha: Optional[date] = None
+    peso: Optional[Decimal] = None
+    grasa_pct: Optional[Decimal] = None
+    masa_muscular: Optional[Decimal] = None
+    total_mediciones: int = 0
+
+
+class DeportistasConMedicionesResponse(BaseModel):
+    items: List[DeportistaMedicionItem]
+    total: int
+
+
 class MedicionCorporalResponse(BaseModel):
     id: UUID
     fecha: date

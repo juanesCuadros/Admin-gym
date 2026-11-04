@@ -20,6 +20,7 @@ import { PantallaTvPage } from './pages/pantallaTv/PantallaTvPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { ControlIngresoPage } from './pages/controlIngreso/ControlIngresoPage';
 import { HistorialIngresosPage } from './pages/controlIngreso/HistorialIngresosPage';
+import { MedicionesPage } from './pages/deportistas/MedicionesPage';
 import { CajaPage } from './pages/caja/CajaPage';
 import { PuntoDeVentaPage } from './pages/caja/PuntoDeVentaPage';
 import { HistorialTurnosPage } from './pages/caja/HistorialTurnosPage';
@@ -104,6 +105,7 @@ export const App: React.FC = () => {
 
                     <Route element={<ProtectedRoute requiredSubmodule="deportistas" />}>
                       <Route path="/deportistas" element={<DeportistasPage />} />
+                      <Route path="/deportistas/mediciones" element={<MedicionesPage />} />
                     </Route>
 
                     <Route element={<ProtectedRoute requiredSubmodule="membresias" />}>

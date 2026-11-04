@@ -33,6 +33,7 @@ function diasEntre(desde: string, hasta: string): number {
   return Math.round((utc(hasta) - utc(desde)) / 86400000);
 }
 
+type SexoMedicion = '' | 'M' | 'F' | 'otro';
 type ClaveMedicionBase = 'peso' | 'cintura' | 'cadera' | 'pecho' | 'brazo' | 'pierna';
 
 const MEDICION_BASE_VACIA: Record<ClaveMedicionBase, string> = {
@@ -72,13 +73,28 @@ interface MedidasDerivadas {
  */
 function calcularMedidasDerivadas(
   medidas: Record<ClaveMedicionBase, string>,
-  sexo: 'M' | 'F',
+  sexo: SexoMedicion,
   alturaCmStr: string,
   edadAnios: number
 ): MedidasDerivadas {
   const esMujer = sexo === 'F';
   const altNum = Number(alturaCmStr);
-  const alt = altNum > 0 ? altNum : esMujer ? 162 : 172;
+  // Sin sexo (M o F) y estatura reales no se calcula nada: un valor supuesto daría una medida inventada.
+  if ((sexo !== 'M' && sexo !== 'F') || !(altNum > 0)) {
+    return {
+      grasaPct: null,
+      clasificacionGrasa: null,
+      masaMuscularKg: null,
+      pctMuscular: null,
+      masaGrasaKg: null,
+      masaMagraKg: null,
+      imc: null,
+      clasificacionImc: null,
+      icc: null,
+      riesgoIcc: null,
+    };
+  }
+  const alt = altNum;
 
   const num = (v: string): number | null => {
     if (!v || v.trim() === '') return null;
@@ -250,7 +266,7 @@ export const DeportistasPage: React.FC = () => {
   const [medicionAbierta, setMedicionAbierta] = useState(false);
   const medicionRef = useRef<HTMLDivElement>(null);
   const [medicionBase, setMedicionBase] = useState<Record<ClaveMedicionBase, string>>(MEDICION_BASE_VACIA);
-  const [sexoMedicion, setSexoMedicion] = useState<'M' | 'F'>('M');
+  const [sexoMedicion, setSexoMedicion] = useState<SexoMedicion>('');
   const [alturaMedicion, setAlturaMedicion] = useState('');
   const [errorMedicion, setErrorMedicion] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -384,13 +400,12 @@ export const DeportistasPage: React.FC = () => {
 
   const handleRegistrarMedicion = async () => {
     if (!selectedDeportistaId || isProcessing) return;
-    const data: RegistrarMedicionRequest = {
-      sexo: sexoMedicion,
-    };
     const altNum = Number(alturaMedicion);
-    if (alturaMedicion.trim() !== '' && Number.isFinite(altNum) && altNum > 0) {
-      data.altura_cm = altNum;
+    if (!sexoMedicion || !Number.isFinite(altNum) || altNum <= 0) {
+      setErrorMedicion('Indica el sexo y la estatura del deportista para registrar la medición.');
+      return;
     }
+    const data: RegistrarMedicionRequest = { sexo: sexoMedicion, altura_cm: altNum };
 
     let tieneMedidaBase = false;
     for (const [k, val] of Object.entries(medicionBase) as Array<[ClaveMedicionBase, string]>) {
@@ -437,7 +452,7 @@ export const DeportistasPage: React.FC = () => {
 
   const abrirMedicion = () => {
     setMedicionBase(MEDICION_BASE_VACIA);
-    setSexoMedicion(dep?.sexo === 'F' ? 'F' : 'M');
+    setSexoMedicion((dep?.sexo as SexoMedicion) ?? '');
     setAlturaMedicion(dep?.altura_cm ? String(dep.altura_cm) : '');
     setErrorMedicion(null);
     setMedicionAbierta(true);
@@ -750,7 +765,7 @@ export const DeportistasPage: React.FC = () => {
                         id="medicion-sexo"
                         label="Género para el cálculo"
                         value={sexoMedicion}
-                        onChange={(e) => setSexoMedicion(e.target.value as 'M' | 'F')}
+                        onChange={(e) => setSexoMedicion(e.target.value as SexoMedicion)}
                         options={[
                           { value: 'M', label: 'Hombre (Masculino)' },
                           { value: 'F', label: 'Mujer (Femenino)' },
@@ -771,7 +786,6 @@ export const DeportistasPage: React.FC = () => {
                         min={80}
                         max={250}
                         step="0.5"
-                        placeholder={sexoMedicion === 'F' ? '162' : '172'}
                         value={alturaMedicion}
                         onChange={(e) => setAlturaMedicion(e.target.value)}
                         hint="Usada para calcular IMC y % de grasa"

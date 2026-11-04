@@ -124,8 +124,7 @@ const ModalCredencial: React.FC<{
 
 /**
  * Personal · Staff (GW-RF-39, GW-RF-40).
- * Crear y regenerar credencial siguen el contrato 2.7 (pendiente de backend: hoy `POST /personal`
- * todavía exige `password` y `regenerar-credencial` no existe).
+ * Crear y recuperar el acceso siguen el contrato 2.7: se entrega una contraseña temporal.
  */
 export const StaffPage: React.FC = () => {
   const { hasPermission, isJefe, user, refrescarUsuario } = useAuth();
@@ -424,7 +423,7 @@ export const StaffPage: React.FC = () => {
                       etiqueta={`Acciones de ${s.nombre}`}
                       acciones={[
                         {
-                          etiqueta: 'Nueva credencial',
+                          etiqueta: 'Recuperar contraseña',
                           icono: <KeyRound size={15} />,
                           oculto: !(puedeEditar && s.activo),
                           onClick: () => {

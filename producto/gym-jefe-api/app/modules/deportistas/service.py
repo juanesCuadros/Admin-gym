@@ -22,6 +22,8 @@ from app.core.email.plantillas import url_sistema_web
 from app.core.security import encrypt_biometric_template, hash_token
 from app.modules.membresias.domain import MembresiaDomainService
 from app.modules.deportistas.schemas import (
+    DeportistaMedicionItem,
+    DeportistasConMedicionesResponse,
     AccesoFichaResponse,
     CambiarEstadoDeportistaRequest,
     CrearDeportistaRequest,
@@ -896,6 +898,51 @@ class DeportistasService:
     # 8. Mediciones Corporales (RF-21)
     # =====================================================================
     @classmethod
+    async def listar_con_mediciones(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        q: Optional[str] = None,
+        limit: int = 15,
+        offset: int = 0,
+    ) -> DeportistasConMedicionesResponse:
+        """Deportistas con su última medición; quienes no tienen ninguna también aparecen."""
+        filtro = ""
+        params = {"gym_id": gym_id, "limit": limit, "offset": offset}
+        if q:
+            filtro = "AND (d.documento ILIKE :q OR d.nombre ILIKE :q)"
+            params["q"] = f"%{q.strip()}%"
+        total = (
+            await session.execute(
+                text(f"SELECT COUNT(*) FROM platform.deportistas d WHERE d.gimnasio_id = :gym_id AND d.deleted_at IS NULL {filtro}"),
+                params,
+            )
+        ).scalar_one()
+        filas = await session.execute(
+            text(f"""
+                SELECT d.id, d.nombre, d.documento, d.sexo, d.altura_cm,
+                       u.fecha AS ultima_fecha, u.peso, u.grasa_pct, u.masa_muscular,
+                       (SELECT COUNT(*) FROM platform.mediciones_corporales c WHERE c.deportista_id = d.id) AS total_mediciones
+                FROM platform.deportistas d
+                LEFT JOIN LATERAL (
+                    SELECT m.fecha, m.peso, m.grasa_pct, m.masa_muscular
+                    FROM platform.mediciones_corporales m
+                    WHERE m.deportista_id = d.id
+                    ORDER BY m.fecha DESC, m.created_at DESC
+                    LIMIT 1
+                ) u ON true
+                WHERE d.gimnasio_id = :gym_id AND d.deleted_at IS NULL {filtro}
+                ORDER BY u.fecha DESC NULLS LAST, d.nombre
+                LIMIT :limit OFFSET :offset
+            """),
+            params,
+        )
+        return DeportistasConMedicionesResponse(
+            items=[DeportistaMedicionItem(**dict(f)) for f in filas.mappings().all()],
+            total=total,
+        )
+
+    @classmethod
     async def listar_mediciones(
         cls,
         session: AsyncSession,
@@ -943,8 +990,11 @@ class DeportistasService:
         Calcula automáticamente las medidas corporales derivadas (% de grasa corporal y masa muscular en kg)
         diferenciando el cálculo antropométrico según el género: Hombre ('M') vs Mujer ('F').
         """
-        es_mujer = (sexo or "M").upper() == "F"
-        alt = float(altura_cm) if altura_cm and altura_cm > 0 else (162.0 if es_mujer else 172.0)
+        # Sin sexo (M o F) y estatura reales no se calcula nada: un valor supuesto daría una medida inventada.
+        if (sexo or "").upper() not in ("M", "F") or not altura_cm or altura_cm <= 0:
+            return grasa_pct_manual, masa_muscular_manual
+        es_mujer = sexo.upper() == "F"
+        alt = float(altura_cm)
         peso_f = float(peso) if peso and peso > 0 else None
         cintura_f = float(cintura) if cintura and cintura > 0 else None
         cadera_f = float(cadera) if cadera and cadera > 0 else None
@@ -1040,8 +1090,16 @@ class DeportistasService:
             )
 
         # Actualizar sexo y/o altura_cm en la ficha del deportista si fueron suministrados durante la medición
-        sexo_efectivo = req.sexo or dep_row["sexo"] or "M"
+        sexo_efectivo = req.sexo or dep_row["sexo"]
         altura_efectiva = req.altura_cm or dep_row["altura_cm"]
+        if not sexo_efectivo or not altura_efectiva:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "codigo": "SEXO_Y_ESTATURA_REQUERIDOS",
+                    "mensaje": "Para registrar la medición indica el sexo y la estatura del deportista.",
+                },
+            )
         if req.sexo is not None or req.altura_cm is not None:
             await session.execute(
                 text("""

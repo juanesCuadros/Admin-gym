@@ -76,7 +76,17 @@ export const NAVEGACION: GrupoNav[] = [
           { id: 'caja.historial', etiqueta: 'Historial de turnos', ruta: '/caja/historial' },
         ],
       },
-      { id: 'deportistas', etiqueta: 'Deportistas', ruta: '/deportistas', icono: Users, submodulo: 'deportistas' },
+      {
+        id: 'deportistas',
+        etiqueta: 'Deportistas',
+        ruta: '/deportistas',
+        icono: Users,
+        submodulo: 'deportistas',
+        submodulos: [
+          { id: 'deportistas.lista', etiqueta: 'Deportistas', ruta: '/deportistas' },
+          { id: 'deportistas.mediciones', etiqueta: 'Mediciones', ruta: '/deportistas/mediciones' },
+        ],
+      },
       {
         id: 'membresias',
         etiqueta: 'Membresías',

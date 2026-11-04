@@ -88,3 +88,13 @@ export interface ResumenAsistenciaClaseResponse {
   asistentes: any[];
   ausentes: ReservaResponse[];
 }
+
+/** Una clase que ofrece el gimnasio. Solo propone datos al programar. */
+export interface CatalogoClase {
+  id: string;
+  nombre: string;
+  descripcion?: string | null;
+  cupo_sugerido: number;
+  duracion_minutos: number;
+  activo: boolean;
+}

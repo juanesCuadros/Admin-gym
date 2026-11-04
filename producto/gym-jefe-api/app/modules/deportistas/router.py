@@ -18,6 +18,7 @@ from app.modules.deportistas.schemas import (
     DeportistaResponse,
     DeportistasPaginadosResponse,
     EditarDeportistaRequest,
+    DeportistasConMedicionesResponse,
     EnrolarHuellaRequest,
     FichaDeportistaResponse,
     HuellaInfoResponse,
@@ -118,6 +119,23 @@ async def buscar_deportistas(
 # =====================================================================
 # 4. Ficha 360° del Deportista (RF-20)
 # =====================================================================
+
+@router.get(
+    "/mediciones",
+    response_model=DeportistasConMedicionesResponse,
+    summary="Deportistas con su última medición (RF-21)",
+)
+async def listar_con_mediciones(
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("deportistas", "leer"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    q: Optional[str] = Query(None, description="Nombre o documento"),
+    limit: int = Query(15, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    return await DeportistasService.listar_con_mediciones(
+        session=session, gym_id=current_staff.gimnasio_id, q=q, limit=limit, offset=offset
+    )
+
 
 @router.get(
     "/{id}",

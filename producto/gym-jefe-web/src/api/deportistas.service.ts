@@ -12,6 +12,12 @@ import {
 import type { DeportistaBusquedaItem } from '../types/comun.types';
 
 export const deportistasService = {
+  /** Deportistas con su última medición (`GET /deportistas/mediciones`). */
+  async listarConMediciones(params: { q?: string; limit?: number; offset?: number }): Promise<import('../types/deportistas.types').DeportistasConMedicionesResponse> {
+    const response = await apiClient.get('/deportistas/mediciones', { params });
+    return response.data;
+  },
+
   async getDeportistas(params?: {
     skip?: number;
     limit?: number;

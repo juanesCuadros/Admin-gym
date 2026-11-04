@@ -11,6 +11,9 @@ from app.core.audit import AuditService
 from app.core.holidays_colombia import es_festivo_colombia
 from app.core.timezone import LOCAL_TZ, get_local_day_range_utc, now_local, now_utc
 from app.modules.clases.schemas import (
+    ActualizarCatalogoClaseRequest,
+    CatalogoClaseRequest,
+    CatalogoClaseResponse,
     AsistenciaResponse,
     CalificacionResponse,
     ClaseResponse,
@@ -30,6 +33,101 @@ from app.modules.membresias.domain import MembresiaDomainService
 
 
 class ClasesService:
+    @staticmethod
+    async def listar_catalogo(session: AsyncSession, gym_id: UUID) -> List[CatalogoClaseResponse]:
+        filas = await session.execute(
+            text("""
+                SELECT id, nombre, descripcion, cupo_sugerido, duracion_minutos, activo
+                FROM platform.catalogo_clases
+                WHERE gimnasio_id = :gym_id
+                ORDER BY activo DESC, lower(nombre)
+            """),
+            {"gym_id": gym_id},
+        )
+        return [CatalogoClaseResponse(**dict(f)) for f in filas.mappings().all()]
+
+    @staticmethod
+    async def _nombre_catalogo_libre(session: AsyncSession, gym_id: UUID, nombre: str, excepto: Optional[UUID] = None) -> None:
+        existe = await session.execute(
+            text("""
+                SELECT 1 FROM platform.catalogo_clases
+                WHERE gimnasio_id = :gym_id AND lower(nombre) = lower(:nombre)
+                  AND (CAST(:excepto AS uuid) IS NULL OR id <> CAST(:excepto AS uuid))
+            """),
+            {"gym_id": gym_id, "nombre": nombre, "excepto": str(excepto) if excepto else None},
+        )
+        if existe.first():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"codigo": "CLASE_CATALOGO_DUPLICADA", "mensaje": f"Ya existe la clase «{nombre}» en el catálogo."},
+            )
+
+    @classmethod
+    async def crear_en_catalogo(
+        cls, session: AsyncSession, gym_id: UUID, staff_id: UUID, staff_nombre: str, req: CatalogoClaseRequest
+    ) -> CatalogoClaseResponse:
+        nombre = req.nombre.strip()
+        await cls._nombre_catalogo_libre(session, gym_id, nombre)
+        fila = (
+            await session.execute(
+                text("""
+                    INSERT INTO platform.catalogo_clases (gimnasio_id, nombre, descripcion, cupo_sugerido, duracion_minutos)
+                    VALUES (:gym_id, :nombre, :descripcion, :cupo, :duracion)
+                    RETURNING id, nombre, descripcion, cupo_sugerido, duracion_minutos, activo
+                """),
+                {
+                    "gym_id": gym_id,
+                    "nombre": nombre,
+                    "descripcion": (req.descripcion or "").strip() or None,
+                    "cupo": req.cupo_sugerido,
+                    "duracion": req.duracion_minutos,
+                },
+            )
+        ).mappings().one()
+        await AuditService.registrar(
+            session=session, gimnasio_id=gym_id, actor_id=staff_id, actor_nombre=staff_nombre,
+            accion="CREAR_CLASE_CATALOGO", entidad="catalogo_clases", entidad_id=str(fila["id"]), detalle={"nombre": nombre},
+        )
+        return CatalogoClaseResponse(**dict(fila))
+
+    @classmethod
+    async def actualizar_en_catalogo(
+        cls, session: AsyncSession, gym_id: UUID, staff_id: UUID, staff_nombre: str, id_clase: UUID, req: ActualizarCatalogoClaseRequest
+    ) -> CatalogoClaseResponse:
+        nombre = req.nombre.strip()
+        await cls._nombre_catalogo_libre(session, gym_id, nombre, excepto=id_clase)
+        fila = (
+            await session.execute(
+                text("""
+                    UPDATE platform.catalogo_clases
+                    SET nombre = :nombre, descripcion = :descripcion, cupo_sugerido = :cupo,
+                        duracion_minutos = :duracion, activo = :activo, updated_at = now()
+                    WHERE id = :id AND gimnasio_id = :gym_id
+                    RETURNING id, nombre, descripcion, cupo_sugerido, duracion_minutos, activo
+                """),
+                {
+                    "id": id_clase,
+                    "gym_id": gym_id,
+                    "nombre": nombre,
+                    "descripcion": (req.descripcion or "").strip() or None,
+                    "cupo": req.cupo_sugerido,
+                    "duracion": req.duracion_minutos,
+                    "activo": req.activo,
+                },
+            )
+        ).mappings().first()
+        if not fila:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"codigo": "CLASE_CATALOGO_NO_ENCONTRADA", "mensaje": "Esa clase no existe en el catálogo."},
+            )
+        await AuditService.registrar(
+            session=session, gimnasio_id=gym_id, actor_id=staff_id, actor_nombre=staff_nombre,
+            accion="EDITAR_CLASE_CATALOGO", entidad="catalogo_clases", entidad_id=str(id_clase),
+            detalle={"nombre": nombre, "activo": req.activo},
+        )
+        return CatalogoClaseResponse(**dict(fila))
+
 
     @classmethod
     async def programar_clase(

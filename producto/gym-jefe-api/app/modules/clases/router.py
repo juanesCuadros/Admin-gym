@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
 from app.core.dependencies import AuthenticatedStaff, exigir_permiso, get_current_staff, require_permission
 from app.modules.clases.schemas import (
+    ActualizarCatalogoClaseRequest,
+    CatalogoClaseRequest,
+    CatalogoClaseResponse,
     AsistenciaResponse,
     CalificacionResponse,
     ClaseResponse,
@@ -24,6 +27,43 @@ from app.modules.clases.schemas import (
 from app.modules.clases.service import ClasesService
 
 router = APIRouter(prefix="/clases", tags=["07. Clases y Reservas"])
+
+
+# ====================================================================
+# 0. CATÁLOGO: LAS CLASES QUE OFRECE EL GIMNASIO
+# ====================================================================
+@router.get("/catalogo", response_model=List[CatalogoClaseResponse], summary="Clases que ofrece el gimnasio")
+async def listar_catalogo(
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("clases", "leer"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    return await ClasesService.listar_catalogo(session, current_staff.gimnasio_id)
+
+
+@router.post(
+    "/catalogo", response_model=CatalogoClaseResponse, status_code=status.HTTP_201_CREATED,
+    summary="Agregar una clase al catálogo",
+)
+async def crear_en_catalogo(
+    req: CatalogoClaseRequest,
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("clases", "crear"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    return await ClasesService.crear_en_catalogo(
+        session, current_staff.gimnasio_id, current_staff.staff_id, current_staff.nombre, req
+    )
+
+
+@router.put("/catalogo/{id}", response_model=CatalogoClaseResponse, summary="Editar o desactivar una clase del catálogo")
+async def actualizar_en_catalogo(
+    id: UUID,
+    req: ActualizarCatalogoClaseRequest,
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("clases", "editar"))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    return await ClasesService.actualizar_en_catalogo(
+        session, current_staff.gimnasio_id, current_staff.staff_id, current_staff.nombre, id, req
+    )
 
 
 # =============================================================================

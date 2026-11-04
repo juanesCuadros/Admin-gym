@@ -5,6 +5,26 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class CatalogoClaseRequest(BaseModel):
+    nombre: str = Field(..., min_length=2, max_length=100, description="Nombre de la clase (ej. Zumba)")
+    descripcion: Optional[str] = Field(None, max_length=300, description="De qué trata la clase")
+    cupo_sugerido: int = Field(20, gt=0, le=500, description="Cupo que se propone al programarla")
+    duracion_minutos: int = Field(60, gt=0, le=360, description="Duración que se propone al programarla")
+
+
+class ActualizarCatalogoClaseRequest(CatalogoClaseRequest):
+    activo: bool = Field(True, description="Las inactivas dejan de ofrecerse al programar")
+
+
+class CatalogoClaseResponse(BaseModel):
+    id: UUID
+    nombre: str
+    descripcion: Optional[str] = None
+    cupo_sugerido: int
+    duracion_minutos: int
+    activo: bool
+
+
 class ProgramarClaseRequest(BaseModel):
     nombre: str = Field(..., min_length=2, max_length=100, description="Nombre de la clase (ej. Spinning 7AM)")
     tipo: Optional[str] = Field(None, max_length=50, description="Tipo o disciplina (ej. Spinning, Yoga, Crossfit)")

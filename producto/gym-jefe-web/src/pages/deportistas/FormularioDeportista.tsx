@@ -497,18 +497,6 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
                   error={errorDe('fecha_nacimiento')}
                 />
               </div>
-              <div className="col-3">
-                <Input
-                  id="dep-altura"
-                  label="Estatura (cm)"
-                  type="number"
-                  min={1}
-                  value={v.altura_cm}
-                  onChange={(e) => cambiar('altura_cm', e.target.value)}
-                  onBlur={() => tocar('altura_cm')}
-                  error={errorDe('altura_cm')}
-                />
-              </div>
             </div>
 
             {esMenor && (
