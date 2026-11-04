@@ -69,6 +69,7 @@ export interface PublicLandingResponse {
   horarios: Record<string, string>;
   planes: { nombre: string; precio: number | string; duracion_dias: number; cupo_personas: number }[];
   clases: { nombre: string; descripcion?: string | null; duracion_minutos: number }[];
+  agenda: { nombre: string; fecha_hora: string }[];
 }
 
 export interface ActualizarBrandingRequest {

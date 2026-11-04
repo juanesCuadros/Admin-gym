@@ -364,22 +364,22 @@ export const ConfigLandingPage: React.FC = () => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
           <Card title="Textos">
             <Input
-              label="Frase principal"
-              placeholder="Ej. Entrena con nosotros"
+              label="Frase corta (es el botón que abre WhatsApp)"
+              placeholder="Ej. Empieza hoy, escríbenos"
               value={form.landing_titulo}
-              maxLength={120}
+              maxLength={60}
               onChange={(e) => setForm({ ...form, landing_titulo: e.target.value })}
               disabled={deshabilitado}
             />
             <div className="form-group">
               <label className="form-label" htmlFor="landing-descripcion">
-                Presentación
+                Presentación corta (el texto grande del banner)
               </label>
               <textarea
                 id="landing-descripcion"
                 className="form-input"
-                rows={4}
-                maxLength={600}
+                rows={3}
+                maxLength={240}
                 value={form.landing_descripcion}
                 onChange={(e) => setForm({ ...form, landing_descripcion: e.target.value })}
                 disabled={deshabilitado}

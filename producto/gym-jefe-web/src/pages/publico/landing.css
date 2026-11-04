@@ -1,0 +1,467 @@
+/* Plantilla pública del gimnasio. Colores propios: no depende del tema claro/oscuro del panel. */
+.lp {
+  --lp-negro: #0b0b0d;
+  --lp-texto: #15171c;
+  --lp-suave: #565b66;
+  --lp-borde: #e5e7eb;
+  --lp-fondo-alt: #f6f7f9;
+  background: #fff;
+  color: var(--lp-texto);
+  min-height: 100vh;
+  scroll-behavior: smooth;
+}
+
+.lp h1,
+.lp h2,
+.lp h3 {
+  color: inherit;
+  margin: 0;
+}
+
+.lp-contenedor {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* ---------- Header: marca al centro y secciones debajo ---------- */
+.lp-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--lp-negro);
+  color: #fff;
+  text-align: center;
+  padding: 14px 16px 0;
+}
+
+.lp-marca {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  text-decoration: none;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.lp-marca img {
+  display: block;
+  height: 46px;
+  max-width: 220px;
+  object-fit: contain;
+}
+
+.lp-nav {
+  display: flex;
+  justify-content: center;
+  gap: 8px 32px;
+  padding: 12px 0 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.lp-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.lp-nav a {
+  position: relative;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  padding-bottom: 3px;
+}
+
+.lp-nav a::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: #fff;
+  transform: scaleX(0);
+  transition: transform 0.2s ease;
+}
+
+.lp-nav a:hover::after,
+.lp-nav a:focus-visible::after {
+  transform: scaleX(1);
+}
+
+/* ---------- Banner ---------- */
+.lp-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: min(68vh, 560px);
+  color: #fff;
+  background-color: var(--lp-primario);
+  background-position: center;
+  background-size: cover;
+}
+
+.lp-banner.lp-banner-imagen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.32));
+}
+
+.lp-banner-contenido {
+  position: relative;
+  width: 100%;
+  padding-top: 56px;
+  padding-bottom: 56px;
+  animation: lp-subir 0.7s ease both;
+}
+
+.lp .lp-banner-texto {
+  max-width: 720px;
+  font-size: clamp(1.6rem, 4.4vw, 2.75rem);
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: pre-line;
+  margin-bottom: 28px;
+}
+
+.lp-banner:not(.lp-banner-imagen) {
+  color: var(--lp-sobre-primario);
+}
+
+.lp-frase {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 26px;
+  border-radius: 999px;
+  background: #fff;
+  color: #111;
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+a.lp-frase:hover,
+a.lp-frase:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
+}
+
+/* ---------- Franja de redes en movimiento ---------- */
+.lp-franja {
+  overflow: hidden;
+  background: var(--lp-primario);
+  color: var(--lp-sobre-primario);
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.lp-franja-pista {
+  display: flex;
+  width: max-content;
+  animation: lp-desliza var(--lp-duracion, 28s) linear infinite;
+}
+
+.lp-franja:hover .lp-franja-pista,
+.lp-franja:focus-within .lp-franja-pista {
+  animation-play-state: paused;
+}
+
+.lp-franja-grupo {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.lp-franja-invita {
+  padding: 15px 28px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.lp-red {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 15px 28px;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: transform 0.2s ease;
+}
+
+.lp-red:hover,
+.lp-red:focus-visible {
+  transform: scale(1.08);
+}
+
+.lp-red svg {
+  flex-shrink: 0;
+}
+
+/* ---------- Secciones ---------- */
+.lp-seccion {
+  padding: 64px 0;
+  /* Al saltar desde el menú, el título no queda tapado por el header fijo. */
+  scroll-margin-top: 120px;
+}
+
+.lp-seccion.lp-seccion-alterna {
+  background: var(--lp-fondo-alt);
+}
+
+.lp .lp-titulo {
+  margin-bottom: 8px;
+  font-size: clamp(1.6rem, 3.5vw, 2.1rem);
+  font-weight: 800;
+}
+
+.lp-subtitulo {
+  color: var(--lp-suave);
+  margin: 0 0 28px;
+}
+
+.lp-rejilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 18px;
+}
+
+.lp-tarjeta {
+  background: #fff;
+  border: 1px solid var(--lp-borde);
+  border-radius: 14px;
+  padding: 24px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.lp-tarjeta:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 30px rgba(17, 24, 39, 0.1);
+}
+
+.lp .lp-tarjeta h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.lp-precio {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--lp-primario-texto);
+}
+
+.lp-dato {
+  color: var(--lp-suave);
+  font-size: 0.92rem;
+  margin: 6px 0 0;
+}
+
+.lp-dos-columnas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 48px;
+}
+
+.lp-horario-fila {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--lp-borde);
+}
+
+.lp-horario-fila span:first-child {
+  font-weight: 600;
+}
+
+.lp-agenda-dia {
+  font-weight: 700;
+  margin: 22px 0 6px;
+}
+
+.lp-agenda-dia::first-letter {
+  text-transform: uppercase;
+}
+
+.lp-contacto-linea {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 0 0 14px;
+}
+
+.lp-contacto-linea svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.lp-contacto-linea a {
+  color: inherit;
+  word-break: break-word;
+}
+
+.lp-boton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 20px;
+  border-radius: 999px;
+  font-weight: 700;
+  text-decoration: none;
+  background: var(--lp-primario);
+  color: var(--lp-sobre-primario);
+  transition: transform 0.2s ease;
+}
+
+.lp-boton:hover,
+.lp-boton:focus-visible {
+  transform: translateY(-2px);
+}
+
+.lp-boton.lp-boton-borde {
+  background: transparent;
+  color: var(--lp-texto);
+  border: 1px solid var(--lp-texto);
+}
+
+.lp-botones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* ---------- Footer ---------- */
+.lp-footer {
+  background: var(--lp-negro);
+  color: #fff;
+  padding: 44px 0 24px;
+}
+
+.lp-footer-arriba {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 28px;
+  padding-bottom: 26px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.lp-footer-enlaces,
+.lp-footer-redes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  align-items: center;
+}
+
+.lp-footer a {
+  color: #fff;
+  text-decoration: none;
+}
+
+.lp-footer-enlaces a:hover,
+.lp-footer-redes a:hover,
+.lp-footer-abajo a:hover {
+  text-decoration: underline;
+}
+
+.lp-footer-abajo {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 18px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.lp-footer-abajo a {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* ---------- WhatsApp flotante, solo en celular ---------- */
+.lp-flotante {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .lp-nav {
+    justify-content: flex-start;
+    gap: 8px 22px;
+  }
+
+  .lp-seccion {
+    padding: 48px 0;
+  }
+
+  .lp-flotante {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 30;
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    background: #25d366;
+    color: #fff;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+  }
+}
+
+@keyframes lp-desliza {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes lp-subir {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Quien pidió menos movimiento ve la franja quieta y centrada. */
+@media (prefers-reduced-motion: reduce) {
+  .lp {
+    scroll-behavior: auto;
+  }
+
+  .lp-banner-contenido {
+    animation: none;
+  }
+
+  .lp-franja-pista {
+    animation: none;
+    width: auto;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .lp-franja-grupo {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .lp-franja-grupo[aria-hidden='true'] {
+    display: none;
+  }
+}

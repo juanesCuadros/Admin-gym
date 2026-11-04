@@ -1,8 +1,10 @@
 """Tanda 3: landing pública del gimnasio, imágenes subidas y encargado de la sede."""
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
-from tests.conftest import Fabrica, login
+from tests.conftest import ADMIN_URL, Fabrica, login
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 JPG = b"\xff\xd8\xff" + b"\x00" * 64
@@ -65,6 +67,33 @@ async def test_landing_publica_solo_trae_datos_publicos(cliente: AsyncClient, fa
     assert set(d["planes"][0]) == {"nombre", "precio", "duracion_dias", "cupo_personas"}
     prohibidos = {"id", "version", "encargado_nombre", "metodos_pago", "dias_gracia_mora", "precio_pase_dia", "pantalla_config"}
     assert prohibidos.isdisjoint(d)
+
+
+@pytest.mark.asyncio
+async def test_agenda_publica_solo_trae_lo_programado_de_la_semana(cliente: AsyncClient, fabrica: Fabrica):
+    gym, headers = await _jefe(cliente, fabrica)
+    engine = create_async_engine(ADMIN_URL)
+    async with engine.begin() as con:
+        await con.execute(text("SET session_replication_role = replica"))
+        for nombre, cuando, estado in (
+            ("Zumba", "now() + interval '1 day'", "programada"),
+            ("Pasada", "now() - interval '1 day'", "programada"),
+            ("Cancelada", "now() + interval '2 days'", "cancelada"),
+            ("Lejana", "now() + interval '20 days'", "programada"),
+        ):
+            await con.execute(
+                text(
+                    "INSERT INTO platform.clases (gimnasio_id, nombre, profesor_externo, cupo, fecha_hora, estado) "
+                    f"VALUES (:g, :n, 'Instructora Secreta', 10, {cuando}, :e)"
+                ),
+                {"g": gym.id, "n": nombre, "e": estado},
+            )
+    await engine.dispose()
+    r = await cliente.get(f"/api/v1/my-gym/public-landing/{gym.subdominio}")
+    assert r.status_code == 200, r.text
+    assert [c["nombre"] for c in r.json()["agenda"]] == ["Zumba"]
+    assert set(r.json()["agenda"][0]) == {"nombre", "fecha_hora"}
+    assert "Instructora Secreta" not in r.text
 
 
 @pytest.mark.asyncio

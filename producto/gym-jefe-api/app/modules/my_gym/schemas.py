@@ -369,6 +369,11 @@ class PublicClaseItem(BaseModel):
     duracion_minutos: int
 
 
+class PublicAgendaItem(BaseModel):
+    nombre: str
+    fecha_hora: datetime
+
+
 class PublicLandingResponse(BaseModel):
     """Lo único que ve un visitante sin sesión."""
     nombre: str
@@ -388,6 +393,7 @@ class PublicLandingResponse(BaseModel):
     horarios: Dict[str, str] = Field(default_factory=dict)
     planes: List[PublicPlanItem] = Field(default_factory=list)
     clases: List[PublicClaseItem] = Field(default_factory=list)
+    agenda: List[PublicAgendaItem] = Field(default_factory=list)
 
 
 class PublicBrandingResponse(BaseModel):

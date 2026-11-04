@@ -29,6 +29,7 @@ from app.core.contexto_gimnasio import fijar_gimnasio_por_subdominio
 from app.core.dependencies import AuthenticatedStaff, gimnasio_suspendido_exception
 from app.core.timezone import get_local_day_range_utc
 from app.modules.my_gym.schemas import (
+    PublicAgendaItem,
     PublicClaseItem,
     PublicLandingResponse,
     PublicPlanItem,
@@ -685,6 +686,17 @@ class MyGymService:
             """),
             {"gym_id": row["id"]},
         )
+        # Solo nombre y hora: quién dicta la clase y cuántos cupos quedan no se publican.
+        agenda = await session.execute(
+            text("""
+                SELECT nombre, fecha_hora FROM platform.clases
+                WHERE gimnasio_id = :gym_id AND estado = 'programada'
+                  AND fecha_hora >= now() AND fecha_hora < now() + interval '7 days'
+                ORDER BY fecha_hora
+                LIMIT 60
+            """),
+            {"gym_id": row["id"]},
+        )
         return PublicLandingResponse(
             nombre=base.nombre,
             subdominio=base.subdominio,
@@ -703,6 +715,7 @@ class MyGymService:
             horarios=cls._parse_json_field(row["horarios"], {}) or {},
             planes=[PublicPlanItem(**dict(f)) for f in planes.mappings().all()],
             clases=[PublicClaseItem(**dict(f)) for f in clases.mappings().all()],
+            agenda=[PublicAgendaItem(**dict(f)) for f in agenda.mappings().all()],
         )
 
     @staticmethod
