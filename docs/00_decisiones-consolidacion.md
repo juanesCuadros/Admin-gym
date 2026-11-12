@@ -12,7 +12,7 @@ Documentos resultantes: `requisitos_consolidados_superadmin.md` · `requisitos_c
 | 1 | Anular un pago **recalcula** la fecha de corte desde el historial; nunca se restaura un valor anterior |
 | 2 | Estados guardados del gimnasio: `prueba`, `activo`, `suspendido`, `cancelado`. Por vencer, en gracia y bloqueado son **calculados** |
 | 3 | SA con rol único. Salen del alcance la pantalla Equipo y el MFA |
-| 4 | Sin outbox, jobs, webhooks ni n8n |
+| 4 | Sin outbox, jobs, webhooks ni n8n **en el servidor**. La app de escritorio sí usa un outbox local para sincronizar (`ALCANCE_APP_ESCRITORIO.md`, E-03; por confirmar, C-02) |
 | 5 | Catálogo `free-exercise-db`: Unlicense (dominio público), 800+ ejercicios, 2 imágenes JPG por ejercicio, solo en inglés. Se dice "imagen", no "GIF" |
 | 6 | La Pantalla TV es un modo de visualización de Control de ingreso |
 | 7 | "Ola" solo se usa para el orden de construcción entre sistemas; en los requisitos se usa Must/Should/Could |
@@ -59,7 +59,7 @@ Todos los supuestos S-xx y SW-xx de la revisión quedaron aceptados e integrados
 
 | Tema | Motivo |
 |---|---|
-| Fase escritorio (Electron): huella, torniquete, modo sin internet | Foco en el sistema web |
+| ~~Fase escritorio: huella, torniquete, modo sin internet~~ | **En curso desde el 12-nov-2026.** Stack: Tauri 2 + React + TypeScript + Vite (reemplaza a Electron). Alcance y fases en `ALCANCE_APP_ESCRITORIO.md` |
 | P-25: recierre del torniquete y salida con huella | Depende del hardware |
 | App móvil: activación por invitación, login con correo repetido, alineación de mediciones con la v4 | La app es un documento académico por ahora |
 | Contratos de servicio y de tratamiento de datos (Ley 1581) | Legal; validar con abogado |
