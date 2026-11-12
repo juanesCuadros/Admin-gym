@@ -1,0 +1,209 @@
+/* Estilos propios de GymDesk Escritorio. Los tokens (--primary, --bg-surface…) vienen de gym-jefe-web. */
+
+:root {
+  /* La fuente va empaquetada con la app (sin Google Fonts). */
+  --font-sans: 'Geist Variable', 'Geist', 'Segoe UI', Roboto, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  /* Es una app de escritorio: no se selecciona texto al arrastrar ni rebota el scroll. */
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+.gd-centro {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 32px 16px;
+  background: var(--bg-app);
+}
+
+.gd-marca {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.gd-marca-icono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: var(--text-inverse);
+}
+
+.gd-tarjeta {
+  width: 100%;
+  max-width: 400px;
+  padding: 28px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
+}
+
+.gd-titulo {
+  margin: 0 0 6px;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.gd-subtitulo {
+  margin: 0 0 20px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.gd-pie {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.gd-error,
+.gd-aviso {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.gd-error {
+  margin-top: 12px;
+  background: var(--danger-light);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-hover);
+}
+
+.gd-aviso {
+  background: var(--info-light);
+  border: 1px solid var(--info-border);
+  color: var(--text-secondary);
+}
+
+.gd-pestanas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 18px;
+  background: var(--bg-surface-elevated);
+  border-radius: 10px;
+}
+
+.gd-pestanas button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.gd-pestanas button.activa {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+}
+
+.gd-personas {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.gd-persona {
+  padding: 12px 14px;
+  text-align: left;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.gd-persona:hover:not(:disabled) {
+  background: var(--bg-surface-hover);
+}
+
+.gd-persona.elegida {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.gd-pin {
+  font-size: 1.5rem;
+  letter-spacing: 0.5em;
+  text-align: center;
+}
+
+.gd-acciones-secundarias {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 14px;
+}
+
+.gd-app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-app);
+}
+
+.gd-barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.gd-barra-usuario {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.gd-contenido {
+  flex: 1;
+  padding: 28px 24px;
+}
