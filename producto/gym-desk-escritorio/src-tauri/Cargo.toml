@@ -1,0 +1,42 @@
+[package]
+name = "gymdesk"
+version = "0.1.0"
+description = "GymDesk Escritorio: estación de recepción que funciona sin internet"
+edition = "2021"
+publish = false
+
+[lib]
+name = "gymdesk_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+argon2 = "0.5"
+chrono = "0.4.45"
+chrono-tz = "0.10.4"
+rand = "0.8"
+rusqlite = { version = "0.42.0", features = ["bundled-sqlcipher-vendored-openssl"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+tauri = { version = "2", features = [] }
+uuid = { version = "1.29.2", features = ["v4"] }
+windows = { version = "0.62.2", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+zeroize = "1.9.1"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+# Argon2 sin optimizar tarda segundos por verificación y hace lentas las pruebas.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
