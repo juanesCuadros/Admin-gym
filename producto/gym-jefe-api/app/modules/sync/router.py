@@ -8,9 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
 from app.core.dependencies import AuthenticatedStaff, require_role
 from app.modules.sync.activacion import ActivacionService
-from app.modules.sync.dependencias import EstacionOperativa
+from app.modules.sync.dependencias import Estacion, EstacionOperativa
 from app.modules.sync.estaciones import EstacionesService
 from app.modules.sync.pull import LIMITE_MAXIMO, LIMITE_POR_DEFECTO, PullService
+from app.modules.sync.push import PushService
 from app.modules.sync.schemas import (
     ActivarEstacionRequest,
     CrearEstacionRequest,
@@ -18,6 +19,8 @@ from app.modules.sync.schemas import (
     EstacionConCodigoDto,
     EstacionDto,
     PullResponse,
+    PushRequest,
+    PushResponse,
     RevocarEstacionRequest,
     SesionStaffRequest,
     SesionStaffResponse,
@@ -93,3 +96,11 @@ async def pull(
     version_app: Annotated[Optional[str], Header(alias="X-GymDesk-Version", max_length=20)] = None,
 ):
     return await PullService.pull(session, estacion, cursor, limite, version_app)
+
+
+@sync_router.post(
+    "/push", response_model=PushResponse,
+    summary="Recibe lo que la estación hizo sin red. Se acepta aunque el gimnasio esté bloqueado",
+)
+async def push(data: PushRequest, estacion: Estacion, session: Sesion):
+    return await PushService.push(session, estacion, data.operaciones)

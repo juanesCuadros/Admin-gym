@@ -103,3 +103,29 @@ class PullResponse(BaseModel):
     eliminados: List[EliminadoDto]
     suscripcion: Optional[SuscripcionEstacionDto] = None
     servidor_ahora: datetime
+
+
+# --- Envío desde la estación ---
+ResultadoOperacion = Literal["aplicada", "duplicada", "pendiente_revision", "invalida", "retenida"]
+
+
+class PushRequest(BaseModel):
+    # Cada operación se valida por separado: una mal formada no tumba el lote.
+    operaciones: List[Dict[str, Any]] = Field(..., min_length=1, max_length=50)
+
+
+class ResultadoOperacionDto(BaseModel):
+    indice: int
+    id: Optional[UUID] = None
+    resultado: ResultadoOperacion
+    # Solo en `duplicada`: lo que se respondió la primera vez (aplicada o pendiente_revision).
+    resultado_original: Optional[str] = None
+    codigo: Optional[str] = None
+    mensaje: Optional[str] = None
+    datos: Optional[Dict[str, Any]] = None
+    revision: Optional[Dict[str, Any]] = None
+
+
+class PushResponse(BaseModel):
+    resultados: List[ResultadoOperacionDto]
+    servidor_ahora: datetime
