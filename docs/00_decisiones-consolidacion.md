@@ -12,7 +12,7 @@ Documentos resultantes: `requisitos_consolidados_superadmin.md` · `requisitos_c
 | 1 | Anular un pago **recalcula** la fecha de corte desde el historial; nunca se restaura un valor anterior |
 | 2 | Estados guardados del gimnasio: `prueba`, `activo`, `suspendido`, `cancelado`. Por vencer, en gracia y bloqueado son **calculados** |
 | 3 | SA con rol único. Salen del alcance la pantalla Equipo y el MFA |
-| 4 | Sin outbox, jobs, webhooks ni n8n **en el servidor**. La app de escritorio sí usa un outbox local para sincronizar (`ALCANCE_APP_ESCRITORIO.md`, E-03; por confirmar, C-02) |
+| 4 | Sin outbox, jobs, webhooks ni n8n **en el servidor**: nada de colas ni procesos en segundo plano. **Aclaración de Juan (12-nov-2026):** la cola de la app de escritorio es local a la estación y es compatible con esta decisión. El servidor procesa `/sync/push` de forma síncrona: valida, persiste y audita en la misma transacción (`ALCANCE_APP_ESCRITORIO.md`, E-03 y E-15) |
 | 5 | Catálogo `free-exercise-db`: Unlicense (dominio público), 800+ ejercicios, 2 imágenes JPG por ejercicio, solo en inglés. Se dice "imagen", no "GIF" |
 | 6 | La Pantalla TV es un modo de visualización de Control de ingreso |
 | 7 | "Ola" solo se usa para el orden de construcción entre sistemas; en los requisitos se usa Must/Should/Could |
@@ -90,6 +90,8 @@ Todos los supuestos S-xx y SW-xx de la revisión quedaron aceptados e integrados
 | Avisos de vencimiento (27-oct) | Sin automatizar: recepción ve la lista, un botón abre WhatsApp desde su número y queda marcado a quién se le avisó |
 | Lista de espera de clases (27-oct) | No se hace: clase llena no admite más reservas |
 | Huella y torniquete (27-oct) | En espera del hardware del primer cliente |
+| Dinero cobrado sin red (12-nov) | Nunca se pierde ni se descarta. Un conflicto de negocio al sincronizar se registra igual y queda "por revisar" con su motivo; se resuelve aplicando, ajustando o anulando con devolución, siempre con motivo, auditoría y reverso en el turno abierto (P-11). Detalle en `ALCANCE_APP_ESCRITORIO.md`, E-16 |
+| PIN del personal en escritorio (12-nov) | 4 números, propio de cada estación. Se crea después del primer ingreso con contraseña; crearlo o cambiarlo pide la contraseña |
 | Mediciones (3-nov) | La fecha de nacimiento se queda en el registro y la estatura pasa a mediciones. Sexo y estatura son obligatorios para medir; nunca se calcula con valores supuestos |
 | Auditoría (3-nov) | Se quita la pantalla y su enlace; se sigue registrando todo |
 | Pase de día (4-nov) | Exige cliente registrado y permite entrar ese día, incluso varias veces. Al desactivado se le sigue negando |
