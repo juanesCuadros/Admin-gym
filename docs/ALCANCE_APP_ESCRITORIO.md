@@ -37,13 +37,21 @@ cliente tiene wifi inestable y hoy, si la red se cae, recepción no puede dejar 
 | E-14 | PIN | 4 números, propio de cada estación. El primer ingreso de cada persona es con su contraseña de la web y con red; después crea su PIN. Crear o cambiar el PIN pide la contraseña. Cerrar sesión se permite con la pantalla bloqueada. Si el Jefe desactiva a alguien, aplica en la siguiente sincronización |
 | E-15 | Servidor sin colas | La cola (outbox) es local a la estación. El servidor procesa `/sync/push` de forma síncrona: valida, persiste y audita en la misma transacción, sin colas, jobs ni procesos en segundo plano (compatible con la resolución 4 de `00_decisiones`) |
 | E-16 | Dinero cobrado sin red | Nunca se pierde ni se descarta. Ver §5.1 |
+| E-17 | Qué sube la estación en la fase 1 | Sus eventos de sesión (ingresos del personal, bloqueos, cambios de PIN), a la auditoría del gimnasio |
+| E-18 | Gimnasio bloqueado | La descarga se bloquea y la estación deja de operar, pero `/sync/push` sigue aceptando lo ya cobrado. La estación muestra el aviso de P-01 en los días 1–3 igual que la web y **calcula el bloqueo localmente** con la fecha de corte descargada: quitar la red no lo evita |
+| E-19 | Contraseña cambiada en la web | En la siguiente sincronización la estación invalida el verificador local y el PIN de esa persona, y le pide entrar de nuevo con red |
+| E-20 | Datos del cliente en la estación | Solo tipo y número de documento, nombre y si está activo. Foto y lo demás de la pantalla de ingreso se evalúan en la fase 2 |
+| E-21 | Término de revisión | `pendiente_revision` → `revisado`, el mismo de la revisión de turnos |
+| E-22 | Cursor de descarga | Por id de transacción, no por fecha: una transacción que confirma tarde no se pierde. Lo repetido se reemplaza por id |
+| E-23 | Dependencias en el envío | Si una operación es inválida, las que dependen de ella quedan retenidas y no se procesan sueltas |
+| E-24 | Pantalla de estaciones | En `gym-jefe-web`, Configuración, solo el Jefe |
 
 ## 3. Fases y criterio de terminado
 
 | Fase | Contenido | Terminado cuando |
 |---|---|---|
 | **0 · Base** | Proyecto Tauri, SQLite cifrado, ingreso del personal con PIN o contraseña, bloqueo por 5 min de inactividad | Se genera el `.exe`, abre y crea la base local |
-| **1 · Activación y sincronización** | Emparejamiento por subdominio + código de estación. Descarga inicial: branding, permisos, parámetros, planes, productos, deportistas y membresías. Outbox con reintentos. Indicador de conexión y de pendientes. Backend: `/sync/push`, `/sync/pull`, registro de estaciones con `device_token` y RLS | 24 h sin red, se reconecta y no hay duplicados ni pérdidas |
+| **1 · Activación y sincronización** | Emparejamiento por subdominio + código de estación. Descarga inicial: branding, permisos, parámetros, planes, productos, deportistas y membresías. Outbox con reintentos. Indicador de conexión y de pendientes. Backend: `/sync/push`, `/sync/pull`, registro de estaciones con `device_token` y RLS | Prueba automática acelerada: 24 h simuladas sin red, cierre de la app a mitad de envío, reconexión, y conteos iguales en la estación y el servidor, sin duplicados ni pérdidas (decisión del 12-nov) |
 | **2 · Ingreso sin red** | Ingreso por documento o QR y cortesía con motivo. Pantalla grande con foto, nombre, vigencia, días restantes y saldo; colores por estado (activo, gracia, vencido, congelado) y sonido. Antirrebote de 3 s | La evaluación local da el mismo resultado que `evaluar-acceso` del servidor (pruebas comparativas) |
 | **3 · Caja sin red** | Abrir y cerrar turno con arqueo, venta de mostrador, cobro y renovación de membresías, pago mixto, egresos, anulaciones con motivo, cierre diario y cuadre mensual | Criterio por definir en el plan de la fase. Antes: regla para P-13 aprobada por Juan (§5, C-01) |
 | **4 · Hardware** | Controladores de E-07 a E-10, cámara web para la foto y segunda pantalla de bienvenida (reutiliza `pantalla_tv`) | Criterio por definir en el plan de la fase |
@@ -51,6 +59,9 @@ cliente tiene wifi inestable y hoy, si la red se cae, recepción no puede dejar 
 | **6 · Entrega** | Instalador `.exe`, actualización automática (GitHub Releases), registro de errores, respaldo de la base local y manual de instalación | Criterio por definir en el plan de la fase |
 
 Las fases 3 a 6 no traen criterio de terminado en el encargo: se propone uno en el plan de cada fase.
+
+**Requisito antes de entregar al cliente (fase 6):** una noche real sin red en una estación instalada y, al reconectar,
+conteos iguales en la estación y en el servidor. La prueba acelerada de la fase 1 no la reemplaza.
 
 ## 4. Qué hay hoy en el backend (revisado el 12-nov-2026 contra `origin/main`)
 
@@ -73,7 +84,7 @@ La primera revisión se hizo contra un `main` local atrasado 24 commits. Esta ta
 | Egresos, anulaciones, abrir y cerrar turno | **Sin** clave de idempotencia |
 | Huella | Tabla `platform.huellas` con `template_cifrado` y endpoints para enrolar y eliminar. No hay comparación de huellas |
 | Pantalla TV | `tenant.pantalla_device_token_hash`: es el patrón a seguir para el `device_token` de la estación |
-| Migraciones | La última es la 065. El rango 070–079 está libre |
+| Migraciones | La última de otros carriles es la 065. Escritorio usa la 070; **el rango 070–079 sigue pendiente de confirmar con el equipo** |
 
 ## 5. Contradicciones y vacíos encontrados
 

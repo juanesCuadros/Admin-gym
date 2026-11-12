@@ -207,3 +207,72 @@ La fuente es `platform.estado_suscripcion()` (no se duplica la regla en Python).
 | `POST /admin/gyms/{id}/cancel` | Respuesta agrega `export_url`, `export_expira_en` (30 días) |
 | `GET /public/exports/{token}` | Descarga el ZIP. `410` vencido o eliminado |
 | `DELETE /admin/gyms/{id}` | Body `{confirmar_subdominio}`. Solo con 30 días cumplidos: `409 AUN_NO_ELIMINABLE` |
+
+---
+
+## Escritorio · GymDesk Escritorio (GW, migración 070)
+
+Alcance y reglas en `ALCANCE_APP_ESCRITORIO.md`. El cuerpo de error real de la API es
+`{"success": false, "error": {"codigo", "mensaje", "detalles"}}`; la estación lee `error.codigo`.
+
+### E.1 Estaciones (solo el Jefe)
+| Método y ruta | Contrato |
+|---|---|
+| `GET /estaciones` | `[{id, nombre, estado, codigo_expira_en?, activada_en?, nombre_equipo?, version_app?, ultima_sync_en?, revocada_en?, motivo_revocacion?, creada_por_nombre?, created_at}]`. `estado`: `por_activar`, `codigo_vencido`, `activa` o `revocada` |
+| `POST /estaciones` | Body `{nombre}`. `201` con lo anterior + `codigo` (`XXXX-XXXX`, **se muestra una sola vez**, vence en 24 h). `409 ESTACION_NOMBRE_DUPLICADO` |
+| `POST /estaciones/{id}/codigo` | Código nuevo para una estación sin activar. `409 ESTACION_YA_ACTIVADA`, `409 ESTACION_YA_REVOCADA` |
+| `POST /estaciones/{id}/revocar` | Body `{motivo}`. La estación deja de sincronizar de inmediato. `409 ESTACION_YA_REVOCADA` |
+
+Estación de otro gimnasio → `404 ESTACION_NO_ENCONTRADA`. Todo queda en auditoría.
+
+### E.2 Activación e ingreso del personal
+| Método y ruta | Contrato |
+|---|---|
+| `POST /sync/activar` (público) | Body `{subdominio, codigo, nombre_equipo?, version_app}`. Responde `{estacion_id, nombre, device_token, gimnasio: {id, nombre, subdominio}}`. El token viaja solo aquí; el servidor guarda su hash. `404 CODIGO_INVALIDO` (mismo mensaje para subdominio inexistente, código errado, usado o vencido), `429 ACTIVACION_BLOQUEADA` tras 5 fallos en 15 min, `403 GIMNASIO_SUSPENDIDO` |
+| `POST /sync/sesion-staff` | Body `{correo, password}`. Primer ingreso de una persona en la estación: mismas reglas del login web. Responde `{staff: {id, nombre, correo, rol, password_cambiada_en?}, permisos: [str], servidor_ahora}`; nunca un hash. `401 CREDENCIALES_INVALIDAS` (también para desactivado), `429 CUENTA_BLOQUEADA_TEMPORALMENTE`, `409 DEBE_CAMBIAR_PASSWORD` |
+
+Las rutas `/sync/*` (menos `activar`) llevan `Authorization: Bearer <device_token>`.
+`401 ESTACION_NO_AUTORIZADA`, `401 ESTACION_REVOCADA`.
+
+### E.3 Descarga · `GET /sync/pull?cursor=&limite=`
+Sin `cursor` es la descarga inicial. `limite` 1–1000 (por defecto 500). Header opcional `X-GymDesk-Version`.
+
+Responde `{epoca, reiniciar, cursor, hay_mas, cambios, eliminados: [{tabla, id}], suscripcion?, servidor_ahora}`.
+Se repite con el `cursor` devuelto mientras `hay_mas` sea `true`. Si `reiniciar` es `true`, la estación borra su copia
+y aplica lo que llega como descarga inicial.
+
+`cambios` trae solo lo que recepción necesita:
+
+| Clave | Campos |
+|---|---|
+| `gimnasio` | `id, nombre, subdominio, zona_horaria, dias_gracia_mora, dias_umbral_por_vencer, permitir_descuentos, tope_descuento_pct, metodos_pago, branding, duracion_sesion_minutos` |
+| `staff` | `id, nombre, correo, rol, activo, eliminado, password_cambiada_en` |
+| `permisos` | `id, rol, submodulo, puede_crear, puede_leer, puede_editar, puede_eliminar` |
+| `planes` | `id, nombre, precio (COP entero), duracion_dias, tipo, cupo_personas, activo` |
+| `productos` | `id, nombre, precio (COP entero), stock, activo` |
+| `deportistas` | `id, tipo_documento, documento, nombre, activo, eliminado` |
+| `membresias` | `id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada` |
+
+`suscripcion = {estado_guardado, fecha_corte, estado_calculado, motivo_bloqueo}`: con `fecha_corte` la estación calcula
+el aviso y el bloqueo por su cuenta. Una fila puede llegar repetida entre rondas; la estación reemplaza por `id`.
+`403 GIMNASIO_SUSPENDIDO` si el gimnasio está bloqueado, `422 CURSOR_INVALIDO`.
+
+### E.4 Envío · `POST /sync/push`
+**Se acepta aunque el gimnasio esté bloqueado:** lo ya cobrado sin red no se pierde.
+
+Body `{operaciones: [{id, tipo, idempotency_key, ocurrida_en, staff_id?, depende_de: [id], payload}]}`, de 1 a 50, en
+orden. Siempre `200 {resultados: [{indice, id?, resultado, resultado_original?, codigo?, mensaje?, datos?, revision?}], servidor_ahora}`.
+
+| `resultado` | Significado | Qué hace la estación |
+|---|---|---|
+| `aplicada` | Se validó, persistió y auditó | La saca de pendientes |
+| `duplicada` | Ya se había recibido; `resultado_original` y `datos` son los de la primera vez. No es error | La saca de pendientes |
+| `pendiente_revision` | Conflicto de negocio: **se registró** y quedó marcada; `revision: {motivo_codigo, motivo}` | La muestra en "Pendientes"; no la borra |
+| `invalida` | Contenido mal formado; no se guardó nada. `codigo`: `OPERACION_MAL_FORMADA`, `TIPO_DESCONOCIDO`, `PAYLOAD_INVALIDO`, `STAFF_DESCONOCIDO`, `OPERACION_ID_REUTILIZADO`, `CLAVE_IDEMPOTENCIA_EN_USO` | Queda como `error` con alerta; nunca se descarta |
+| `retenida` | Depende de una operación inválida, retenida o que no ha llegado (`DEPENDENCIA_PENDIENTE`); no se procesó | La reenvía cuando su dependencia se resuelva |
+
+Tipos de operación en la fase 1:
+
+| `tipo` | `payload` | Efecto |
+|---|---|---|
+| `auditoria_estacion` | `{accion, entidad, entidad_id?, detalle}` con `accion` en `CREAR_BASE_LOCAL, ACTIVAR_ESTACION, INICIAR_SESION, INGRESO_FALLIDO, BLOQUEAR_SESION, DESBLOQUEAR_SESION, CERRAR_SESION, CREAR_PIN, CAMBIAR_PIN, INVALIDAR_CREDENCIAL` | Queda en la auditoría del gimnasio como `ESTACION_<accion>`, con la hora de la estación. Si quien la hizo figura desactivado: `pendiente_revision` con `STAFF_DESACTIVADO` |
