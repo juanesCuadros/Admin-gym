@@ -58,8 +58,9 @@ async def test_un_gimnasio_no_ve_ni_escribe_estaciones_de_otro(fabrica: Fabrica)
 
 async def test_el_token_de_la_estacion_resuelve_solo_su_gimnasio(fabrica: Fabrica):
     a = await fabrica.crear_gimnasio()
-    await _crear_estacion(a.id, token="token-de-a")
-    filas = await _sql(None, "SELECT platform.gimnasio_id_por_device_token(:h) AS g", {"h": hash_token("token-de-a")})
+    token = f"token-{uuid4().hex}"
+    await _crear_estacion(a.id, token=token)
+    filas = await _sql(None, "SELECT platform.gimnasio_id_por_device_token(:h) AS g", {"h": hash_token(token)})
     assert filas[0]["g"] == a.id
     filas = await _sql(None, "SELECT platform.gimnasio_id_por_device_token(:h) AS g", {"h": hash_token("otro")})
     assert filas[0]["g"] is None
