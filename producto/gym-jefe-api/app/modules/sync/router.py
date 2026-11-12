@@ -2,17 +2,23 @@
 from typing import Annotated, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, status
+from fastapi import APIRouter, Depends, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
 from app.core.dependencies import AuthenticatedStaff, require_role
+from app.modules.sync.activacion import ActivacionService
+from app.modules.sync.dependencias import EstacionOperativa
 from app.modules.sync.estaciones import EstacionesService
 from app.modules.sync.schemas import (
+    ActivarEstacionRequest,
     CrearEstacionRequest,
+    EstacionActivadaDto,
     EstacionConCodigoDto,
     EstacionDto,
     RevocarEstacionRequest,
+    SesionStaffRequest,
+    SesionStaffResponse,
 )
 
 Sesion = Annotated[AsyncSession, Depends(get_db_session)]
@@ -45,3 +51,29 @@ async def regenerar_codigo(estacion_id: Annotated[UUID, Path()], jefe: Jefe, ses
 @estaciones_router.post("/{estacion_id}/revocar", response_model=EstacionDto, summary="Revocar una estación: deja de sincronizar")
 async def revocar_estacion(estacion_id: Annotated[UUID, Path()], data: RevocarEstacionRequest, jefe: Jefe, session: Sesion):
     return await EstacionesService.revocar(session, jefe.gimnasio_id, estacion_id, jefe.id, jefe.nombre, data.motivo)
+
+
+# =============================================================================
+# Sincronización: la llama la estación, con su device_token
+# =============================================================================
+sync_router = APIRouter(prefix="/sync", tags=["17. Sincronización de escritorio"])
+
+
+def _ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
+@sync_router.post(
+    "/activar", response_model=EstacionActivadaDto,
+    summary="Activar una estación con el subdominio y el código que generó el Jefe (público)",
+)
+async def activar_estacion(data: ActivarEstacionRequest, request: Request, session: Sesion):
+    return await ActivacionService.activar(session, data, _ip(request))
+
+
+@sync_router.post(
+    "/sesion-staff", response_model=SesionStaffResponse,
+    summary="Primer ingreso de una persona en la estación: valida su contraseña en el servidor",
+)
+async def sesion_staff(data: SesionStaffRequest, request: Request, estacion: EstacionOperativa, session: Sesion):
+    return await ActivacionService.sesion_staff(session, estacion, data, _ip(request))

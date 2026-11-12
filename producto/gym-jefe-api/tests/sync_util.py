@@ -43,3 +43,33 @@ async def crear_estacion(cliente: AsyncClient, headers: dict, nombre: Optional[s
 async def acciones_auditoria(gym_id: UUID) -> list:
     filas = await sql(gym_id, "SELECT accion, detalle, actor_nombre FROM platform.auditoria_gym ORDER BY id")
     return filas
+
+
+def cod(r) -> str:
+    """Código de error de una respuesta de la API."""
+    return r.json()["error"]["codigo"]
+
+
+async def activar(cliente: AsyncClient, gym: Gimnasio, estacion: dict) -> dict:
+    """Activa la estación recién creada y devuelve las cabeceras con su device_token."""
+    r = await cliente.post(
+        f"{API}/sync/activar",
+        json={"subdominio": gym.subdominio, "codigo": estacion["codigo"], "nombre_equipo": "PC-PRUEBAS", "version_app": "0.1.0"},
+    )
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['device_token']}"}
+
+
+async def estacion_activa(cliente: AsyncClient, fabrica: Fabrica, **kwargs):
+    """Gimnasio con Jefe y una estación ya activada."""
+    gym, jefe, headers_jefe = await gimnasio_con_jefe(cliente, fabrica, **kwargs)
+    estacion = await crear_estacion(cliente, headers_jefe)
+    return gym, jefe, headers_jefe, estacion, await activar(cliente, gym, estacion)
+
+
+async def bloquear_gimnasio(fabrica: Fabrica, gym: Gimnasio) -> None:
+    """Deja al gimnasio bloqueado por falta de pago (corte hace 10 días)."""
+    async with fabrica.admin_engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE superadmin.gimnasios SET fecha_corte = current_date - 10 WHERE gimnasio_id = :g"), {"g": gym.id}
+        )

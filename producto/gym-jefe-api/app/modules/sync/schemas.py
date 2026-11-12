@@ -34,3 +34,46 @@ class EstacionDto(BaseModel):
 class EstacionConCodigoDto(EstacionDto):
     """El código de activación viaja una sola vez: al crear la estación o al regenerarlo."""
     codigo: str
+
+
+# --- Activación (la estación aún no tiene credencial) ---
+class ActivarEstacionRequest(BaseModel):
+    subdominio: str = Field(..., min_length=2, max_length=50, pattern=r"^[a-z0-9]([a-z0-9-]{0,48}[a-z0-9])?$")
+    codigo: str = Field(..., min_length=8, max_length=16, description="Código de estación; se acepta con o sin guion")
+    nombre_equipo: Optional[str] = Field(None, max_length=80, description="Nombre del computador, para reconocerlo en la lista")
+    version_app: str = Field(..., min_length=1, max_length=20)
+
+
+class GimnasioEstacionDto(BaseModel):
+    id: UUID
+    nombre: str
+    subdominio: str
+
+
+class EstacionActivadaDto(BaseModel):
+    estacion_id: UUID
+    nombre: str
+    # Credencial de la estación. Solo viaja en esta respuesta; el servidor guarda su hash.
+    device_token: str
+    gimnasio: GimnasioEstacionDto
+
+
+# --- Primer ingreso de una persona en la estación ---
+class SesionStaffRequest(BaseModel):
+    correo: str = Field(..., min_length=3, max_length=254)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class StaffEstacionDto(BaseModel):
+    id: UUID
+    nombre: str
+    correo: str
+    rol: str
+    # Cambia cuando la contraseña cambia en la web: la estación invalida su verificador y el PIN.
+    password_cambiada_en: Optional[datetime] = None
+
+
+class SesionStaffResponse(BaseModel):
+    staff: StaffEstacionDto
+    permisos: list[str]
+    servidor_ahora: datetime
