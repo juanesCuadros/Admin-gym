@@ -1,8 +1,8 @@
 """GymDesk Escritorio: administración de estaciones (Jefe) y sincronización (estación)."""
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Request, status
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
@@ -10,12 +10,14 @@ from app.core.dependencies import AuthenticatedStaff, require_role
 from app.modules.sync.activacion import ActivacionService
 from app.modules.sync.dependencias import EstacionOperativa
 from app.modules.sync.estaciones import EstacionesService
+from app.modules.sync.pull import LIMITE_MAXIMO, LIMITE_POR_DEFECTO, PullService
 from app.modules.sync.schemas import (
     ActivarEstacionRequest,
     CrearEstacionRequest,
     EstacionActivadaDto,
     EstacionConCodigoDto,
     EstacionDto,
+    PullResponse,
     RevocarEstacionRequest,
     SesionStaffRequest,
     SesionStaffResponse,
@@ -77,3 +79,17 @@ async def activar_estacion(data: ActivarEstacionRequest, request: Request, sessi
 )
 async def sesion_staff(data: SesionStaffRequest, request: Request, estacion: EstacionOperativa, session: Sesion):
     return await ActivacionService.sesion_staff(session, estacion, data, _ip(request))
+
+
+@sync_router.get(
+    "/pull", response_model=PullResponse,
+    summary="Descarga paginada de lo que cambió desde el cursor. Sin cursor, la descarga inicial",
+)
+async def pull(
+    estacion: EstacionOperativa,
+    session: Sesion,
+    cursor: Optional[str] = Query(None, max_length=600),
+    limite: int = Query(LIMITE_POR_DEFECTO, ge=1, le=LIMITE_MAXIMO),
+    version_app: Annotated[Optional[str], Header(alias="X-GymDesk-Version", max_length=20)] = None,
+):
+    return await PullService.pull(session, estacion, cursor, limite, version_app)

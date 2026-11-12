@@ -1,5 +1,5 @@
-from datetime import datetime
-from typing import Literal, Optional
+from datetime import date, datetime
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -76,4 +76,30 @@ class StaffEstacionDto(BaseModel):
 class SesionStaffResponse(BaseModel):
     staff: StaffEstacionDto
     permisos: list[str]
+    servidor_ahora: datetime
+
+
+# --- Descarga hacia la estación ---
+class SuscripcionEstacionDto(BaseModel):
+    """Con esto la estación calcula el aviso y el bloqueo por su cuenta, aunque le quiten la red (P-01)."""
+    estado_guardado: Optional[str] = None
+    fecha_corte: Optional[date] = None
+    estado_calculado: Optional[str] = None
+    motivo_bloqueo: Optional[str] = None
+
+
+class EliminadoDto(BaseModel):
+    tabla: str
+    id: UUID
+
+
+class PullResponse(BaseModel):
+    epoca: str
+    # true: las marcas del servidor cambiaron; la estación borra su copia y descarga todo de nuevo.
+    reiniciar: bool = False
+    cursor: str
+    hay_mas: bool
+    cambios: Dict[str, List[Dict[str, Any]]]
+    eliminados: List[EliminadoDto]
+    suscripcion: Optional[SuscripcionEstacionDto] = None
     servidor_ahora: datetime
