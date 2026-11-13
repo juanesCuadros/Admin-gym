@@ -165,6 +165,7 @@ export const NAVEGACION: GrupoNav[] = [
           { id: 'configuracion.landing', etiqueta: 'Landing', ruta: '/configuracion/landing' },
           { id: 'configuracion.suscripcion', etiqueta: 'Mi suscripción', ruta: '/configuracion/suscripcion', soloJefe: true },
           { id: 'configuracion.carga_inicial', etiqueta: 'Carga inicial', ruta: '/configuracion/carga-inicial', soloJefe: true },
+          { id: 'configuracion.estaciones', etiqueta: 'Estaciones', ruta: '/configuracion/estaciones', soloJefe: true },
         ],
       },
     ],

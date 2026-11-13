@@ -43,6 +43,7 @@ import { ConfigGeneralPage } from './pages/configuracion/ConfigGeneralPage';
 import { ConfigLandingPage } from './pages/configuracion/ConfigLandingPage';
 import { MiSuscripcionPage } from './pages/configuracion/MiSuscripcionPage';
 import { CargaInicialPage } from './pages/configuracion/CargaInicialPage';
+import { EstacionesPage } from './pages/configuracion/EstacionesPage';
 import { LandingGimnasioPage } from './pages/publico/LandingGimnasioPage';
 import { AvisosVencimientoPage } from './pages/membresias/AvisosVencimientoPage';
 import { GastosPage } from './pages/gastos/GastosPage';
@@ -159,6 +160,8 @@ export const App: React.FC = () => {
                       <Route path="/configuracion/suscripcion" element={<MiSuscripcionPage />} />
                       {/* Carga inicial de clientes: solo el Jefe (contrato 2.4) */}
                       <Route path="/configuracion/carga-inicial" element={<CargaInicialPage />} />
+                      {/* Estaciones de GymDesk Escritorio: solo el Jefe (contrato E.1) */}
+                      <Route path="/configuracion/estaciones" element={<EstacionesPage />} />
                     </Route>
 
                   </Route>
