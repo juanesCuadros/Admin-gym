@@ -6,7 +6,10 @@ use rusqlite::{params, Connection};
 
 use crate::error::Resultado;
 
-const MIGRACIONES: &[(u32, &str, &str)] = &[(1, "base", include_str!("migraciones/0001_base.sql"))];
+const MIGRACIONES: &[(u32, &str, &str)] = &[
+    (1, "base", include_str!("migraciones/0001_base.sql")),
+    (2, "sync", include_str!("migraciones/0002_sync.sql")),
+];
 
 pub fn aplicar(conn: &mut Connection, ahora: &str) -> Resultado<u32> {
     conn.execute_batch(

@@ -6,6 +6,7 @@ pub mod db;
 pub mod error;
 pub mod reloj;
 pub mod sesion;
+pub mod sync;
 
 use tauri::Manager;
 
