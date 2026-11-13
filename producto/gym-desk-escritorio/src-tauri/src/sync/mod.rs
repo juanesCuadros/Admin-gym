@@ -47,3 +47,5 @@ pub fn exigir_operable(conn: &Connection, ahora: DateTime<Utc>) -> Resultado<()>
     }
     Ok(())
 }
+#[cfg(test)]
+mod prueba_24h;
