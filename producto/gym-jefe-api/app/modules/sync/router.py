@@ -1,5 +1,5 @@
 """GymDesk Escritorio: administración de estaciones (Jefe) y sincronización (estación)."""
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Path, Query, Request, status
@@ -13,6 +13,7 @@ from app.modules.sync.estaciones import EstacionesService
 from app.modules.sync.pull import LIMITE_MAXIMO, LIMITE_POR_DEFECTO, PullService
 from app.modules.sync import ingresos
 from app.modules.sync.push import MANEJADORES, PushService
+from app.modules.sync.revisiones import ListadoRevisionesResponse, RevisarRequest, RevisionDto, RevisionesService
 from app.modules.sync.schemas import (
     ActivarEstacionRequest,
     CrearEstacionRequest,
@@ -108,3 +109,28 @@ async def pull(
 )
 async def push(data: PushRequest, estacion: Estacion, session: Sesion):
     return await PushService.push(session, estacion, data.operaciones, data.estacion_ahora)
+
+
+# =============================================================================
+# Por revisar: lo ve y lo cierra el Jefe, desde la web
+# =============================================================================
+@sync_router.get(
+    "/revisiones", response_model=ListadoRevisionesResponse,
+    summary="Lo que las estaciones registraron y quedó por revisar",
+)
+async def listar_revisiones(
+    jefe: Jefe,
+    session: Sesion,
+    estado: Literal["pendiente_revision", "revisado", "todas"] = Query("pendiente_revision"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    return await RevisionesService.listar(session, jefe.gimnasio_id, estado, limit, offset)
+
+
+@sync_router.post(
+    "/revisiones/{revision_id}/revisar", response_model=RevisionDto,
+    summary="Cerrar una revisión con nota. Solo el Jefe, una sola vez",
+)
+async def revisar(revision_id: Annotated[UUID, Path()], data: RevisarRequest, jefe: Jefe, session: Sesion):
+    return await RevisionesService.revisar(session, jefe.gimnasio_id, revision_id, jefe.id, jefe.nombre, data)
