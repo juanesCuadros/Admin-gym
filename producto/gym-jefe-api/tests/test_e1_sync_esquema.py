@@ -118,3 +118,17 @@ async def test_solo_cambiar_la_contrasena_mueve_password_cambiada_en(fabrica: Fa
 
     await _sql(gym.id, "UPDATE platform.staff SET hash_password = 'otro-hash' WHERE id = :id", {"id": staff["id"]})
     assert (await _sql(gym.id, consulta, {"id": staff["id"]}))[0]["password_cambiada_en"] is not None
+
+
+async def test_insertar_con_los_disparadores_apagados_igual_deja_marca(fabrica: Fabrica):
+    """Una restauración de respaldo o un proceso de mantenimiento apagan los disparadores."""
+    gym = await fabrica.crear_gimnasio()
+    plan_id = uuid4()
+    async with fabrica.admin_engine.begin() as conn:
+        await conn.execute(text("SET LOCAL session_replication_role = replica"))
+        await conn.execute(
+            text("INSERT INTO platform.planes (id, gimnasio_id, nombre, precio, duracion_dias, tipo) VALUES (:id, :g, 'Sin disparador', 1000, 1, 'individual')"),
+            {"id": plan_id, "g": gym.id},
+        )
+    fila = (await _sql(gym.id, "SELECT sync_xid FROM platform.planes WHERE id = :id", {"id": plan_id}))[0]
+    assert fila["sync_xid"] is not None and fila["sync_xid"] > 0

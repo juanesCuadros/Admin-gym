@@ -1,6 +1,8 @@
 """Escritorio · activación de la estación y primer ingreso del personal desde ella."""
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import text
 
 from app.core.security import hash_token
 from tests.conftest import Fabrica
@@ -17,6 +19,19 @@ from tests.sync_util import (
 )
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _sin_rastro_de_intentos(fabrica: Fabrica):
+    """
+    El login bloquea una IP con 15 fallos en 15 minutos, contando todos los gimnasios. Estas pruebas
+    fallan a propósito desde la IP local: al terminar borran sus intentos para no bloquear a las demás.
+    """
+    yield
+    ids = [g.id for g in fabrica.gimnasios]
+    if ids:
+        async with fabrica.admin_engine.begin() as conn:
+            await conn.execute(text("DELETE FROM platform.intentos_login_staff WHERE gimnasio_id = ANY(:ids)"), {"ids": ids})
 
 ACTIVAR = f"{API}/sync/activar"
 SESION = f"{API}/sync/sesion-staff"

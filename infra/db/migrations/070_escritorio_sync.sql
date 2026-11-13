@@ -199,6 +199,9 @@ BEGIN
   LOOP
     EXECUTE format('ALTER TABLE platform.%I ADD COLUMN IF NOT EXISTS sync_xid bigint', t);
     EXECUTE format('UPDATE platform.%I SET sync_xid = (pg_current_xact_id()::text)::bigint WHERE sync_xid IS NULL', t);
+    -- Con valor por defecto: una inserción con los disparadores apagados (restauración de un
+    -- respaldo, session_replication_role = replica) igual queda marcada y no viola el NOT NULL.
+    EXECUTE format('ALTER TABLE platform.%I ALTER COLUMN sync_xid SET DEFAULT (pg_current_xact_id()::text)::bigint', t);
     EXECUTE format('ALTER TABLE platform.%I ALTER COLUMN sync_xid SET NOT NULL', t);
     EXECUTE format('DROP TRIGGER IF EXISTS tg_sync_marca ON platform.%I', t);
     EXECUTE format(
