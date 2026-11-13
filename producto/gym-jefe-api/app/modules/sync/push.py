@@ -14,7 +14,7 @@ la misma petición, en su propio punto de guardado. Reglas (ALCANCE_APP_ESCRITOR
 import hashlib
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 from uuid import UUID
 
@@ -67,6 +67,8 @@ class Contexto:
     estacion: EstacionAutenticada
     op: Operacion
     staff: Optional[dict]  # fila de platform.staff de quien hizo la operación, si la envió
+    # Hora del servidor menos hora de la estación al enviar. None si la estación no la mandó.
+    desfase: Optional[timedelta] = None
 
 
 Manejador = Callable[[Contexto], Awaitable[Efecto]]
@@ -141,7 +143,7 @@ async def _auditoria_estacion(ctx: Contexto) -> Efecto:
     return Efecto(respuesta={"accion": datos.accion}, revision=revision)
 
 
-# Cada fase agrega aquí sus tipos (ingresos en la fase 2, caja en la 3).
+# Cada fase registra sus tipos al cargar el módulo (ver app/modules/sync/router.py).
 MANEJADORES: Dict[str, Manejador] = {
     "auditoria_estacion": _auditoria_estacion,
 }
@@ -198,7 +200,9 @@ class PushService:
         )
 
     @classmethod
-    async def _aplicar(cls, session: AsyncSession, estacion: EstacionAutenticada, indice: int, op: Operacion) -> ResultadoOperacionDto:
+    async def _aplicar(
+        cls, session: AsyncSession, estacion: EstacionAutenticada, indice: int, op: Operacion, desfase: Optional[timedelta]
+    ) -> ResultadoOperacionDto:
         gym_id = estacion.gimnasio_id
         manejador = MANEJADORES.get(op.tipo)
         if manejador is None:
@@ -215,7 +219,7 @@ class PushService:
                 raise OperacionInvalida("STAFF_DESCONOCIDO", "La persona que hizo la operación no pertenece a este gimnasio.")
             staff = dict(fila)
 
-        efecto = await manejador(Contexto(session=session, estacion=estacion, op=op, staff=staff))
+        efecto = await manejador(Contexto(session=session, estacion=estacion, op=op, staff=staff, desfase=desfase))
         resultado = "pendiente_revision" if efecto.revision else "aplicada"
         res = await session.execute(
             text("""
@@ -257,8 +261,12 @@ class PushService:
         return ResultadoOperacionDto(indice=indice, id=op.id, resultado=resultado, datos=efecto.respuesta, revision=revision_dto)
 
     @classmethod
-    async def push(cls, session: AsyncSession, estacion: EstacionAutenticada, crudas: List[Dict[str, Any]]) -> PushResponse:
+    async def push(
+        cls, session: AsyncSession, estacion: EstacionAutenticada, crudas: List[Dict[str, Any]],
+        estacion_ahora: Optional[datetime] = None,
+    ) -> PushResponse:
         gym_id = estacion.gimnasio_id
+        desfase = datetime.now(timezone.utc) - estacion_ahora.astimezone(timezone.utc) if estacion_ahora else None
         resultados: List[ResultadoOperacionDto] = []
         # Operaciones de este lote que no quedaron hechas: lo que dependa de ellas se retiene.
         sin_resolver: set[UUID] = set()
@@ -311,7 +319,7 @@ class PushService:
 
             try:
                 async with session.begin_nested():
-                    resultados.append(await cls._aplicar(session, estacion, indice, op))
+                    resultados.append(await cls._aplicar(session, estacion, indice, op, desfase))
             except OperacionInvalida as e:
                 sin_resolver.add(op.id)
                 resultados.append(ResultadoOperacionDto(indice=indice, id=op.id, resultado="invalida", codigo=e.codigo, mensaje=e.mensaje))

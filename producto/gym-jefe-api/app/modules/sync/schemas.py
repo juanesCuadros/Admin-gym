@@ -112,6 +112,8 @@ ResultadoOperacion = Literal["aplicada", "duplicada", "pendiente_revision", "inv
 class PushRequest(BaseModel):
     # Cada operación se valida por separado: una mal formada no tumba el lote.
     operaciones: List[Dict[str, Any]] = Field(..., min_length=1, max_length=50)
+    # Reloj del equipo al enviar. Con él el servidor mide el desfase y corrige la hora de los ingresos.
+    estacion_ahora: Optional[datetime] = None
 
 
 class ResultadoOperacionDto(BaseModel):
