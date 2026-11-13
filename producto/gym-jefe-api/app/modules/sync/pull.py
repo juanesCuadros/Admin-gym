@@ -32,7 +32,8 @@ LIMITE_POR_DEFECTO = 500
 LIMITE_MAXIMO = 1000
 
 # Solo lo que recepción necesita. Sin hashes, sin contacto ni salud de los deportistas, sin costos.
-# (nombre en la respuesta, tabla, tipo del id, columnas)
+# (nombre en la respuesta, tabla, tipo del id, columnas, filtro adicional)
+# El cursor guarda la posición en esta lista: las tablas nuevas se agregan AL FINAL, nunca en medio.
 _TABLAS: List[tuple] = [
     ("gimnasio", "tenant", "uuid", """
         id, nombre, subdominio, zona_horaria, dias_gracia_mora, dias_umbral_por_vencer,
@@ -45,8 +46,17 @@ _TABLAS: List[tuple] = [
     ("planes", "planes", "uuid", "id, nombre, round(precio)::bigint AS precio, duracion_dias, tipo, cupo_personas, activo"),
     ("productos", "productos", "uuid", "id, nombre, round(precio)::bigint AS precio, stock, activo"),
     ("deportistas", "deportistas", "uuid", "id, tipo_documento, documento, nombre, activo, (deleted_at IS NOT NULL) AS eliminado"),
-    ("membresias", "membresias", "uuid", "id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada"),
+    ("membresias", "membresias", "uuid", "id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada, created_at"),
     ("eliminados", "sync_eliminados", "bigint", "id, tabla, registro_id"),
+    # Fase 2 · regla de acceso sin red.
+    ("congelamientos", "congelamientos", "uuid", "id, membresia_id, fecha_inicio, fecha_fin"),
+    # Un pase de día deja entrar el día en que se pagó. Solo viajan los recientes; si la venta se
+    # anula, su marca cambia y vuelve a bajar con `anulada = true`.
+    ("pases_dia", "ventas", "uuid", "id, deportista_id, created_at, anulada", """
+        AND deportista_id IS NOT NULL
+        AND created_at >= now() - interval '2 days'
+        AND EXISTS (SELECT 1 FROM platform.venta_items i WHERE i.venta_id = platform.ventas.id AND i.tipo = 'pase_dia')
+    """),
 ]
 
 
@@ -122,7 +132,8 @@ class PullService:
         indice, ultimo = estado["t"], estado["u"]
 
         while indice < len(_TABLAS) and restante > 0:
-            nombre, tabla, tipo_id, columnas = _TABLAS[indice]
+            nombre, tabla, tipo_id, columnas, *resto = _TABLAS[indice]
+            filtro_extra = resto[0] if resto else ""
             filtro_gym = "id = :g" if tabla == "tenant" else "gimnasio_id = :g"
             params: Dict[str, Any] = {"g": gym_id, "desde": estado["d"], "n": restante + 1}
             pagina = ""
@@ -133,7 +144,7 @@ class PullService:
                 text(f"""
                     SELECT {columnas}, sync_xid AS _xid
                     FROM platform.{tabla}
-                    WHERE {filtro_gym} AND sync_xid >= :desde {pagina}
+                    WHERE {filtro_gym} AND sync_xid >= :desde {filtro_extra} {pagina}
                     ORDER BY sync_xid, id
                     LIMIT :n
                 """),

@@ -79,6 +79,7 @@ async def test_la_descarga_inicial_trae_lo_del_gimnasio_y_nada_de_otro(cliente: 
         {"id": plan, "nombre": "Mensual", "precio": 80000, "duracion_dias": 30, "tipo": "individual", "cupo_personas": 1, "activo": True}
     ]
     assert cambios["productos"][0] == {**cambios["productos"][0], "nombre": "Agua", "precio": 3000, "stock": 24}
+    assert cambios["membresias"][0].pop("created_at").endswith("+00:00")
     assert cambios["membresias"] == [
         {"id": str(mem_id), "deportista_id": dep, "plan_id": plan, "fecha_inicio": "2026-11-01", "fecha_vencimiento": "2026-12-01", "cancelada": False}
     ]
@@ -230,3 +231,44 @@ async def test_cada_descarga_deja_la_fecha_de_ultima_sincronizacion(cliente: Asy
     assert r.status_code == 200
     fila = (await sql(gym.id, "SELECT ultima_sync_en, version_app FROM platform.estaciones"))[0]
     assert fila["ultima_sync_en"] is not None and fila["version_app"] == "0.2.0"
+
+
+# --- Fase 2: lo que la regla de acceso necesita ---
+async def test_llegan_los_congelamientos_y_su_borrado(cliente: AsyncClient, fabrica: Fabrica):
+    from tests import sync_util as u
+
+    gym, _, _, _, headers = await estacion_activa(cliente, fabrica)
+    otro = await fabrica.crear_gimnasio()
+    dep = await u.deportista(gym.id)
+    mem = await u.membresia(gym.id, dep, await u.plan(gym.id), vence_en_dias=20)
+    cong = await u.congelamiento(gym.id, mem, desde_dias=-2)
+    ajeno = await u.deportista(otro.id)
+    await u.congelamiento(otro.id, await u.membresia(otro.id, ajeno, await u.plan(otro.id), vence_en_dias=20))
+
+    cambios, _, cursor = await _todo(cliente, headers)
+    assert [(c["id"], c["membresia_id"], c["fecha_fin"]) for c in cambios["congelamientos"]] == [(cong, mem, None)]
+    assert set(cambios["congelamientos"][0]) == {"id", "membresia_id", "fecha_inicio", "fecha_fin"}
+
+    await sql(gym.id, "DELETE FROM platform.congelamientos WHERE id = :id", {"id": cong})
+    cambios, eliminados, _ = await _todo(cliente, headers, cursor)
+    assert cambios["congelamientos"] == [] and {"tabla": "congelamientos", "id": cong} in eliminados
+
+
+async def test_solo_bajan_los_pases_de_dia_recientes_con_cliente_y_la_anulacion_vuelve_a_bajar(cliente: AsyncClient, fabrica: Fabrica):
+    from tests import sync_util as u
+
+    gym, jefe, _, _, headers = await estacion_activa(cliente, fabrica)
+    dep = await u.deportista(gym.id)
+    pase = await u.venta(gym.id, jefe["id"], dep, "pase_dia")
+    await u.venta(gym.id, jefe["id"], dep, "pase_dia", hace_dias=5)      # viejo
+    await u.venta(gym.id, jefe["id"], dep, "pase_clase")                 # no es pase de día
+    await u.venta(gym.id, jefe["id"], None, "pase_clase")                # sin cliente
+
+    cambios, _, cursor = await _todo(cliente, headers)
+    assert [(p["id"], p["deportista_id"], p["anulada"]) for p in cambios["pases_dia"]] == [(pase, dep, False)]
+    # Solo lo necesario: ni totales, ni medio de pago, ni quién la registró.
+    assert set(cambios["pases_dia"][0]) == {"id", "deportista_id", "created_at", "anulada"}
+
+    await sql(gym.id, "UPDATE platform.ventas SET anulada = true, motivo_anulacion = 'Error de digitación', anulada_en = now() WHERE id = :id", {"id": pase})
+    cambios, _, _ = await _todo(cliente, headers, cursor)
+    assert [(p["id"], p["anulada"]) for p in cambios["pases_dia"]] == [(pase, True)]
