@@ -336,3 +336,69 @@ button.gd-sync:hover {
 .gd-sync-detalle {
   font-variant-numeric: tabular-nums;
 }
+
+.gd-panel {
+  max-width: 980px;
+  padding: 22px 24px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+}
+
+.gd-panel-encabezado {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.gd-panel-acciones {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gd-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.gd-tabla th {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.gd-tabla td {
+  padding: 10px;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.gd-tabla td.gd-nota {
+  color: var(--text-secondary);
+  max-width: 340px;
+}
+
+.gd-vacio {
+  padding: 36px 16px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.gd-paginacion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}

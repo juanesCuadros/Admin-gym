@@ -40,6 +40,8 @@ pub fn run() {
             comandos::estado_estacion,
             comandos::activar_estacion,
             comandos::sincronizar_ahora,
+            comandos::cola_pendientes,
+            comandos::reintentar_operacion,
             comandos::estado_sesion,
             comandos::registrar_actividad,
             comandos::personal_con_pin,

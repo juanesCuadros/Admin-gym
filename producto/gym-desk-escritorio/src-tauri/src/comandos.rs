@@ -14,7 +14,7 @@ use crate::sesion::{self, Credencial, EstadoSesion, GestorSesion, PersonaConPin}
 use crate::sync::suscripcion::{self, EstadoSuscripcion};
 use crate::sync::transporte::Transporte;
 use crate::sync::motor::{self, Espera};
-use crate::sync::outbox::{self, ConteosCola};
+use crate::sync::outbox::{self, ConteosCola, PaginaCola};
 use crate::sync::{activacion, exigir_operable, ingreso};
 
 /// Lo que se sabe de la sincronización mientras la app está abierta.
@@ -260,4 +260,35 @@ pub fn cerrar_sesion(estado: State<'_, EstadoApp>) -> Resultado<EstadoSesion> {
 #[tauri::command]
 pub fn definir_pin(estado: State<'_, EstadoApp>, password_actual: String, pin: String) -> Resultado<EstadoSesion> {
     estado.con_base(|conn, sesion, ahora| sesion.definir_pin(conn, ahora, &password_actual, &pin))
+}
+
+/// Lo que falta por subir, los errores y lo que quedó por revisar. Exige sesión abierta.
+#[tauri::command]
+pub fn cola_pendientes(estado: State<'_, EstadoApp>, incluir_aplicadas: bool, limite: i64, desplazamiento: i64) -> Resultado<PaginaCola> {
+    estado.con_base(|conn, sesion, ahora| {
+        sesion.exigir_activa(conn, ahora)?;
+        outbox::listar(conn, incluir_aplicadas, limite, desplazamiento)
+    })
+}
+
+#[tauri::command]
+pub fn reintentar_operacion(estado: State<'_, EstadoApp>, id: String) -> Resultado<()> {
+    estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        let tx = conn.unchecked_transaction()?;
+        outbox::reintentar(&tx, &id)?;
+        crate::auditoria::registrar(
+            &tx,
+            ahora,
+            crate::auditoria::Actor::persona(&usuario.id, &usuario.nombre),
+            "REINTENTAR_OPERACION",
+            "sync_outbox",
+            Some(&id),
+            &serde_json::json!({}),
+        )?;
+        tx.commit()?;
+        Ok(())
+    })?;
+    estado.despertar();
+    Ok(())
 }

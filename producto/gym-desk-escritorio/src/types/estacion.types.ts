@@ -46,3 +46,23 @@ export interface EstadoEstacion {
   en_linea: boolean;
   error_sync: ErrorSync | null;
 }
+
+export type EstadoOperacion = 'pendiente' | 'enviando' | 'aplicada' | 'pendiente_revision' | 'error' | 'retenida';
+
+export interface ItemCola {
+  id: string;
+  tipo: string;
+  accion: string | null;
+  staff_nombre: string | null;
+  /** Instante ISO-8601 en UTC. */
+  ocurrida_en: string;
+  estado: EstadoOperacion;
+  intentos: number;
+  codigo: string | null;
+  mensaje: string | null;
+}
+
+export interface PaginaCola {
+  items: ItemCola[];
+  total: number;
+}

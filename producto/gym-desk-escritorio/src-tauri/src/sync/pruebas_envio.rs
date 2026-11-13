@@ -293,3 +293,44 @@ fn la_espera_crece_con_cada_fallo_y_se_reinicia_con_un_exito() {
     assert_eq!(e.siguiente(true), Duration::from_secs(30));
     assert_eq!(e.siguiente(false).as_secs(), 5);
 }
+
+#[test]
+fn la_lista_de_pendientes_muestra_primero_los_errores_y_oculta_lo_ya_subido() {
+    let (_dir, base) = base_con_cola_vacia();
+    let r = reloj();
+    let servidor = ServidorDePrueba::default();
+    let mala = { let conn = base.lock().unwrap(); op(&conn, &r, 0, &[]); let m = op(&conn, &r, 1, &[]); op(&conn, &r, 2, &[]); m };
+    servidor.invalidas.lock().unwrap().push(mala.clone());
+    enviar_pendientes(&base, &servidor, &r).unwrap();
+    let conn = base.lock().unwrap();
+    let nueva = op(&conn, &r, 3, &[]);
+
+    let pagina = outbox::listar(&conn, false, 20, 0).unwrap();
+    assert_eq!(pagina.total, 2);
+    assert_eq!(pagina.items.iter().map(|i| (i.id.as_str(), i.estado.as_str())).collect::<Vec<_>>(), [(mala.as_str(), "error"), (nueva.as_str(), "pendiente")]);
+    assert_eq!(pagina.items[0].accion.as_deref(), Some("CERRAR_SESION"));
+    assert_eq!(pagina.items[0].mensaje.as_deref(), Some("inválida (prueba)"));
+
+    // Con el historial se ve todo, incluido lo aplicado; nada se borró.
+    assert_eq!(outbox::listar(&conn, true, 20, 0).unwrap().total, 5);
+    assert_eq!(outbox::listar(&conn, true, 2, 4).unwrap().items.len(), 1);
+}
+
+#[test]
+fn reintentar_solo_aplica_a_lo_que_esta_en_error() {
+    let (_dir, base) = base_con_cola_vacia();
+    let r = reloj();
+    let servidor = ServidorDePrueba::default();
+    let (mala, buena) = { let conn = base.lock().unwrap(); (op(&conn, &r, 0, &[]), op(&conn, &r, 1, &[])) };
+    servidor.invalidas.lock().unwrap().push(mala.clone());
+    enviar_pendientes(&base, &servidor, &r).unwrap();
+
+    {
+        let conn = base.lock().unwrap();
+        assert_eq!(outbox::reintentar(&conn, &buena).unwrap_err().codigo, "OPERACION_NO_REINTENTABLE");
+        outbox::reintentar(&conn, &mala).unwrap();
+        assert_eq!(estados(&conn)[1..], ["pendiente", "aplicada"]);
+    }
+    servidor.invalidas.lock().unwrap().clear();
+    assert_eq!(enviar_pendientes(&base, &servidor, &r).unwrap().resueltas, 1);
+}

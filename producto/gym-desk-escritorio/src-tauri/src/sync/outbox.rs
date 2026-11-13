@@ -192,3 +192,67 @@ pub fn conteos(conn: &Connection) -> Resultado<ConteosCola> {
         |f| Ok(ConteosCola { por_enviar: f.get(0)?, con_error: f.get(1)?, por_revisar: f.get(2)?, aplicadas: f.get(3)? }),
     )?)
 }
+
+/// Una fila de la pestaña "Pendientes".
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ItemCola {
+    pub id: String,
+    pub tipo: String,
+    /// Acción dentro del tipo, cuando la hay (p. ej. `INICIAR_SESION`).
+    pub accion: Option<String>,
+    pub staff_nombre: Option<String>,
+    pub ocurrida_en: String,
+    pub estado: String,
+    pub intentos: i64,
+    pub codigo: Option<String>,
+    pub mensaje: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PaginaCola {
+    pub items: Vec<ItemCola>,
+    pub total: i64,
+}
+
+/// Lista la cola, lo más reciente primero. Sin `incluir_aplicadas` muestra solo lo que pide atención:
+/// lo que falta por subir, los errores y lo que quedó por revisar.
+pub fn listar(conn: &Connection, incluir_aplicadas: bool, limite: i64, desplazamiento: i64) -> Resultado<PaginaCola> {
+    let filtro = if incluir_aplicadas { "1 = 1" } else { "o.estado <> 'aplicada'" };
+    let total: i64 = conn.query_row(&format!("SELECT count(*) FROM sync_outbox o WHERE {filtro}"), [], |f| f.get(0))?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT o.id, o.tipo, json_extract(o.payload, '$.accion'), s.nombre, o.ocurrida_en, o.estado, o.intentos,
+                o.ultimo_error_codigo, o.ultimo_error_mensaje
+         FROM sync_outbox o LEFT JOIN staff_local s ON s.id = o.staff_id
+         WHERE {filtro}
+         ORDER BY (o.estado = 'error') DESC, o.secuencia DESC
+         LIMIT ?1 OFFSET ?2"
+    ))?;
+    let filas = stmt.query_map(params![limite.clamp(1, 100), desplazamiento.max(0)], |f| {
+        Ok(ItemCola {
+            id: f.get(0)?,
+            tipo: f.get(1)?,
+            accion: f.get(2)?,
+            staff_nombre: f.get(3)?,
+            ocurrida_en: f.get(4)?,
+            estado: f.get(5)?,
+            intentos: f.get(6)?,
+            codigo: f.get(7)?,
+            mensaje: f.get(8)?,
+        })
+    })?;
+    Ok(PaginaCola { items: filas.collect::<Result<_, _>>()?, total })
+}
+
+/// Vuelve a poner en cola una operación que quedó en error (por ejemplo, tras actualizar la app).
+/// Lo que estaba retenido por depender de ella se libera en el siguiente envío.
+pub fn reintentar(conn: &Connection, id: &str) -> Resultado<()> {
+    let cambiadas = conn.execute(
+        "UPDATE sync_outbox SET estado = 'pendiente', ultimo_error_codigo = NULL, ultimo_error_mensaje = NULL
+         WHERE id = ?1 AND estado = 'error'",
+        [id],
+    )?;
+    if cambiadas == 0 {
+        return Err(ErrorApp::nuevo("OPERACION_NO_REINTENTABLE", "Esa operación no está en error; no hay nada que reintentar."));
+    }
+    Ok(())
+}

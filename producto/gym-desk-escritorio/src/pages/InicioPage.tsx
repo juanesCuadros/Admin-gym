@@ -6,6 +6,7 @@ import { useToast } from '@web/contexts/ToastContext';
 import { IndicadorSync } from '../components/IndicadorSync';
 import { CampoPin, MensajeError } from '../components/Piezas';
 import { useSesion } from '../contexts/SesionContext';
+import { PendientesPanel } from './PendientesPanel';
 import { useEnvio } from '../hooks/useEnvio';
 import type { UsuarioSesion } from '../types/sesion.types';
 
@@ -28,6 +29,7 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
   const [passwordActual, setPasswordActual] = useState('');
   const [pin, setPin] = useState('');
   const [pinRepetido, setPinRepetido] = useState('');
+  const [verPendientes, setVerPendientes] = useState(false);
 
   const noCoincide = pinRepetido.length === 4 && pin !== pinRepetido;
   const puedeGuardar = passwordActual !== '' && pin.length === 4 && pin === pinRepetido;
@@ -56,7 +58,7 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
           {estacion?.gimnasio_nombre ?? 'GymDesk'}
         </div>
         <div className="gd-barra-usuario">
-          {estacion && <IndicadorSync estacion={estacion} />}
+          {estacion && <IndicadorSync estacion={estacion} onAbrirPendientes={() => setVerPendientes((v) => !v)} />}
           <span>
             <strong>{usuario.nombre}</strong> · {NOMBRE_ROL[usuario.rol]}
           </span>
@@ -72,7 +74,9 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
       <main className="gd-contenido">
         {accion.error && <MensajeError>{accion.error}</MensajeError>}
 
-        <section className="gd-tarjeta" style={{ maxWidth: 440 }}>
+        {verPendientes && estacion && <PendientesPanel estacion={estacion} onCerrar={() => setVerPendientes(false)} />}
+
+        <section className="gd-tarjeta" style={{ maxWidth: 440, display: verPendientes ? 'none' : undefined }}>
           <h2 className="gd-titulo" style={{ fontSize: '1.15rem' }}>
             <KeyRound size={18} style={{ verticalAlign: -3, marginRight: 8 }} />
             {usuario.tiene_pin ? 'Cambiar mi PIN' : 'Crear mi PIN'}
