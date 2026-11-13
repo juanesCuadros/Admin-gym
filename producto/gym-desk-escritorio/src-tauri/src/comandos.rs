@@ -13,7 +13,9 @@ use crate::reloj::{fecha_negocio, Reloj};
 use crate::sesion::{self, Credencial, EstadoSesion, GestorSesion, PersonaConPin};
 use crate::sync::suscripcion::{self, EstadoSuscripcion};
 use crate::sync::transporte::Transporte;
-use crate::sync::{activacion, descarga, exigir_operable, ingreso};
+use crate::sync::motor::{self, Espera};
+use crate::sync::outbox::{self, ConteosCola};
+use crate::sync::{activacion, exigir_operable, ingreso};
 
 /// Lo que se sabe de la sincronización mientras la app está abierta.
 #[derive(Default)]
@@ -22,6 +24,8 @@ pub struct EstadoSync {
     /// `false` desde el último intento sin respuesta del servidor.
     pub en_linea: AtomicBool,
     pub ultimo_error: Mutex<Option<ErrorApp>>,
+    /// Despierta al hilo de sincronización antes de que se cumpla su espera.
+    despertador: Mutex<Option<std::sync::mpsc::Sender<()>>>,
 }
 
 pub struct EstadoApp {
@@ -59,24 +63,51 @@ impl EstadoApp {
         f(&conn, &mut sesion, self.reloj.ahora())
     }
 
-    /// Lanza una ronda de descarga en otro hilo. Si ya hay una en curso, no hace nada.
-    pub fn descargar_en_segundo_plano(&self) -> Resultado<()> {
+    /// Arranca el hilo que sincroniza mientras la app esté abierta: sube lo pendiente y descarga
+    /// lo que cambió, cada 30 s, con espera creciente cuando no hay red.
+    pub fn iniciar_motor(&self) -> Resultado<()> {
         let base = self.base()?.clone();
-        if self.sync.en_curso.swap(true, Ordering::SeqCst) {
-            return Ok(());
+        {
+            let conn = base.lock().map_err(|_| error_interno())?;
+            // Si la app se cerró a mitad de un envío, eso vuelve a la cola.
+            outbox::recuperar_enviando(&conn)?;
         }
+        let (emisor, receptor) = std::sync::mpsc::channel::<()>();
+        *self.sync.despertador.lock().map_err(|_| error_interno())? = Some(emisor);
         let (transporte, reloj, sync, sesion) = (self.transporte.clone(), self.reloj.clone(), self.sync.clone(), self.sesion.clone());
         std::thread::spawn(move || {
-            let resultado = descarga::descargar(&base, transporte.as_ref(), reloj.as_ref());
-            // Si a quien tiene la sesión lo desactivaron o cambió su contraseña en la web, se le cierra.
-            if let (Ok(mut gestor), Ok(conn)) = (sesion.lock(), base.lock()) {
-                let _ = gestor.revalidar(&conn, reloj.ahora());
+            let mut espera = Espera::default();
+            loop {
+                sync.en_curso.store(true, Ordering::SeqCst);
+                let resultado = motor::ciclo(&base, transporte.as_ref(), reloj.as_ref());
+                // Si a quien tiene la sesión lo desactivaron o cambió su contraseña en la web, se le cierra.
+                if let (Ok(mut gestor), Ok(conn)) = (sesion.lock(), base.lock()) {
+                    let _ = gestor.revalidar(&conn, reloj.ahora());
+                }
+                let sin_conexion = matches!(&resultado, Err(e) if e.es_sin_conexion());
+                sync.en_linea.store(!sin_conexion, Ordering::SeqCst);
+                let exito = resultado.is_ok();
+                *sync.ultimo_error.lock().unwrap_or_else(|e| e.into_inner()) = resultado.err().map(|e| e.a_error_app());
+                sync.en_curso.store(false, Ordering::SeqCst);
+
+                match receptor.recv_timeout(espera.siguiente(exito)) {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+                // Varios avisos seguidos cuentan como uno.
+                while receptor.try_recv().is_ok() {}
             }
-            sync.en_linea.store(!matches!(&resultado, Err(e) if e.es_sin_conexion()), Ordering::SeqCst);
-            *sync.ultimo_error.lock().unwrap_or_else(|e| e.into_inner()) = resultado.err().map(|e| e.a_error_app());
-            sync.en_curso.store(false, Ordering::SeqCst);
         });
         Ok(())
+    }
+
+    /// Pide sincronizar ya (tras activar, al cobrar, o con el botón de la pantalla).
+    pub fn despertar(&self) {
+        if let Ok(guardia) = self.sync.despertador.lock() {
+            if let Some(emisor) = guardia.as_ref() {
+                let _ = emisor.send(());
+            }
+        }
     }
 }
 
@@ -101,6 +132,7 @@ pub struct EstadoEstacion {
     pub descarga_inicial_completa: bool,
     pub ultima_descarga_ok: Option<String>,
     pub conteos: ConteosLocales,
+    pub cola: ConteosCola,
     pub suscripcion: EstadoSuscripcion,
     pub sincronizando: bool,
     pub en_linea: bool,
@@ -128,6 +160,7 @@ pub fn estado_estacion(estado: State<'_, EstadoApp>) -> Resultado<EstadoEstacion
             productos: contar("productos")?,
         };
         let suscripcion = suscripcion::estado_actual(conn, fecha_negocio(ahora))?;
+        let cola = outbox::conteos(conn)?;
         Ok(conn.query_row(
             "SELECT activada_en IS NOT NULL, revocada_en IS NOT NULL, estacion_id, estacion_nombre, gimnasio_nombre, subdominio
              FROM estacion WHERE id = 1",
@@ -144,6 +177,7 @@ pub fn estado_estacion(estado: State<'_, EstadoApp>) -> Resultado<EstadoEstacion
                     descarga_inicial_completa: completa,
                     ultima_descarga_ok: ultima,
                     conteos,
+                    cola,
                     suscripcion,
                     sincronizando: sync.en_curso.load(Ordering::SeqCst),
                     en_linea: sync.en_linea.load(Ordering::SeqCst),
@@ -159,12 +193,17 @@ pub fn estado_estacion(estado: State<'_, EstadoApp>) -> Resultado<EstadoEstacion
 pub fn activar_estacion(estado: State<'_, EstadoApp>, subdominio: String, codigo: String) -> Resultado<()> {
     activacion::activar(estado.base()?, estado.transporte.as_ref(), estado.reloj.as_ref(), &subdominio, &codigo)?;
     estado.sync.en_linea.store(true, Ordering::SeqCst);
-    estado.descargar_en_segundo_plano()
+    estado.sync.en_curso.store(true, Ordering::SeqCst);
+    estado.despertar();
+    Ok(())
 }
 
 #[tauri::command]
 pub fn sincronizar_ahora(estado: State<'_, EstadoApp>) -> Resultado<()> {
-    estado.descargar_en_segundo_plano()
+    estado.base()?;
+    estado.sync.en_curso.store(true, Ordering::SeqCst);
+    estado.despertar();
+    Ok(())
 }
 
 #[tauri::command]

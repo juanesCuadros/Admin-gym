@@ -20,6 +20,14 @@ export interface ConteosLocales {
   productos: number;
 }
 
+export interface ConteosCola {
+  /** Pendientes de subir al servidor. */
+  por_enviar: number;
+  con_error: number;
+  por_revisar: number;
+  aplicadas: number;
+}
+
 export interface EstadoEstacion {
   activada: boolean;
   revocada: boolean;
@@ -32,6 +40,7 @@ export interface EstadoEstacion {
   /** Instante ISO-8601 en UTC. */
   ultima_descarga_ok: string | null;
   conteos: ConteosLocales;
+  cola: ConteosCola;
   suscripcion: EstadoSuscripcion;
   sincronizando: boolean;
   en_linea: boolean;

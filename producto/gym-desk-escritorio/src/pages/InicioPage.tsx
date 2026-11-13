@@ -3,6 +3,7 @@ import { Dumbbell, KeyRound, Lock, LogOut } from 'lucide-react';
 import { Button } from '@web/components/ui/Button';
 import { Input } from '@web/components/ui/Input';
 import { useToast } from '@web/contexts/ToastContext';
+import { IndicadorSync } from '../components/IndicadorSync';
 import { CampoPin, MensajeError } from '../components/Piezas';
 import { useSesion } from '../contexts/SesionContext';
 import { useEnvio } from '../hooks/useEnvio';
@@ -55,6 +56,7 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
           {estacion?.gimnasio_nombre ?? 'GymDesk'}
         </div>
         <div className="gd-barra-usuario">
+          {estacion && <IndicadorSync estacion={estacion} />}
           <span>
             <strong>{usuario.nombre}</strong> · {NOMBRE_ROL[usuario.rol]}
           </span>

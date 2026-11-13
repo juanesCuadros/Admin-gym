@@ -31,8 +31,8 @@ pub fn run() {
                 })
                 .and_then(|dir| db::preparar(&dir, &db::clave::ProtectorDpapi, reloj.ahora()));
             let estado = EstadoApp::nuevo(base, reloj, Arc::new(TransporteHttp::nuevo()));
-            // Al abrir, se pone al día con el servidor si la estación ya está activada.
-            let _ = estado.descargar_en_segundo_plano();
+            // Sincroniza desde que abre y mientras esté abierta.
+            let _ = estado.iniciar_motor();
             app.manage(estado);
             Ok(())
         })

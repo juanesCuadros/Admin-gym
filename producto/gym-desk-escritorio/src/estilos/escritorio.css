@@ -85,6 +85,10 @@ textarea {
 }
 
 .gd-pie {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   font-size: 0.78rem;
   color: var(--text-muted);
 }
@@ -282,4 +286,53 @@ textarea {
   background: var(--danger-light);
   color: var(--danger-hover);
   border-bottom: 1px solid var(--danger-border);
+}
+
+.gd-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+button.gd-sync {
+  cursor: pointer;
+}
+
+button.gd-sync:hover {
+  background: var(--bg-surface-hover);
+}
+
+.gd-sync-estado,
+.gd-sync-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+
+.gd-sync-ok {
+  color: var(--success);
+}
+
+.gd-sync-activo {
+  color: var(--info);
+}
+
+.gd-sync-sin-red {
+  color: var(--warning);
+}
+
+.gd-sync-error {
+  color: var(--danger);
+}
+
+.gd-sync-detalle {
+  font-variant-numeric: tabular-nums;
 }

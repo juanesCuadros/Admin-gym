@@ -10,9 +10,13 @@ pub mod transporte;
 pub mod activacion;
 pub mod descarga;
 pub mod ingreso;
+pub mod motor;
+pub mod outbox;
 
 #[cfg(test)]
 mod pruebas_descarga;
+#[cfg(test)]
+mod pruebas_envio;
 #[cfg(test)]
 pub mod pruebas_util;
 

@@ -9,6 +9,14 @@ use sha2::{Digest, Sha256};
 
 use crate::error::Resultado;
 use crate::reloj::a_texto;
+use crate::sync::outbox;
+
+/// Eventos de la estación que se suben a la auditoría del gimnasio (E-17). Deben coincidir con los
+/// que acepta el servidor en el tipo `auditoria_estacion`.
+pub const ACCIONES_QUE_SUBEN: &[&str] = &[
+    "CREAR_BASE_LOCAL", "ACTIVAR_ESTACION", "INICIAR_SESION", "INGRESO_FALLIDO", "BLOQUEAR_SESION",
+    "DESBLOQUEAR_SESION", "CERRAR_SESION", "CREAR_PIN", "CAMBIAR_PIN", "INVALIDAR_CREDENCIAL",
+];
 
 #[derive(Clone, Copy)]
 pub struct Actor<'a> {
@@ -83,12 +91,37 @@ pub fn registrar(
         .optional()?
         .unwrap_or_default();
     let hash = calcular_hash(&hash_previo, &ts, actor.id, actor.nombre, accion, entidad, entidad_id, &detalle);
-    conn.execute(
-        "INSERT INTO auditoria_local (ts_utc, actor_id, actor_nombre, accion, entidad, entidad_id, detalle, hash_previo, hash)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        params![ts, actor.id, actor.nombre, accion, entidad, entidad_id, detalle, hash_previo, hash],
-    )?;
-    Ok(())
+
+    // El registro local y su envío al servidor se guardan juntos o no se guarda ninguno.
+    // SAVEPOINT funciona igual dentro o fuera de una transacción ya abierta por quien llama.
+    conn.execute_batch("SAVEPOINT auditoria")?;
+    let guardar = || -> Resultado<()> {
+        conn.execute(
+            "INSERT INTO auditoria_local (ts_utc, actor_id, actor_nombre, accion, entidad, entidad_id, detalle, hash_previo, hash)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![ts, actor.id, actor.nombre, accion, entidad, entidad_id, detalle, hash_previo, hash],
+        )?;
+        if ACCIONES_QUE_SUBEN.contains(&accion) {
+            let payload = serde_json::json!({
+                "accion": accion,
+                "entidad": entidad,
+                "entidad_id": entidad_id,
+                "detalle": serde_json::from_str::<Value>(&detalle).unwrap_or(Value::Null),
+            });
+            outbox::encolar(conn, ahora, "auditoria_estacion", actor.id, &[], &payload)?;
+        }
+        Ok(())
+    };
+    match guardar() {
+        Ok(()) => {
+            conn.execute_batch("RELEASE auditoria")?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK TO auditoria; RELEASE auditoria");
+            Err(e)
+        }
+    }
 }
 
 /// Recorre la cadena. Devuelve el id de la primera fila que no cuadra, o `None` si está íntegra.

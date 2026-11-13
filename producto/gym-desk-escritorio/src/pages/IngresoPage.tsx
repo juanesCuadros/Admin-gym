@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Button } from '@web/components/ui/Button';
 import { Input } from '@web/components/ui/Input';
 import { sesionService } from '../api/sesion.service';
+import { IndicadorSync } from '../components/IndicadorSync';
 import { CampoPin, MensajeError, PantallaCentrada } from '../components/Piezas';
 import { useSesion } from '../contexts/SesionContext';
 import { useEnvio } from '../hooks/useEnvio';
@@ -59,7 +60,14 @@ export const IngresoPage: React.FC = () => {
     <PantallaCentrada
       titulo="Ingresa a la estación"
       subtitulo={estacion?.gimnasio_nombre ?? undefined}
-      pie={estacion ? `Versión ${estacion.version_app}` : undefined}
+      pie={
+        estacion && (
+          <>
+            <IndicadorSync estacion={estacion} />
+            <span>Versión {estacion.version_app}</span>
+          </>
+        )
+      }
     >
       {hayPin && (
         <div className="gd-pestanas" role="tablist">
