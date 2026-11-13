@@ -13,7 +13,7 @@ use crate::reloj::{fecha_negocio, Reloj};
 use crate::sesion::{self, Credencial, EstadoSesion, GestorSesion, PersonaConPin};
 use crate::sync::suscripcion::{self, EstadoSuscripcion};
 use crate::sync::transporte::Transporte;
-use crate::sync::{activacion, descarga};
+use crate::sync::{activacion, descarga, exigir_operable, ingreso};
 
 /// Lo que se sabe de la sincronización mientras la app está abierta.
 #[derive(Default)]
@@ -27,7 +27,7 @@ pub struct EstadoSync {
 pub struct EstadoApp {
     /// Si la base no abrió, se conserva el motivo para mostrarlo en pantalla.
     pub base: Resultado<Arc<Mutex<Connection>>>,
-    pub sesion: Mutex<GestorSesion>,
+    pub sesion: Arc<Mutex<GestorSesion>>,
     pub reloj: Arc<dyn Reloj>,
     pub transporte: Arc<dyn Transporte>,
     pub sync: Arc<EstadoSync>,
@@ -41,7 +41,7 @@ impl EstadoApp {
     pub fn nuevo(base: Resultado<Connection>, reloj: Arc<dyn Reloj>, transporte: Arc<dyn Transporte>) -> Self {
         Self {
             base: base.map(|c| Arc::new(Mutex::new(c))),
-            sesion: Mutex::new(GestorSesion::default()),
+            sesion: Arc::new(Mutex::new(GestorSesion::default())),
             reloj,
             transporte,
             sync: Arc::new(EstadoSync::default()),
@@ -65,38 +65,19 @@ impl EstadoApp {
         if self.sync.en_curso.swap(true, Ordering::SeqCst) {
             return Ok(());
         }
-        let (transporte, reloj, sync) = (self.transporte.clone(), self.reloj.clone(), self.sync.clone());
+        let (transporte, reloj, sync, sesion) = (self.transporte.clone(), self.reloj.clone(), self.sync.clone(), self.sesion.clone());
         std::thread::spawn(move || {
             let resultado = descarga::descargar(&base, transporte.as_ref(), reloj.as_ref());
+            // Si a quien tiene la sesión lo desactivaron o cambió su contraseña en la web, se le cierra.
+            if let (Ok(mut gestor), Ok(conn)) = (sesion.lock(), base.lock()) {
+                let _ = gestor.revalidar(&conn, reloj.ahora());
+            }
             sync.en_linea.store(!matches!(&resultado, Err(e) if e.es_sin_conexion()), Ordering::SeqCst);
             *sync.ultimo_error.lock().unwrap_or_else(|e| e.into_inner()) = resultado.err().map(|e| e.a_error_app());
             sync.en_curso.store(false, Ordering::SeqCst);
         });
         Ok(())
     }
-}
-
-/// Activada, sin revocar y con el servicio del gimnasio al día: condición para iniciar sesión.
-fn exigir_operable(conn: &Connection, ahora: DateTime<Utc>) -> Resultado<()> {
-    let (activada, revocada): (bool, bool) =
-        conn.query_row("SELECT activada_en IS NOT NULL, revocada_en IS NOT NULL FROM estacion WHERE id = 1", [], |f| {
-            Ok((f.get(0)?, f.get(1)?))
-        })?;
-    if !activada {
-        return Err(ErrorApp::nuevo("ESTACION_SIN_ACTIVAR", "Esta estación aún no está activada."));
-    }
-    if revocada {
-        return Err(ErrorApp::nuevo("ESTACION_REVOCADA", "El Jefe del gimnasio revocó esta estación."));
-    }
-    let s = suscripcion::estado_actual(conn, fecha_negocio(ahora))?;
-    if s.estado == "bloqueado" {
-        return Err(ErrorApp::con_detalles(
-            "GIMNASIO_SUSPENDIDO",
-            "El servicio del gimnasio no está disponible.",
-            serde_json::json!({ "motivo": s.motivo_bloqueo }),
-        ));
-    }
-    Ok(())
 }
 
 #[derive(Serialize)]
@@ -201,12 +182,10 @@ pub fn personal_con_pin(estado: State<'_, EstadoApp>) -> Resultado<Vec<PersonaCo
     estado.con_base(|conn, _, _| sesion::personal_con_pin(conn))
 }
 
-#[tauri::command]
+/// Puede salir a la red (primer ingreso de la persona en esta estación): por eso es `async`.
+#[tauri::command(async)]
 pub fn iniciar_sesion_password(estado: State<'_, EstadoApp>, correo: String, password: String) -> Resultado<EstadoSesion> {
-    estado.con_base(|conn, sesion, ahora| {
-        exigir_operable(conn, ahora)?;
-        sesion.iniciar_con_password(conn, ahora, &correo, &password)
-    })
+    ingreso::iniciar_con_password(estado.base()?, &estado.sesion, estado.transporte.as_ref(), estado.reloj.as_ref(), &correo, &password)
 }
 
 #[tauri::command]

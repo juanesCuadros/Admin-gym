@@ -168,6 +168,26 @@ fn verificar_credencial(
         }
     };
 
+    let accion = if valido { accion_exito } else { Some("INGRESO_FALLIDO") };
+    registrar_intento(conn, ahora, identificador, staff, valido, accion, json!({ "metodo": cred.metodo() }))?;
+
+    if valido {
+        Ok(())
+    } else {
+        Err(error_credenciales(cred))
+    }
+}
+
+/// Cuenta el intento y, si corresponde, lo deja en auditoría. Todo en una transacción.
+fn registrar_intento(
+    conn: &Connection,
+    ahora: DateTime<Utc>,
+    identificador: &str,
+    staff: Option<&FilaStaff>,
+    exito: bool,
+    accion: Option<&str>,
+    detalle: serde_json::Value,
+) -> Resultado<()> {
     let actor = match staff {
         Some(s) => Actor::persona(&s.id, &s.nombre),
         None => Actor::sistema(),
@@ -175,27 +195,30 @@ fn verificar_credencial(
     let tx = conn.unchecked_transaction()?;
     tx.execute(
         "INSERT INTO intentos_ingreso (identificador, exito, ts_utc) VALUES (?1, ?2, ?3)",
-        params![identificador, valido as i64, a_texto(ahora)],
+        params![identificador, exito as i64, a_texto(ahora)],
     )?;
-    let accion = if valido { accion_exito } else { Some("INGRESO_FALLIDO") };
     if let Some(accion) = accion {
-        auditoria::registrar(
-            &tx,
-            ahora,
-            actor,
-            accion,
-            "staff_local",
-            staff.map(|s| s.id.as_str()),
-            &json!({ "metodo": cred.metodo() }),
-        )?;
+        auditoria::registrar(&tx, ahora, actor, accion, "staff_local", staff.map(|s| s.id.as_str()), &detalle)?;
     }
     tx.commit()?;
+    Ok(())
+}
 
-    if valido {
-        Ok(())
-    } else {
-        Err(error_credenciales(cred))
-    }
+/// Resultado de intentar el ingreso solo con lo que hay en la estación.
+#[derive(Debug, PartialEq)]
+pub enum IntentoLocal {
+    Abierta(EstadoSesion),
+    /// La estación no puede confirmar la contraseña por sí sola: hay que preguntarle al servidor.
+    NecesitaServidor { correo: String, tenia_verificador: bool },
+}
+
+/// Lo que el servidor confirma de la persona en su primer ingreso (`POST /sync/sesion-staff`).
+pub struct StaffConfirmado<'a> {
+    pub id: &'a str,
+    pub nombre: &'a str,
+    pub correo: &'a str,
+    pub rol: &'a str,
+    pub password_cambiada_en: Option<&'a str>,
 }
 
 impl GestorSesion {
@@ -297,6 +320,97 @@ impl GestorSesion {
         let cred = Credencial::Password(password);
         verificar_credencial(conn, ahora, &correo, staff.as_ref(), &cred, Some("INICIAR_SESION"))?;
         Ok(self.abrir(staff.as_ref().expect("credencial válida implica staff"), ahora))
+    }
+
+    /// Primer paso del ingreso con contraseña: solo con la base local, sin contar fallos todavía.
+    /// Si la persona ya tiene verificador en esta estación y la contraseña coincide, entra sin red.
+    pub fn intento_local(
+        &mut self,
+        conn: &Connection,
+        ahora: DateTime<Utc>,
+        correo: &str,
+        password: &str,
+    ) -> Resultado<IntentoLocal> {
+        self.exigir_sin_sesion()?;
+        let correo = correo.trim().to_lowercase();
+        if correo.is_empty() || password.is_empty() {
+            return Err(ErrorApp::nuevo("DATOS_INCOMPLETOS", "Escribe tu correo y tu contraseña."));
+        }
+        if esta_bloqueado(conn, &correo, ahora)? {
+            return Err(error_bloqueo());
+        }
+        let staff = buscar_staff(conn, "correo", &correo)?;
+        let tenia_verificador = staff.as_ref().is_some_and(|s| s.hash_password.is_some());
+        if let Some(s) = staff.as_ref().filter(|s| s.activo) {
+            if s.hash_password.as_deref().is_some_and(|h| credenciales::verificar(password, h)) {
+                registrar_intento(conn, ahora, &correo, Some(s), true, Some("INICIAR_SESION"), json!({ "metodo": "contrasena" }))?;
+                return Ok(IntentoLocal::Abierta(self.abrir(s, ahora)));
+            }
+        }
+        Ok(IntentoLocal::NecesitaServidor { correo, tenia_verificador })
+    }
+
+    /// La contraseña no sirvió (ni en la estación ni en el servidor): cuenta el fallo.
+    pub fn registrar_fallo_password(&mut self, conn: &Connection, ahora: DateTime<Utc>, correo: &str) -> Resultado<ErrorApp> {
+        let staff = buscar_staff(conn, "correo", correo)?;
+        registrar_intento(conn, ahora, correo, staff.as_ref(), false, Some("INGRESO_FALLIDO"), json!({ "metodo": "contrasena" }))?;
+        Ok(error_credenciales(&Credencial::Password("")))
+    }
+
+    /// El servidor confirmó la contraseña: la estación guarda su propio verificador (nunca el del
+    /// servidor) y abre la sesión. Desde aquí esa persona puede entrar sin red.
+    pub fn confirmar_con_servidor(
+        &mut self,
+        conn: &Connection,
+        ahora: DateTime<Utc>,
+        confirmado: &StaffConfirmado<'_>,
+        password: &str,
+    ) -> Resultado<EstadoSesion> {
+        self.exigir_sin_sesion()?;
+        let hash = credenciales::generar_hash(password)?;
+        let correo = confirmado.correo.trim().to_lowercase();
+        let tx = conn.unchecked_transaction()?;
+        tx.execute(
+            "INSERT INTO staff_local (id, nombre, correo, rol, activo, eliminado, hash_password, password_cambiada_en, credencial_marca, actualizado_en)
+             VALUES (?1, ?2, ?3, ?4, 1, 0, ?5, ?6, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, correo = excluded.correo, rol = excluded.rol,
+               activo = 1, eliminado = 0, hash_password = excluded.hash_password,
+               password_cambiada_en = excluded.password_cambiada_en, credencial_marca = excluded.credencial_marca,
+               actualizado_en = excluded.actualizado_en",
+            params![confirmado.id, confirmado.nombre, correo, confirmado.rol, hash, confirmado.password_cambiada_en, a_texto(ahora)],
+        )?;
+        tx.commit()?;
+        let staff = buscar_staff(conn, "id", confirmado.id)?.expect("recién guardado");
+        registrar_intento(
+            conn,
+            ahora,
+            &correo,
+            Some(&staff),
+            true,
+            Some("INICIAR_SESION"),
+            json!({ "metodo": "contrasena", "validado_en": "servidor" }),
+        )?;
+        Ok(self.abrir(&staff, ahora))
+    }
+
+    /// Cierra la sesión si a quien la tiene lo desactivaron o le cambiaron la contraseña en la web.
+    pub fn revalidar(&mut self, conn: &Connection, ahora: DateTime<Utc>) -> Resultado<()> {
+        let Some(id) = self.activa.as_ref().map(|s| s.usuario.id.clone()) else { return Ok(()) };
+        let vigente = buscar_staff(conn, "id", &id)?.is_some_and(|s| s.activo && s.hash_password.is_some());
+        if !vigente {
+            if let Some(s) = self.activa.take() {
+                auditoria::registrar(
+                    conn,
+                    ahora,
+                    Actor::persona(&s.usuario.id, &s.usuario.nombre),
+                    "CERRAR_SESION",
+                    "staff_local",
+                    Some(&s.usuario.id),
+                    &json!({ "motivo": "credencial_invalidada" }),
+                )?;
+            }
+        }
+        Ok(())
     }
 
     pub fn iniciar_con_pin(
