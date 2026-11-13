@@ -6,6 +6,10 @@ import { useInactividad } from '../hooks/useInactividad';
 import type { EstadoEstacion } from '../types/estacion.types';
 import type { EstadoSesion } from '../types/sesion.types';
 
+/** Mientras descarga se consulta seguido para mostrar el avance; después, cada tanto. */
+const CONSULTA_RAPIDA_MS = 1_500;
+const CONSULTA_NORMAL_MS = 15_000;
+
 interface SesionContextType {
   cargando: boolean;
   /** La base local no abrió o no respondió: la app no puede operar. */
@@ -13,6 +17,8 @@ interface SesionContextType {
   estacion: EstadoEstacion | null;
   sesion: EstadoSesion | null;
   recargar: () => Promise<void>;
+  activar: (subdominio: string, codigo: string) => Promise<void>;
+  sincronizarAhora: () => Promise<void>;
   iniciarConPassword: (correo: string, password: string) => Promise<void>;
   iniciarConPin: (staffId: string, pin: string) => Promise<void>;
   desbloquearConPin: (pin: string) => Promise<void>;
@@ -48,6 +54,27 @@ export const SesionProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     void recargar();
   }, [recargar]);
 
+  // El estado de la estación cambia solo (descarga, suscripción, revocación): se vuelve a leer.
+  const activada = estacion?.activada ?? false;
+  const descargando = activada && (!estacion?.descarga_inicial_completa || (estacion?.sincronizando ?? false));
+  useEffect(() => {
+    if (!activada) return;
+    let vigente = true;
+    const reloj = window.setInterval(
+      () => {
+        estacionService
+          .estado()
+          .then((est) => vigente && setEstacion(est))
+          .catch(() => undefined);
+      },
+      descargando ? CONSULTA_RAPIDA_MS : CONSULTA_NORMAL_MS,
+    );
+    return () => {
+      vigente = false;
+      window.clearInterval(reloj);
+    };
+  }, [activada, descargando]);
+
   useInactividad({
     activo: sesion?.estado === 'activa',
     avisarActividad: sesionService.registrarActividad,
@@ -57,12 +84,15 @@ export const SesionProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const valor = useMemo<SesionContextType>(() => {
     const aplicar = (accion: Promise<EstadoSesion>) => accion.then(setSesion);
+    const releerEstacion = () => estacionService.estado().then(setEstacion);
     return {
       cargando,
       errorArranque,
       estacion,
       sesion,
       recargar,
+      activar: (subdominio, codigo) => estacionService.activar(subdominio, codigo).then(releerEstacion),
+      sincronizarAhora: () => estacionService.sincronizarAhora().then(releerEstacion),
       iniciarConPassword: (correo, password) => aplicar(sesionService.iniciarConPassword(correo, password)),
       iniciarConPin: (staffId, pin) => aplicar(sesionService.iniciarConPin(staffId, pin)),
       desbloquearConPin: (pin) => aplicar(sesionService.desbloquearConPin(pin)),

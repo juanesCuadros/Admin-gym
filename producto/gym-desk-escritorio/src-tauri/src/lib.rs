@@ -8,16 +8,19 @@ pub mod reloj;
 pub mod sesion;
 pub mod sync;
 
+use std::sync::Arc;
+
 use tauri::Manager;
 
 use comandos::EstadoApp;
 use reloj::{Reloj, RelojSistema};
+use sync::transporte::TransporteHttp;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let reloj = RelojSistema;
+            let reloj: Arc<dyn Reloj> = Arc::new(RelojSistema);
             // Si la carpeta o la base fallan, la app abre igual y muestra el motivo.
             let base = app
                 .path()
@@ -27,11 +30,16 @@ pub fn run() {
                     error::ErrorApp::nuevo("ERROR_ARCHIVOS", "No se encontró la carpeta de datos de GymDesk en este equipo.")
                 })
                 .and_then(|dir| db::preparar(&dir, &db::clave::ProtectorDpapi, reloj.ahora()));
-            app.manage(EstadoApp::nuevo(base, Box::new(reloj)));
+            let estado = EstadoApp::nuevo(base, reloj, Arc::new(TransporteHttp::nuevo()));
+            // Al abrir, se pone al día con el servidor si la estación ya está activada.
+            let _ = estado.descargar_en_segundo_plano();
+            app.manage(estado);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             comandos::estado_estacion,
+            comandos::activar_estacion,
+            comandos::sincronizar_ahora,
             comandos::estado_sesion,
             comandos::registrar_actividad,
             comandos::personal_con_pin,

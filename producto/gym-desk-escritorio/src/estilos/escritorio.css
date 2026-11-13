@@ -11,6 +11,11 @@ body,
   height: 100%;
 }
 
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
 body {
   /* Es una app de escritorio: no se selecciona texto al arrastrar ni rebota el scroll. */
   user-select: none;
@@ -23,7 +28,7 @@ textarea {
 }
 
 .gd-centro {
-  min-height: 100%;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -179,7 +184,7 @@ textarea {
 }
 
 .gd-app {
-  min-height: 100%;
+  flex: 1;
   display: flex;
   flex-direction: column;
   background: var(--bg-app);
@@ -206,4 +211,75 @@ textarea {
 .gd-contenido {
   flex: 1;
   padding: 28px 24px;
+}
+
+.gd-codigo {
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.gd-conteos {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 16px;
+}
+
+.gd-conteos > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.9rem;
+}
+
+.gd-conteos dt {
+  color: var(--text-secondary);
+}
+
+.gd-conteos dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.gd-barra-progreso {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--primary-light) 0%, var(--primary) 50%, var(--primary-light) 100%);
+  background-size: 200% 100%;
+  animation: gd-progreso 1.4s linear infinite;
+}
+
+@keyframes gd-progreso {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+.gd-franja {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.gd-franja-aviso {
+  background: var(--warning-light);
+  color: var(--warning);
+  border-bottom: 1px solid var(--warning-border);
+}
+
+.gd-franja-urgente {
+  background: var(--danger-light);
+  color: var(--danger-hover);
+  border-bottom: 1px solid var(--danger-border);
 }

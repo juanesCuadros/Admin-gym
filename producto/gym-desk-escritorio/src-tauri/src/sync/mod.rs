@@ -6,3 +6,11 @@
 
 pub mod suscripcion;
 pub mod transporte;
+
+pub mod activacion;
+pub mod descarga;
+
+#[cfg(test)]
+mod pruebas_descarga;
+#[cfg(test)]
+pub mod pruebas_util;
