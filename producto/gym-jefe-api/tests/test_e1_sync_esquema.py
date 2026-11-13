@@ -132,3 +132,41 @@ async def test_insertar_con_los_disparadores_apagados_igual_deja_marca(fabrica: 
         )
     fila = (await _sql(gym.id, "SELECT sync_xid FROM platform.planes WHERE id = :id", {"id": plan_id}))[0]
     assert fila["sync_xid"] is not None and fila["sync_xid"] > 0
+
+
+# --- Migración 071 ---
+async def test_congelamientos_y_ventas_llevan_marca_y_avisan_su_borrado(fabrica: Fabrica):
+    from tests import sync_util as u
+
+    gym = await fabrica.crear_gimnasio()
+    staff = await fabrica.crear_staff(gym)
+    dep = await u.deportista(gym.id)
+    mem = await u.membresia(gym.id, dep, await u.plan(gym.id), vence_en_dias=10)
+    cong = await u.congelamiento(gym.id, mem)
+    venta = await u.venta(gym.id, staff["id"], dep)
+
+    antes = (await _sql(gym.id, "SELECT sync_xid FROM platform.ventas WHERE id = :id", {"id": venta}))[0]["sync_xid"]
+    await _sql(gym.id, "UPDATE platform.ventas SET anulada = true, motivo_anulacion = 'Error', anulada_en = now() WHERE id = :id", {"id": venta})
+    despues = (await _sql(gym.id, "SELECT sync_xid FROM platform.ventas WHERE id = :id", {"id": venta}))[0]["sync_xid"]
+    assert despues > antes
+
+    await _sql(gym.id, "DELETE FROM platform.congelamientos WHERE id = :id", {"id": cong})
+    filas = await _sql(gym.id, "SELECT tabla, registro_id::text AS id FROM platform.sync_eliminados")
+    assert [(f["tabla"], f["id"]) for f in filas] == [("congelamientos", cong)]
+
+
+async def test_un_ingreso_de_estacion_no_entra_dos_veces_y_el_de_la_web_sigue_igual(fabrica: Fabrica):
+    from tests import sync_util as u
+
+    gym = await fabrica.crear_gimnasio()
+    dep = await u.deportista(gym.id)
+    operacion = uuid4()
+    insertar = """INSERT INTO platform.checkins (gimnasio_id, deportista_id, tipo, metodo, resultado, operacion_id)
+                  VALUES (:g, :d, 'ingreso', 'manual', 'abrio', :op)"""
+    await _sql(gym.id, insertar, {"g": gym.id, "d": dep, "op": operacion})
+    with pytest.raises(DBAPIError):
+        await _sql(gym.id, insertar, {"g": gym.id, "d": dep, "op": operacion})
+    # Desde la web no hay operación: se pueden registrar varios.
+    await _sql(gym.id, insertar, {"g": gym.id, "d": dep, "op": None})
+    await _sql(gym.id, insertar, {"g": gym.id, "d": dep, "op": None})
+    assert len(await _sql(gym.id, "SELECT 1 FROM platform.checkins")) == 3
