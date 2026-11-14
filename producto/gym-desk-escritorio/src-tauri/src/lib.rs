@@ -52,6 +52,10 @@ pub fn run() {
             comandos::bloquear_sesion,
             comandos::cerrar_sesion,
             comandos::definir_pin,
+            comandos::buscar_clientes,
+            comandos::registrar_ingreso,
+            comandos::registrar_cortesia,
+            comandos::ingresos_de_hoy,
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo iniciar GymDesk");

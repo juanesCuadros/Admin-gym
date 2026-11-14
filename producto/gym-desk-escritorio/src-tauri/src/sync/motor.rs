@@ -32,7 +32,11 @@ pub fn enviar_pendientes(base: &Mutex<Connection>, transporte: &dyn Transporte, 
         if lote.is_empty() {
             return Ok(total);
         }
-        let cuerpo = json!({ "operaciones": lote.iter().map(|o| o.cuerpo.clone()).collect::<Vec<_>>() });
+        // Con el reloj del equipo al enviar, el servidor mide el desfase y corrige la hora de los ingresos.
+        let cuerpo = json!({
+            "operaciones": lote.iter().map(|o| o.cuerpo.clone()).collect::<Vec<_>>(),
+            "estacion_ahora": a_texto(reloj.ahora()),
+        });
         let respuesta = transporte.enviar(
             &cred.api_base,
             Peticion { metodo: Metodo::Post, ruta: "/sync/push", token: Some(&cred.token), consulta: vec![], cuerpo: Some(&cuerpo) },

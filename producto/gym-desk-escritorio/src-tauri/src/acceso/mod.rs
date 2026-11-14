@@ -2,3 +2,7 @@
 //! cada intento en la cola para que suba al servidor.
 
 pub mod regla;
+pub mod registro;
+
+#[cfg(test)]
+mod pruebas_registro;

@@ -8,6 +8,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 use tauri::State;
 
+use crate::acceso::registro::{self, ClienteEvaluado, Objetivo, ResultadoIngreso, ResumenIngresos};
 use crate::error::{ErrorApp, Resultado};
 use crate::reloj::{fecha_negocio, Reloj};
 use crate::sesion::{self, Credencial, EstadoSesion, GestorSesion, PersonaConPin};
@@ -291,4 +292,56 @@ pub fn reintentar_operacion(estado: State<'_, EstadoApp>, id: String) -> Resulta
     })?;
     estado.despertar();
     Ok(())
+}
+
+// --- Control de ingreso (fase 2) ---
+
+/// Busca clientes por nombre o documento en la base local. Cada uno trae ya su estado de acceso.
+#[tauri::command]
+pub fn buscar_clientes(estado: State<'_, EstadoApp>, texto: String) -> Resultado<Vec<ClienteEvaluado>> {
+    estado.con_base(|conn, sesion, ahora| {
+        sesion.exigir_activa(conn, ahora)?;
+        exigir_operable(conn, ahora)?;
+        registro::buscar(conn, &texto, fecha_negocio(ahora))
+    })
+}
+
+/// Registra un intento de ingreso con los datos locales, con red o sin ella, y lo deja en la cola.
+/// Recibe el id del cliente (elegido de la búsqueda) o su documento (escrito o leído por el lector).
+#[tauri::command]
+pub fn registrar_ingreso(estado: State<'_, EstadoApp>, deportista_id: Option<String>, documento: Option<String>) -> Resultado<ResultadoIngreso> {
+    let resultado = estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        exigir_operable(conn, ahora)?;
+        let objetivo = match (deportista_id.as_deref(), documento.as_deref()) {
+            (Some(id), _) => Objetivo::Id(id),
+            (None, Some(doc)) if !doc.trim().is_empty() => Objetivo::Documento(doc),
+            _ => return Err(ErrorApp::nuevo("DATOS_INCOMPLETOS", "Escribe el documento del cliente o búscalo por su nombre.")),
+        };
+        registro::registrar_ingreso(conn, ahora, &usuario, objetivo, "manual")
+    })?;
+    if !resultado.relectura_ignorada {
+        estado.despertar();
+    }
+    Ok(resultado)
+}
+
+#[tauri::command]
+pub fn registrar_cortesia(estado: State<'_, EstadoApp>, motivo: String) -> Resultado<ResultadoIngreso> {
+    let resultado = estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        exigir_operable(conn, ahora)?;
+        registro::registrar_cortesia(conn, ahora, &usuario, &motivo)
+    })?;
+    estado.despertar();
+    Ok(resultado)
+}
+
+/// Lo que esta estación registró hoy, con sus conteos.
+#[tauri::command]
+pub fn ingresos_de_hoy(estado: State<'_, EstadoApp>) -> Resultado<ResumenIngresos> {
+    estado.con_base(|conn, sesion, ahora| {
+        sesion.exigir_activa(conn, ahora)?;
+        registro::ingresos_del_dia(conn, ahora)
+    })
 }
