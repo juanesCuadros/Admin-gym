@@ -48,6 +48,13 @@ fn booleano(v: &Value, campo: &str) -> i64 {
     v[campo].as_bool().unwrap_or(false) as i64
 }
 
+/// Instante del servidor reescrito en el formato local (UTC con milisegundos), para que ordene
+/// igual como texto que como fecha.
+fn instante_normalizado(v: &Value, campo: &str) -> Option<String> {
+    let t = v[campo].as_str()?;
+    DateTime::parse_from_rfc3339(t).ok().map(|d| a_texto(d.with_timezone(&Utc)))
+}
+
 fn respuesta_invalida(que: &str) -> ErrorApp {
     eprintln!("[descarga] respuesta inesperada del servidor: falta {que}");
     ErrorApp::nuevo("RESPUESTA_INVALIDA", "El servidor respondió algo que esta versión de GymDesk no entiende. Actualiza la aplicación.")
@@ -78,7 +85,7 @@ pub fn aplicar_pagina(conn: &Connection, ahora: DateTime<Utc>, r: &Value) -> Res
         // Las marcas del servidor cambiaron: lo que llega es la verdad completa.
         tx.execute_batch(
             "DELETE FROM gimnasio; DELETE FROM permisos_rol; DELETE FROM planes; DELETE FROM productos;
-             DELETE FROM deportistas; DELETE FROM membresias;
+             DELETE FROM deportistas; DELETE FROM membresias; DELETE FROM congelamientos; DELETE FROM pases_dia;
              UPDATE staff_local SET activo = 0, eliminado = 1;
              UPDATE sync_estado SET descarga_inicial_completa = 0 WHERE id = 1;",
         )?;
@@ -159,14 +166,33 @@ pub fn aplicar_pagina(conn: &Connection, ahora: DateTime<Utc>, r: &Value) -> Res
     }
     for m in filas(r, "membresias") {
         tx.execute(
-            "INSERT OR REPLACE INTO membresias (id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR REPLACE INTO membresias (id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 obligatorio(m, "id")?, obligatorio(m, "deportista_id")?, obligatorio(m, "plan_id")?,
                 obligatorio(m, "fecha_inicio")?, obligatorio(m, "fecha_vencimiento")?, booleano(m, "cancelada"),
+                instante_normalizado(m, "created_at"),
             ],
         )?;
         total += 1;
     }
+    for c in filas(r, "congelamientos") {
+        tx.execute(
+            "INSERT OR REPLACE INTO congelamientos (id, membresia_id, fecha_inicio, fecha_fin) VALUES (?1, ?2, ?3, ?4)",
+            params![obligatorio(c, "id")?, obligatorio(c, "membresia_id")?, obligatorio(c, "fecha_inicio")?, texto(c, "fecha_fin")],
+        )?;
+        total += 1;
+    }
+    for p in filas(r, "pases_dia") {
+        let creado = instante_normalizado(p, "created_at").ok_or_else(|| respuesta_invalida("pases_dia.created_at"))?;
+        tx.execute(
+            "INSERT OR REPLACE INTO pases_dia (id, deportista_id, created_at, anulada) VALUES (?1, ?2, ?3, ?4)",
+            params![obligatorio(p, "id")?, obligatorio(p, "deportista_id")?, creado, booleano(p, "anulada")],
+        )?;
+        total += 1;
+    }
+    // Un pase de día solo sirve el día en que se pagó: los viejos ya no hacen falta.
+    tx.execute("DELETE FROM pases_dia WHERE created_at < ?1", [a_texto(ahora - chrono::Duration::days(3))])?;
 
     for e in r["eliminados"].as_array().into_iter().flatten() {
         let id = obligatorio(e, "id")?;
@@ -176,6 +202,8 @@ pub fn aplicar_pagina(conn: &Connection, ahora: DateTime<Utc>, r: &Value) -> Res
             Some("productos") => tx.execute("DELETE FROM productos WHERE id = ?1", [&id])?,
             Some("deportistas") => tx.execute("DELETE FROM deportistas WHERE id = ?1", [&id])?,
             Some("membresias") => tx.execute("DELETE FROM membresias WHERE id = ?1", [&id])?,
+            Some("congelamientos") => tx.execute("DELETE FROM congelamientos WHERE id = ?1", [&id])?,
+            Some("ventas") => tx.execute("DELETE FROM pases_dia WHERE id = ?1", [&id])?,
             Some("permisos_rol") => tx.execute("DELETE FROM permisos_rol WHERE id = ?1", [&id])?,
             Some("staff") => tx.execute("UPDATE staff_local SET activo = 0, eliminado = 1 WHERE id = ?1", [&id])?,
             _ => 0,

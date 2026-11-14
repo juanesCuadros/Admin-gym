@@ -1,5 +1,6 @@
 //! GymDesk Escritorio: estación de recepción que funciona sin internet.
 
+pub mod acceso;
 pub mod auditoria;
 pub mod comandos;
 pub mod db;

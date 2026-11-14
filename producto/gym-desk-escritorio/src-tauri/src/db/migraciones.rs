@@ -9,6 +9,7 @@ use crate::error::Resultado;
 const MIGRACIONES: &[(u32, &str, &str)] = &[
     (1, "base", include_str!("migraciones/0001_base.sql")),
     (2, "sync", include_str!("migraciones/0002_sync.sql")),
+    (3, "ingreso", include_str!("migraciones/0003_ingreso.sql")),
 ];
 
 pub fn aplicar(conn: &mut Connection, ahora: &str) -> Resultado<u32> {

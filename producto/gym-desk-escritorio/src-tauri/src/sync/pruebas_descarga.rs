@@ -250,3 +250,58 @@ fn sin_activar_no_sale_a_la_red() {
     assert_eq!(descargar(&Mutex::new(conn), &t, &reloj()).unwrap(), ResultadoDescarga::SinActivar);
     assert!(t.rutas().is_empty());
 }
+
+// --- Fase 2: lo que la regla de acceso necesita ---
+
+#[test]
+fn llegan_congelamientos_y_pases_de_dia_y_las_fechas_quedan_en_el_formato_local() {
+    let (_dir, conn) = base_temporal();
+    let mut p = pagina_completa();
+    p["cambios"]["membresias"][0]["created_at"] = json!("2026-11-01T13:00:00.123456+00:00");
+    p["cambios"]["congelamientos"] = json!([{ "id": "c1", "membresia_id": "m1", "fecha_inicio": "2026-11-10", "fecha_fin": null }]);
+    p["cambios"]["pases_dia"] = json!([
+        { "id": "v1", "deportista_id": "d1", "created_at": "2026-11-12T14:00:00+00:00", "anulada": false },
+        { "id": "v-viejo", "deportista_id": "d1", "created_at": "2026-11-01T14:00:00+00:00", "anulada": false }
+    ]);
+    aplicar_pagina(&conn, reloj().ahora(), &p).unwrap();
+
+    let creada: String = conn.query_row("SELECT created_at FROM membresias WHERE id = 'm1'", [], |f| f.get(0)).unwrap();
+    assert_eq!(creada, "2026-11-01T13:00:00.123Z");
+    let (membresia, fin): (String, Option<String>) =
+        conn.query_row("SELECT membresia_id, fecha_fin FROM congelamientos WHERE id = 'c1'", [], |f| Ok((f.get(0)?, f.get(1)?))).unwrap();
+    assert_eq!((membresia.as_str(), fin), ("m1", None));
+    // El pase de hace días ya no sirve para nada: no se guarda.
+    let pases: Vec<String> = {
+        let mut s = conn.prepare("SELECT id || '|' || created_at || '|' || anulada FROM pases_dia").unwrap();
+        let filas = s.query_map([], |f| f.get(0)).unwrap();
+        filas.collect::<Result<_, _>>().unwrap()
+    };
+    assert_eq!(pases, vec!["v1|2026-11-12T14:00:00.000Z|0"]);
+}
+
+#[test]
+fn un_pase_anulado_y_un_congelamiento_borrado_se_reflejan_en_la_estacion() {
+    let (_dir, conn) = base_temporal();
+    let mut p = pagina_completa();
+    p["cambios"]["congelamientos"] = json!([{ "id": "c1", "membresia_id": "m1", "fecha_inicio": "2026-11-10", "fecha_fin": null }]);
+    p["cambios"]["pases_dia"] = json!([{ "id": "v1", "deportista_id": "d1", "created_at": "2026-11-12T14:00:00+00:00", "anulada": false }]);
+    aplicar_pagina(&conn, reloj().ahora(), &p).unwrap();
+
+    let mut cambio = pagina("cursor-2", false, json!({
+        "pases_dia": [{ "id": "v1", "deportista_id": "d1", "created_at": "2026-11-12T14:00:00+00:00", "anulada": true }]
+    }));
+    cambio["eliminados"] = json!([{ "tabla": "congelamientos", "id": "c1" }]);
+    aplicar_pagina(&conn, reloj().ahora(), &cambio).unwrap();
+
+    assert_eq!(contar(&conn, "congelamientos"), 0);
+    assert_eq!(contar(&conn, "pases_dia WHERE anulada = 1"), 1);
+}
+
+#[test]
+fn al_actualizar_a_esta_version_la_estacion_vuelve_a_descargar_todo() {
+    // La migración local 0003 borra el cursor: la versión anterior no traía congelamientos ni pases.
+    let (_dir, conn) = base_temporal();
+    let cursor: Option<String> = conn.query_row("SELECT cursor FROM sync_estado WHERE id = 1", [], |f| f.get(0)).unwrap();
+    assert_eq!(cursor, None);
+    assert_eq!(contar(&conn, "_migraciones"), 3);
+}
