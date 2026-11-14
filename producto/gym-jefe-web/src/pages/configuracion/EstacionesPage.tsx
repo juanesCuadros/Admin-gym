@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Copy, KeyRound, MonitorSmartphone, Plus, ShieldOff } from 'lucide-react';
 import { estacionesService } from '../../api/estaciones.service';
+import { revisionesService } from '../../api/revisiones.service';
 import { toApiError } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { useTenantTheme } from '../../contexts/TenantThemeContext';
@@ -13,6 +14,7 @@ import { ConfirmarConMotivo } from '../../components/ui/ConfirmarConMotivo';
 import { Cargando, ErrorCarga, MensajeFijo, VacioInicial } from '../../components/estados/Estados';
 import { formatFechaHora } from '../../utils/formato';
 import type { Estacion, EstacionConCodigo, EstadoEstacion } from '../../types/estaciones.types';
+import { RevisionesEstacionesPanel } from './RevisionesEstacionesPanel';
 
 const ESTADO: Record<EstadoEstacion, { texto: string; variante: 'success' | 'info' | 'warning' | 'neutral' }> = {
   activa: { texto: 'Activa', variante: 'success' },
@@ -29,6 +31,9 @@ export const EstacionesPage: React.FC = () => {
   const { showToast } = useToast();
   const { tenant } = useTenantTheme();
 
+  const [pestana, setPestana] = useState<'equipos' | 'revisar'>('equipos');
+  // Cuántas revisiones hay pendientes, para avisarlo en la pestaña sin tener que abrirla.
+  const [pendientes, setPendientes] = useState<number | null>(null);
   const [estaciones, setEstaciones] = useState<Estacion[] | null>(null);
   const [errorCarga, setErrorCarga] = useState<unknown>(null);
 
@@ -59,6 +64,13 @@ export const EstacionesPage: React.FC = () => {
   useEffect(() => {
     void cargar();
   }, [cargar]);
+
+  useEffect(() => {
+    revisionesService
+      .listar('pendiente_revision', 1, 0)
+      .then((r) => setPendientes(r.pendientes))
+      .catch(() => setPendientes(null)); // el error se muestra al abrir la pestaña
+  }, []);
 
   const abrirCrear = () => {
     setNombre('');
@@ -141,13 +153,25 @@ export const EstacionesPage: React.FC = () => {
           <h1 className="page-title">Estaciones</h1>
           <p className="page-subtitle">Computadores de recepción con GymDesk Escritorio, que siguen funcionando sin internet</p>
         </div>
-        {estaciones && estaciones.length > 0 && (
+        {pestana === 'equipos' && estaciones && estaciones.length > 0 && (
           <Button leftIcon={<Plus size={16} />} onClick={abrirCrear}>
             Nueva estación
           </Button>
         )}
       </div>
 
+      <div className="tabs-nav">
+        <button className={`tab-btn ${pestana === 'equipos' ? 'active' : ''}`} onClick={() => setPestana('equipos')}>
+          Equipos
+        </button>
+        <button className={`tab-btn ${pestana === 'revisar' ? 'active' : ''}`} onClick={() => setPestana('revisar')}>
+          Por revisar{pendientes ? ` (${pendientes})` : ''}
+        </button>
+      </div>
+
+      {pestana === 'revisar' && <RevisionesEstacionesPanel onPendientes={setPendientes} />}
+
+      <div style={{ display: pestana === 'equipos' ? undefined : 'none' }}>
       {errorAccion && (
         <MensajeFijo tono="error" style={{ marginBottom: 16 }}>
           {errorAccion}
@@ -240,6 +264,7 @@ export const EstacionesPage: React.FC = () => {
           </div>
         </Card>
       )}
+      </div>
 
       <Modal isOpen={creando} onClose={() => !enviando && setCreando(false)} title="Nueva estación" maxWidth="440px">
         <form onSubmit={crear} noValidate>
