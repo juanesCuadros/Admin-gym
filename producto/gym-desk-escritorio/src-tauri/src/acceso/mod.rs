@@ -6,3 +6,5 @@ pub mod registro;
 
 #[cfg(test)]
 mod pruebas_registro;
+#[cfg(test)]
+mod prueba_comparativa;
