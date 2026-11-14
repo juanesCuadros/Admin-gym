@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Dumbbell, KeyRound, Lock, LogOut } from 'lucide-react';
+import { ArrowLeft, Dumbbell, KeyRound, Lock, LogOut } from 'lucide-react';
 import { Button } from '@web/components/ui/Button';
 import { Input } from '@web/components/ui/Input';
 import { useToast } from '@web/contexts/ToastContext';
 import { IndicadorSync } from '../components/IndicadorSync';
 import { CampoPin, MensajeError } from '../components/Piezas';
 import { useSesion } from '../contexts/SesionContext';
+import { ControlIngresoPanel } from './ControlIngresoPanel';
 import { PendientesPanel } from './PendientesPanel';
 import { useEnvio } from '../hooks/useEnvio';
 import type { UsuarioSesion } from '../types/sesion.types';
@@ -17,8 +18,8 @@ const NOMBRE_ROL: Record<UsuarioSesion['rol'], string> = {
 };
 
 /**
- * Sesión abierta. En esta fase solo existe lo propio de la sesión: bloquear,
- * cerrar y definir el PIN. Ingreso y caja llegan en las fases 2 y 3.
+ * Sesión abierta. La pantalla principal es el control de ingreso; desde la barra se abren los
+ * pendientes de sincronizar y el PIN. La caja llega en la fase 3.
  */
 export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) => {
   const { estacion, sesion, bloquear, cerrar, definirPin } = useSesion();
@@ -29,7 +30,9 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
   const [passwordActual, setPasswordActual] = useState('');
   const [pin, setPin] = useState('');
   const [pinRepetido, setPinRepetido] = useState('');
-  const [verPendientes, setVerPendientes] = useState(false);
+  const [vista, setVista] = useState<'ingreso' | 'pendientes' | 'pin'>('ingreso');
+  const verPendientes = vista === 'pendientes';
+  const setVerPendientes = (alternar: (v: boolean) => boolean) => setVista(alternar(verPendientes) ? 'pendientes' : 'ingreso');
 
   const noCoincide = pinRepetido.length === 4 && pin !== pinRepetido;
   const puedeGuardar = passwordActual !== '' && pin.length === 4 && pin === pinRepetido;
@@ -62,6 +65,9 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
           <span>
             <strong>{usuario.nombre}</strong> · {NOMBRE_ROL[usuario.rol]}
           </span>
+          <Button variant="ghost" size="sm" leftIcon={<KeyRound size={15} />} onClick={() => setVista(vista === 'pin' ? 'ingreso' : 'pin')}>
+            Mi PIN
+          </Button>
           <Button variant="outline" size="sm" leftIcon={<Lock size={15} />} disabled={accion.enviando} onClick={() => void accion.enviar(bloquear)}>
             Bloquear
           </Button>
@@ -74,9 +80,14 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
       <main className="gd-contenido">
         {accion.error && <MensajeError>{accion.error}</MensajeError>}
 
-        {verPendientes && estacion && <PendientesPanel estacion={estacion} onCerrar={() => setVerPendientes(false)} />}
+        {verPendientes && estacion && <PendientesPanel estacion={estacion} onCerrar={() => setVista('ingreso')} />}
 
-        <section className="gd-tarjeta" style={{ maxWidth: 440, display: verPendientes ? 'none' : undefined }}>
+        {vista === 'ingreso' && estacion && <ControlIngresoPanel estacion={estacion} />}
+
+        <section className="gd-tarjeta" style={{ maxWidth: 440, display: vista === 'pin' ? undefined : 'none' }}>
+          <Button variant="ghost" size="sm" leftIcon={<ArrowLeft size={15} />} onClick={() => setVista('ingreso')} style={{ marginBottom: 8 }}>
+            Volver al control de ingreso
+          </Button>
           <h2 className="gd-titulo" style={{ fontSize: '1.15rem' }}>
             <KeyRound size={18} style={{ verticalAlign: -3, marginRight: 8 }} />
             {usuario.tiene_pin ? 'Cambiar mi PIN' : 'Crear mi PIN'}

@@ -32,6 +32,11 @@ const ACCION: Record<string, string> = {
   INVALIDAR_CREDENCIAL: 'Credencial invalidada',
 };
 
+const TIPO: Record<string, string> = {
+  ingreso: 'Ingreso de cliente',
+  cortesia: 'Ingreso de cortesía',
+};
+
 function nota(item: ItemCola): string {
   if (item.estado === 'pendiente') return item.intentos > 0 ? 'Se volverá a intentar cuando haya conexión.' : 'Sube sola cuando haya conexión.';
   if (item.estado === 'retenida') return item.mensaje ?? 'Espera a que se resuelva otra operación.';
@@ -155,7 +160,7 @@ export const PendientesPanel: React.FC<{ estacion: EstadoEstacion; onCerrar: () 
               {datos.items.map((item) => (
                 <tr key={item.id}>
                   <td style={{ whiteSpace: 'nowrap' }}>{formatFechaHora(item.ocurrida_en)}</td>
-                  <td>{(item.accion && ACCION[item.accion]) ?? item.accion ?? item.tipo}</td>
+                  <td>{(item.accion && ACCION[item.accion]) ?? item.accion ?? TIPO[item.tipo] ?? item.tipo}</td>
                   <td>{item.staff_nombre ?? '—'}</td>
                   <td>
                     <Badge variant={ESTADO[item.estado].variante}>{ESTADO[item.estado].texto}</Badge>
