@@ -210,7 +210,7 @@ La fuente es `platform.estado_suscripcion()` (no se duplica la regla en Python).
 
 ---
 
-## Escritorio · GymDesk Escritorio (GW, migración 070)
+## Escritorio · GymDesk Escritorio (GW, migraciones 070 y 071)
 
 Alcance y reglas en `ALCANCE_APP_ESCRITORIO.md`. El cuerpo de error real de la API es
 `{"success": false, "error": {"codigo", "mensaje", "detalles"}}`; la estación lee `error.codigo`.
@@ -251,7 +251,11 @@ y aplica lo que llega como descarga inicial.
 | `planes` | `id, nombre, precio (COP entero), duracion_dias, tipo, cupo_personas, activo` |
 | `productos` | `id, nombre, precio (COP entero), stock, activo` |
 | `deportistas` | `id, tipo_documento, documento, nombre, activo, eliminado` |
-| `membresias` | `id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada` |
+| `membresias` | `id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada, created_at` |
+| `congelamientos` | `id, membresia_id, fecha_inicio, fecha_fin` (`fecha_fin` nulo = sigue congelada) |
+| `pases_dia` | `id (de la venta), deportista_id, created_at, anulada`. Solo ventas con pase de día de los últimos 2 días y con cliente. Si la venta se anula vuelve a bajar con `anulada: true` |
+
+En `eliminados`, la tabla de un pase de día borrado es `ventas`.
 
 `suscripcion = {estado_guardado, fecha_corte, estado_calculado, motivo_bloqueo}`: con `fecha_corte` la estación calcula
 el aviso y el bloqueo por su cuenta. Una fila puede llegar repetida entre rondas; la estación reemplaza por `id`.
@@ -260,8 +264,9 @@ el aviso y el bloqueo por su cuenta. Una fila puede llegar repetida entre rondas
 ### E.4 Envío · `POST /sync/push`
 **Se acepta aunque el gimnasio esté bloqueado:** lo ya cobrado sin red no se pierde.
 
-Body `{operaciones: [{id, tipo, idempotency_key, ocurrida_en, staff_id?, depende_de: [id], payload}]}`, de 1 a 50, en
-orden. Siempre `200 {resultados: [{indice, id?, resultado, resultado_original?, codigo?, mensaje?, datos?, revision?}], servidor_ahora}`.
+Body `{operaciones: [{id, tipo, idempotency_key, ocurrida_en, staff_id?, depende_de: [id], payload}], estacion_ahora?}`,
+de 1 a 50, en orden. `estacion_ahora` es el reloj del equipo al enviar: con él el servidor mide el desfase (ver "Hora de
+los ingresos"). Siempre `200 {resultados: [{indice, id?, resultado, resultado_original?, codigo?, mensaje?, datos?, revision?}], servidor_ahora}`.
 
 | `resultado` | Significado | Qué hace la estación |
 |---|---|---|
@@ -271,8 +276,40 @@ orden. Siempre `200 {resultados: [{indice, id?, resultado, resultado_original?, 
 | `invalida` | Contenido mal formado; no se guardó nada. `codigo`: `OPERACION_MAL_FORMADA`, `TIPO_DESCONOCIDO`, `PAYLOAD_INVALIDO`, `STAFF_DESCONOCIDO`, `OPERACION_ID_REUTILIZADO`, `CLAVE_IDEMPOTENCIA_EN_USO` | Queda como `error` con alerta; nunca se descarta |
 | `retenida` | Depende de una operación inválida, retenida o que no ha llegado (`DEPENDENCIA_PENDIENTE`); no se procesó | La reenvía cuando su dependencia se resuelva |
 
-Tipos de operación en la fase 1:
+Tipos de operación:
 
 | `tipo` | `payload` | Efecto |
 |---|---|---|
 | `auditoria_estacion` | `{accion, entidad, entidad_id?, detalle}` con `accion` en `CREAR_BASE_LOCAL, ACTIVAR_ESTACION, INICIAR_SESION, INGRESO_FALLIDO, BLOQUEAR_SESION, DESBLOQUEAR_SESION, CERRAR_SESION, CREAR_PIN, CAMBIAR_PIN, INVALIDAR_CREDENCIAL` | Queda en la auditoría del gimnasio como `ESTACION_<accion>`, con la hora de la estación. Si quien la hizo figura desactivado: `pendiente_revision` con `STAFF_DESACTIVADO` |
+| `ingreso` (fase 2) | `{deportista_id, metodo: manual\|huella, resultado: abrio\|alerta_mora\|negado, estado, con_pase_dia}`. Exige `staff_id` | Inserta en `checkins` con la hora de la estación, `estacion_id`, `operacion_id` y `recibido_en`. **No vuelve a decidir** ni avisa a la Pantalla TV. `datos: {checkin_id, ts_utc}` |
+| `cortesia` (fase 2) | `{motivo}` (4 a 255 letras). Exige `staff_id` | Inserta la cortesía en `checkins` y audita `INGRESO_CORTESIA` |
+
+`invalida` propias de estos tipos: `STAFF_REQUERIDO`, `DEPORTISTA_DESCONOCIDO` (cliente de otro gimnasio o inexistente),
+`PAYLOAD_INVALIDO`.
+
+Un ingreso o una cortesía queda `pendiente_revision` (registrado igual, sin cambiar su resultado) con uno de estos
+motivos. Si hay varios, manda el primero de la lista y los demás van en `detalle.otros_motivos`:
+
+| `motivo_codigo` | Cuándo |
+|---|---|
+| `STAFF_DESACTIVADO` / `STAFF_SIN_PERMISO` | Quien lo registró figura desactivado, o su rol no tiene `control_ingreso.crear` |
+| `ACCESO_NO_COINCIDE` | La estación dejó entrar y el servidor, con sus datos **del día del ingreso**, habría negado (membresía cancelada o vencida, congelada, cliente eliminado, pase de día anulado) |
+| `RELOJ_DESFASADO` | El reloj del equipo estaba a más de 5 minutos del servidor |
+
+**Hora de los ingresos.** Con hasta 5 minutos de desfase entre `estacion_ahora` y el servidor, se guarda `ocurrida_en`
+tal cual. Con más, se le suma el desfase y queda por revisar. Una hora en el futuro sin `estacion_ahora` se reemplaza por
+la de llegada y queda por revisar.
+
+### E.5 Por revisar (solo el Jefe)
+| Método y ruta | Entra | Sale |
+|---|---|---|
+| `GET /sync/revisiones?estado=&limit=&offset=` | `estado`: `pendiente_revision` (por defecto), `revisado`, `todas` | `{total, pendientes, items: [Revision]}` |
+| `POST /sync/revisiones/{id}/revisar` | `{resolucion: "visto", nota}` (nota de 4 a 500 letras) | `Revision` |
+
+`Revision = {id, entidad, entidad_id?, tipo_operacion, motivo_codigo, motivo, detalle, estacion_nombre,
+registrado_por_nombre?, ocurrida_en, recibida_en, estado_revision, resoluciones_posibles, resolucion?,
+revisado_por_nombre?, revisado_en?, nota_revision?}`.
+
+Se revisa una sola vez y queda en auditoría (`REVISAR_SYNC`). `visto` no cambia el registro: solo deja constancia.
+Aplica a lo que no mueve dinero (`entidad` en `checkins`, `staff`, `estaciones`). Aplicar, ajustar y anular llegan con la
+caja sin red (fase 3). Errores: `404 REVISION_NO_ENCONTRADA`, `409 REVISION_YA_REVISADA`, `409 RESOLUCION_NO_DISPONIBLE`.

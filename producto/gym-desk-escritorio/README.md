@@ -4,9 +4,9 @@ Estación de recepción para Windows que funciona sin internet. Alcance, fases y
 [`docs/ALCANCE_APP_ESCRITORIO.md`](../../docs/ALCANCE_APP_ESCRITORIO.md). Contratos con el servidor:
 [`docs/CONTRATOS-API.md`](../../docs/CONTRATOS-API.md), sección "Escritorio".
 
-**Estado:** fase 1 (activación y sincronización). La estación se activa con el subdominio y un código, descarga los
-datos del gimnasio, el personal entra con contraseña o PIN, y lo que hace sube solo al servidor cuando hay red. En esta
-fase lo que sube son los eventos de sesión de la estación; ingreso y caja son las fases 2 y 3.
+**Estado:** fase 2 (ingreso sin red). La estación se activa con el subdominio y un código, descarga los datos del
+gimnasio, el personal entra con contraseña o PIN, y recepción registra ingresos y cortesías con red o sin ella. Lo que
+se hace sube solo al servidor cuando hay red. La caja es la fase 3.
 
 ## Requisitos para desarrollar
 
@@ -54,12 +54,33 @@ $env:TEST_ADMIN_DATABASE_URL = "postgresql+asyncpg://postgres:<clave>@localhost:
 
 Antes de entregar a un cliente falta además una noche real sin red en una estación instalada (ver el alcance).
 
+### Regla de acceso igual a la del servidor (criterio de la fase 2)
+
+La estación decide el ingreso con una copia en Rust de la regla del servidor. Dos pruebas la mantienen igual:
+
+- **Vectores compartidos.** `src-tauri/src/acceso/casos_acceso.json` lo genera el servidor desde su función; `cargo test`
+  exige el mismo resultado. Si la regla cambia en el servidor, se regenera y se ajusta `acceso/regla.rs`:
+
+  ```powershell
+  cd ..\gym-jefe-api
+  $env:GYMDESK_REGENERAR_VECTORES = "1"; .\.venv\Scripts\python.exe -m pytest tests\test_e8_vectores_acceso.py
+  ```
+
+- **Comparativa de punta a punta.** Crea 40 clientes en cada situación, le pregunta lo mismo a la API real y a la
+  estación, y exige cero diferencias. Mismas variables que la prueba de 24 horas:
+
+  ```powershell
+  .\.venv\Scripts\python.exe ..\gym-desk-escritorio\pruebas\prueba_acceso.py
+  ```
+
 ## Estructura
 
 | Ruta | Contenido |
 |---|---|
 | `src/api/*.service.ts` | Única puerta de la interfaz hacia los comandos de Rust |
-| `src/pages/` | Activación, descarga inicial, ingreso, bloqueo, inicio, pendientes, servicio no disponible |
+| `src/pages/` | Activación, descarga inicial, ingreso del personal, bloqueo, inicio, control de ingreso, pendientes, servicio no disponible |
+| `src-tauri/src/acceso/regla.rs` | Regla de acceso: copia de la del servidor, función pura |
+| `src-tauri/src/acceso/registro.rs` | Evalúa con los datos locales y registra ingresos y cortesías; antirrebote de 3 s |
 | `src-tauri/src/db/` | Base SQLCipher, clave protegida con DPAPI y migraciones locales |
 | `src-tauri/src/sesion/` | Contraseña y PIN (Argon2id), bloqueo por intentos y por inactividad |
 | `src-tauri/src/sync/transporte.rs` | Todo lo que sale a la red |
@@ -85,6 +106,8 @@ Si se borra `clave.bin`, la base queda ilegible y la app lo informa en vez de cr
 ## Reglas que no se rompen
 
 - **La cola no se borra.** `sync_outbox` conserva lo aplicado, los errores y lo que quedó por revisar.
+- **Los ingresos tampoco.** Cada intento, permitido o negado, queda en `ingresos`.
+- **El ingreso lo decide la estación**, con sus datos locales, con red o sin ella. No hay un segundo camino "en línea".
 - **Cada cambio local y su fila en la cola van en la misma transacción.**
 - **El identificador y la clave de idempotencia de una operación no cambian entre reintentos.**
 - **El esquema local solo crece con archivos nuevos** en `src-tauri/src/db/migraciones/`, registrados en

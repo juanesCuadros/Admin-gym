@@ -45,6 +45,14 @@ cliente tiene wifi inestable y hoy, si la red se cae, recepción no puede dejar 
 | E-22 | Cursor de descarga | Por id de transacción, no por fecha: una transacción que confirma tarde no se pierde. Lo repetido se reemplaza por id |
 | E-23 | Dependencias en el envío | Si una operación es inválida, las que dependen de ella quedan retenidas y no se procesan sueltas |
 | E-24 | Pantalla de estaciones | En `gym-jefe-web`, Configuración, solo el Jefe |
+| E-25 | Quién decide el ingreso | Siempre la estación, con sus datos locales, con red o sin ella. Un solo camino. El servidor guarda lo que pasó y no lo vuelve a decidir |
+| E-26 | Pantalla de ingreso (14-nov) | Nombre, documento, plan, vencimiento y días. **Sin foto** (entra con la cámara, fase 4) y **sin "saldo"** (ese concepto no existe en el sistema) |
+| E-27 | Código del carné (14-nov) | El código de barras o QR contiene el número de documento. No se generan carnés en la fase 2. Lo leído por el lector queda como método `manual` |
+| E-28 | Hora de los ingresos sin red (14-nov) | La estación manda su reloj en cada envío. Hasta 5 minutos de desfase se acepta su hora; con más, el servidor la corrige con ese desfase y el ingreso queda por revisar. Si el reloj del equipo retrocede, la estación lo avisa en pantalla |
+| E-29 | Salidas (14-nov) | Fuera de la fase 2. Se registran en la web |
+| E-30 | Ingreso que el servidor habría negado (14-nov) | Se registra tal cual y queda por revisar, sin cambiar el resultado |
+| E-31 | Bandeja "Por revisar" (14-nov) | En la web, pestaña de Estaciones, solo el Jefe. Lo que no mueve dinero solo se da por visto, con nota obligatoria y auditoría. Aplicar, ajustar y anular llegan en la fase 3 |
+| E-32 | Pase de día | Deja entrar el día en que se pagó, salvo a un cliente desactivado. En la fase 2 la estación conoce los vendidos en la web; los que venda ella misma llegan con la caja (fase 3) |
 
 ## 3. Fases y criterio de terminado
 
@@ -52,7 +60,7 @@ cliente tiene wifi inestable y hoy, si la red se cae, recepción no puede dejar 
 |---|---|---|
 | **0 · Base** | Proyecto Tauri, SQLite cifrado, ingreso del personal con PIN o contraseña, bloqueo por 5 min de inactividad | Se genera el `.exe`, abre y crea la base local |
 | **1 · Activación y sincronización** | Emparejamiento por subdominio + código de estación. Descarga inicial: branding, permisos, parámetros, planes, productos, deportistas y membresías. Outbox con reintentos. Indicador de conexión y de pendientes. Backend: `/sync/push`, `/sync/pull`, registro de estaciones con `device_token` y RLS | Prueba automática acelerada: 24 h simuladas sin red, cierre de la app a mitad de envío, reconexión, y conteos iguales en la estación y el servidor, sin duplicados ni pérdidas (decisión del 12-nov) |
-| **2 · Ingreso sin red** | Ingreso por documento o QR y cortesía con motivo. Pantalla grande con foto, nombre, vigencia, días restantes y saldo; colores por estado (activo, gracia, vencido, congelado) y sonido. Antirrebote de 3 s | La evaluación local da el mismo resultado que `evaluar-acceso` del servidor (pruebas comparativas) |
+| **2 · Ingreso sin red** | Ingreso por documento o QR y cortesía con motivo. Pantalla grande con nombre, vigencia y días restantes (sin foto ni saldo: E-26); colores por estado (activo, gracia, vencido, congelado) y sonido. Antirrebote de 3 s | La evaluación local da el mismo resultado que el servidor: vectores compartidos de la regla (`casos_acceso.json`) y `pruebas/prueba_acceso.py` contra la API real. El estado se compara con `evaluar-acceso` y el "abre o no" con `checkin-manual`, que es el que tiene en cuenta el pase de día |
 | **3 · Caja sin red** | Abrir y cerrar turno con arqueo, venta de mostrador, cobro y renovación de membresías, pago mixto, egresos, anulaciones con motivo, cierre diario y cuadre mensual | Criterio por definir en el plan de la fase. Antes: regla para P-13 aprobada por Juan (§5, C-01) |
 | **4 · Hardware** | Controladores de E-07 a E-10, cámara web para la foto y segunda pantalla de bienvenida (reutiliza `pantalla_tv`) | Criterio por definir en el plan de la fase |
 | **5 · Gestión en línea** | Inventario con movimientos de stock por delta, horario del personal, medidas corporales, asistencia a clases y reportes básicos | Criterio por definir en el plan de la fase |
@@ -84,7 +92,7 @@ La primera revisión se hizo contra un `main` local atrasado 24 commits. Esta ta
 | Egresos, anulaciones, abrir y cerrar turno | **Sin** clave de idempotencia |
 | Huella | Tabla `platform.huellas` con `template_cifrado` y endpoints para enrolar y eliminar. No hay comparación de huellas |
 | Pantalla TV | `tenant.pantalla_device_token_hash`: es el patrón a seguir para el `device_token` de la estación |
-| Migraciones | La última de otros carriles es la 065. Escritorio usa la 070; **el rango 070–079 sigue pendiente de confirmar con el equipo** |
+| Migraciones | La última de otros carriles es la 065. Escritorio usa la 070 y la 071; **el rango 070–079 sigue pendiente de confirmar con el equipo** |
 
 ## 5. Contradicciones y vacíos encontrados
 
@@ -107,16 +115,16 @@ Ninguno bloquea la fase 0. Cada uno se debe resolver antes de la fase que lo usa
 | # | Tema | Qué falta saber | Fase |
 |---|---|---|---|
 | V-01 | **PIN del personal** | **Resuelto (12-nov):** ver E-14 | 0 |
-| V-02 | **Foto del deportista** | No existe el campo ni dónde guardarla. La piden la pantalla de ingreso (fase 2) y la cámara (fase 4) | 2 |
-| V-03 | **"Saldo" en la pantalla de ingreso** | Los requisitos dejan fuera abonos y saldo a favor. ¿Qué saldo se muestra? | 2 |
-| V-04 | **QR** | No existe un código de carnet. ¿El QR contiene el documento u otro código? ¿Quién lo genera? | 2 |
+| V-02 | **Foto del deportista** | **Aplazado (14-nov):** fuera de la fase 2 (E-26). Sigue sin existir el campo ni dónde guardarla; se decide con la cámara | 4 |
+| V-03 | **"Saldo" en la pantalla de ingreso** | **Resuelto (14-nov):** no se muestra (E-26) | 2 |
+| V-04 | **QR** | **Resuelto (14-nov):** contiene el documento (E-27) | 2 |
 | V-05 | **Pago mixto** | **Ya existe** en `origin/main` (migración 060). La estación usa el mismo contrato | 3 |
 | V-06 | **Cierre diario y cuadre mensual** | Existen el historial de turnos con arqueo y el reporte de ingresos menos gastos, pero no un "cierre diario" ni un "cuadre mensual" con ese nombre. Falta definir si son esos mismos o algo nuevo | 3 |
 | V-07 | **Horario del personal** | Existe el turno de trabajo (entrada, salida y horas, migración 065). Confirmar si "horario del personal" es eso | 5 |
-| V-08 | **Hora de los ingresos hechos sin red** | El servidor usa su propia hora. Al sincronizar hay que aceptar la hora de la estación, y la regla C2 de renovación depende de esa fecha. Falta decidir cuánto se confía en el reloj del equipo | 1–2 |
+| V-08 | **Hora de los ingresos hechos sin red** | **Resuelto para los ingresos (14-nov):** ver E-28. Para la caja (regla C2 de renovación) se revisa en la fase 3 | 2–3 |
 | V-09 | **Cuando el servidor no puede aplicar algo ya cobrado** | **Resuelto (12-nov):** ver §5.1 | 1 y 3 |
 | V-10 | **Comparación de huellas en local** | El servidor guarda el template cifrado con su propia clave. Para comparar sin red la estación necesita los templates y un motor de comparación, que depende de la marca | 4 |
-| V-11 | **Salidas (GW-RF-54)** | El encargo no dice si la salida se registra sin red | 2 |
+| V-11 | **Salidas (GW-RF-54)** | **Resuelto (14-nov):** fuera de la fase 2 (E-29) | 2 |
 | V-12 | **Alta de cliente sin red** | La especificación base la incluye; E-05 limita lo offline a ingreso y caja. Se asume que el alta exige conexión, y por tanto no se puede vender una membresía a un cliente nuevo sin red | 3 |
 
 ### 5.1 Regla de sincronización: el dinero cobrado sin red nunca se pierde (E-16)
