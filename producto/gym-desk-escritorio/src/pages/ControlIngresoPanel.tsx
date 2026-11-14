@@ -42,9 +42,12 @@ function titular(r: ResultadoIngreso): string {
 /** Vencimiento en palabras: "Vence en 3 días (15/11/2026)". */
 function vigencia(c: ClienteEvaluado): string | null {
   if (!c.fecha_vencimiento) return null;
+  // Una fecha sin hora se ancla al mediodía de Bogotá: sola se leería como medianoche UTC y se
+  // pintaría el día anterior (misma convención que la web).
+  const fecha = `${c.fecha_vencimiento}T12:00:00-05:00`;
   const vencido = c.estado === 'en_gracia' || c.estado === 'vencido';
-  if (c.estado === 'congelado' || c.estado === 'desactivado') return `Vence el ${formatFecha(c.fecha_vencimiento)}`;
-  return formatVencimiento(c.fecha_vencimiento, vencido ? -c.dias_restantes_o_vencido : c.dias_restantes_o_vencido);
+  if (c.estado === 'congelado' || c.estado === 'desactivado') return `Vence el ${formatFecha(fecha)}`;
+  return formatVencimiento(fecha, vencido ? -c.dias_restantes_o_vencido : c.dias_restantes_o_vencido);
 }
 
 function haceCuanto(instante: string): string {
