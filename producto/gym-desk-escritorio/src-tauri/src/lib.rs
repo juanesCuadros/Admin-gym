@@ -2,6 +2,7 @@
 
 pub mod acceso;
 pub mod auditoria;
+pub mod caja;
 pub mod comandos;
 pub mod db;
 pub mod error;
@@ -56,6 +57,14 @@ pub fn run() {
             comandos::registrar_ingreso,
             comandos::registrar_cortesia,
             comandos::ingresos_de_hoy,
+            comandos::caja_estado,
+            comandos::caja_abrir_turno,
+            comandos::caja_cerrar_turno,
+            comandos::caja_productos,
+            comandos::caja_registrar_venta,
+            comandos::caja_registrar_egreso,
+            comandos::caja_movimientos,
+            comandos::caja_cierre_diario,
         ])
         .run(tauri::generate_context!())
         .expect("no se pudo iniciar GymDesk");

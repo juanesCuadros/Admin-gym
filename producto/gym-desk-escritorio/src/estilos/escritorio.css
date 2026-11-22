@@ -671,3 +671,230 @@ button.gd-sync:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Caja (fase 3A) --- */
+.gd-secciones {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.gd-secciones button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.gd-secciones button.activa {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+.gd-caja {
+  max-width: 980px;
+}
+
+.gd-caja .gd-aviso {
+  margin-bottom: 14px;
+}
+
+.gd-pestanas-caja {
+  max-width: 420px;
+}
+
+.gd-caja-cifras {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin: 0 0 6px;
+}
+
+.gd-caja-cifras > div {
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-surface-elevated);
+}
+
+.gd-caja-cifras dt {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.gd-caja-cifras dd {
+  margin: 4px 0 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.gd-caja-cifras > .gd-caja-esperado {
+  border-color: var(--primary);
+}
+
+.gd-mostrador {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+
+.gd-mostrador-pases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.gd-productos,
+.gd-lineas {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.gd-productos {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.gd-productos button {
+  display: grid;
+  grid-template-columns: 1fr auto 80px;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gd-productos button:hover:not(:disabled) {
+  background: var(--bg-surface-elevated);
+}
+
+.gd-productos button:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.gd-productos-precio,
+.gd-productos-stock {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.gd-productos-stock {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.gd-lineas > li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.gd-linea-fila {
+  display: grid;
+  grid-template-columns: 1fr 64px 100px 36px;
+  gap: 8px;
+  align-items: center;
+}
+
+.gd-linea-total {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.gd-cantidad {
+  width: 64px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.gd-descuento summary {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.gd-cliente-venta {
+  margin-top: 10px;
+}
+
+.gd-cliente-elegido {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg-surface-elevated);
+}
+
+.gd-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 14px 0 6px;
+  font-size: 1.05rem;
+}
+
+.gd-total strong {
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.gd-medio {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.gd-cambio {
+  margin: 4px 0;
+  font-size: 0.95rem;
+}
+
+.gd-pista {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.gd-cierre-columnas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 14px;
+}
+
+@media (max-width: 900px) {
+  .gd-caja-cifras {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .gd-mostrador,
+  .gd-cierre-columnas {
+    grid-template-columns: 1fr;
+  }
+}

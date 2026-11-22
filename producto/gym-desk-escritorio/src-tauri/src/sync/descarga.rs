@@ -94,14 +94,15 @@ pub fn aplicar_pagina(conn: &Connection, ahora: DateTime<Utc>, r: &Value) -> Res
     for g in filas(r, "gimnasio") {
         tx.execute(
             "INSERT OR REPLACE INTO gimnasio (id, nombre, subdominio, zona_horaria, dias_gracia_mora, dias_umbral_por_vencer,
-               permitir_descuentos, tope_descuento_pct, metodos_pago, branding, duracion_sesion_minutos)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+               permitir_descuentos, tope_descuento_pct, metodos_pago, branding, duracion_sesion_minutos,
+               precio_pase_dia, precio_pase_clase)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 obligatorio(g, "id")?, obligatorio(g, "nombre")?, obligatorio(g, "subdominio")?,
                 texto(g, "zona_horaria").unwrap_or_else(|| "America/Bogota".into()),
                 entero(g, "dias_gracia_mora"), entero(g, "dias_umbral_por_vencer"), booleano(g, "permitir_descuentos"),
                 entero(g, "tope_descuento_pct"), g["metodos_pago"].to_string(), g["branding"].to_string(),
-                entero(g, "duracion_sesion_minutos"),
+                entero(g, "duracion_sesion_minutos"), g["precio_pase_dia"].as_i64(), g["precio_pase_clase"].as_i64(),
             ],
         )?;
         tx.execute("UPDATE estacion SET gimnasio_nombre = ?1 WHERE id = 1", [obligatorio(g, "nombre")?])?;

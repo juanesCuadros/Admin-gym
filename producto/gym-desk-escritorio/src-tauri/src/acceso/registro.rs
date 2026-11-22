@@ -186,7 +186,7 @@ pub fn evaluar_cliente(conn: &Connection, deportista_id: &str, hoy: NaiveDate) -
 }
 
 /// Minúsculas y sin tildes, para que "jose" encuentre a "José".
-fn plano(texto: &str) -> String {
+pub fn plano(texto: &str) -> String {
     texto
         .to_lowercase()
         .chars()

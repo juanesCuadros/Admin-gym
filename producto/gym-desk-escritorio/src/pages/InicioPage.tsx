@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Dumbbell, KeyRound, Lock, LogOut } from 'lucide-react';
+import { ArrowLeft, Dumbbell, KeyRound, Lock, LogOut, ScanLine, Wallet } from 'lucide-react';
 import { Button } from '@web/components/ui/Button';
 import { Input } from '@web/components/ui/Input';
 import { useToast } from '@web/contexts/ToastContext';
 import { IndicadorSync } from '../components/IndicadorSync';
 import { CampoPin, MensajeError } from '../components/Piezas';
 import { useSesion } from '../contexts/SesionContext';
+import { CajaPanel } from './CajaPanel';
 import { ControlIngresoPanel } from './ControlIngresoPanel';
 import { PendientesPanel } from './PendientesPanel';
 import { useEnvio } from '../hooks/useEnvio';
@@ -18,8 +19,8 @@ const NOMBRE_ROL: Record<UsuarioSesion['rol'], string> = {
 };
 
 /**
- * Sesión abierta. La pantalla principal es el control de ingreso; desde la barra se abren los
- * pendientes de sincronizar y el PIN. La caja llega en la fase 3.
+ * Sesión abierta. Dos pantallas de trabajo, el control de ingreso y la caja (fase 3A); desde la barra se
+ * abren los pendientes de sincronizar y el PIN.
  */
 export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) => {
   const { estacion, sesion, bloquear, cerrar, definirPin } = useSesion();
@@ -30,9 +31,15 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
   const [passwordActual, setPasswordActual] = useState('');
   const [pin, setPin] = useState('');
   const [pinRepetido, setPinRepetido] = useState('');
-  const [vista, setVista] = useState<'ingreso' | 'pendientes' | 'pin'>('ingreso');
+  const [vista, setVista] = useState<'ingreso' | 'caja' | 'pendientes' | 'pin'>('ingreso');
+  // Al cerrar pendientes o el PIN se vuelve a la pantalla de trabajo en la que estaba.
+  const [trabajo, setTrabajo] = useState<'ingreso' | 'caja'>('ingreso');
   const verPendientes = vista === 'pendientes';
-  const setVerPendientes = (alternar: (v: boolean) => boolean) => setVista(alternar(verPendientes) ? 'pendientes' : 'ingreso');
+  const setVerPendientes = (alternar: (v: boolean) => boolean) => setVista(alternar(verPendientes) ? 'pendientes' : trabajo);
+  const irA = (v: 'ingreso' | 'caja') => {
+    setTrabajo(v);
+    setVista(v);
+  };
 
   const noCoincide = pinRepetido.length === 4 && pin !== pinRepetido;
   const puedeGuardar = passwordActual !== '' && pin.length === 4 && pin === pinRepetido;
@@ -65,7 +72,7 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
           <span>
             <strong>{usuario.nombre}</strong> · {NOMBRE_ROL[usuario.rol]}
           </span>
-          <Button variant="ghost" size="sm" leftIcon={<KeyRound size={15} />} onClick={() => setVista(vista === 'pin' ? 'ingreso' : 'pin')}>
+          <Button variant="ghost" size="sm" leftIcon={<KeyRound size={15} />} onClick={() => setVista(vista === 'pin' ? trabajo : 'pin')}>
             Mi PIN
           </Button>
           <Button variant="outline" size="sm" leftIcon={<Lock size={15} />} disabled={accion.enviando} onClick={() => void accion.enviar(bloquear)}>
@@ -80,13 +87,26 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
       <main className="gd-contenido">
         {accion.error && <MensajeError>{accion.error}</MensajeError>}
 
-        {verPendientes && estacion && <PendientesPanel estacion={estacion} onCerrar={() => setVista('ingreso')} />}
+        {(vista === 'ingreso' || vista === 'caja') && (
+          <nav className="gd-secciones" aria-label="Secciones">
+            <button className={vista === 'ingreso' ? 'activa' : ''} aria-current={vista === 'ingreso' ? 'page' : undefined} onClick={() => irA('ingreso')}>
+              <ScanLine size={16} /> Control de ingreso
+            </button>
+            <button className={vista === 'caja' ? 'activa' : ''} aria-current={vista === 'caja' ? 'page' : undefined} onClick={() => irA('caja')}>
+              <Wallet size={16} /> Caja
+            </button>
+          </nav>
+        )}
+
+        {verPendientes && estacion && <PendientesPanel estacion={estacion} onCerrar={() => setVista(trabajo)} />}
 
         {vista === 'ingreso' && estacion && <ControlIngresoPanel estacion={estacion} />}
 
+        {vista === 'caja' && estacion && <CajaPanel enLinea={estacion.en_linea} />}
+
         <section className="gd-tarjeta" style={{ maxWidth: 440, display: vista === 'pin' ? undefined : 'none' }}>
-          <Button variant="ghost" size="sm" leftIcon={<ArrowLeft size={15} />} onClick={() => setVista('ingreso')} style={{ marginBottom: 8 }}>
-            Volver al control de ingreso
+          <Button variant="ghost" size="sm" leftIcon={<ArrowLeft size={15} />} onClick={() => setVista(trabajo)} style={{ marginBottom: 8 }}>
+            Volver
           </Button>
           <h2 className="gd-titulo" style={{ fontSize: '1.15rem' }}>
             <KeyRound size={18} style={{ verticalAlign: -3, marginRight: 8 }} />

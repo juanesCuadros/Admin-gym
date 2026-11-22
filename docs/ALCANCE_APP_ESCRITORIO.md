@@ -53,6 +53,13 @@ cliente tiene wifi inestable y hoy, si la red se cae, recepción no puede dejar 
 | E-30 | Ingreso que el servidor habría negado (14-nov) | Se registra tal cual y queda por revisar, sin cambiar el resultado |
 | E-31 | Bandeja "Por revisar" (14-nov) | En la web, pestaña de Estaciones, solo el Jefe. Lo que no mueve dinero solo se da por visto, con nota obligatoria y auditoría. Aplicar, ajustar y anular llegan en la fase 3 |
 | E-32 | Pase de día | Deja entrar el día en que se pagó, salvo a un cliente desactivado. En la fase 2 la estación conoce los vendidos en la web; los que venda ella misma llegan con la caja (fase 3) |
+| E-33 | Turno único con y sin red (22-nov, A1) | Con red nada cambia: la estación pregunta al servidor (`GET /sync/caja/turno-abierto`) y no abre si hay otro turno abierto. Sin red abre y avisa que no pudo confirmarlo. El turno de una estación es de esa estación: la web no cobra ni anula contra él. Si al reconectar hubo otro turno abierto al tiempo, el de la estación se registra igual y queda por revisar (`TURNO_SIMULTANEO`); cada uno cierra con su arqueo. Si el Jefe lo cierra a la fuerza, lo que la estación siga cobrando se registra en ese turno y queda por revisar. `turnos_caja.estacion_id` y el índice de turno único solo cuentan los turnos de la web (migración 072). Resuelve C-01 |
+| E-34 | Fase 3 en dos entregas (22-nov, A2) | **3A:** turno con arqueo, venta de mostrador (productos, pase de día y pase de clase) en efectivo, otro medio o mixto, descuentos con el permiso y el tope descargados, egresos con motivo, movimientos del turno y cierre diario. **3B** (espera el visto bueno de Juan): membresías, anulaciones, bandeja "Por revisar" con aplicar, ajustar y anular con devolución, estado de las revisiones en la estación y cuadre mensual |
+| E-35 | Cierre diario y cuadre mensual (22-nov, A3) | El cierre diario es el resumen de los turnos del día en esa estación y funciona sin red. El cuadre mensual exige conexión y lee el reporte de ingresos menos gastos que ya existe (3B). Resuelve V-06 |
+| E-36 | Membresías y anulaciones sin red (22-nov, A4 a A6, fase 3B) | Sin red se renueva una membresía existente o se vende una nueva a un cliente ya registrado; cliente nuevo, paquetes, cambio de plan y congelar quedan para la web. La estación solo anula lo que ella registró. La fecha de renovación la recalcula el servidor con la regla de reloj de E-28; si no coincide, manda la del servidor y queda por revisar |
+| E-37 | Recibo impreso (22-nov, A7) | Fase 4 |
+| E-38 | Ids de la caja (3A) | El turno, la venta y el egreso usan el id de su operación en la cola, y el servidor guarda el mismo: un movimiento se sigue de punta a punta. La venta guarda la hora de la estación (con la regla de E-28), así el pase de día cuenta para el día en que se pagó |
+| E-39 | Stock sin red (3A) | La estación vende contra su stock: el del servidor menos lo que vendió y aún no subió. Si el servidor queda en negativo (la web vendió lo mismo), la venta se registra igual y queda por revisar (`STOCK_NEGATIVO`). Para eso la 072 quita el `CHECK (stock >= 0)`; la web sigue sin vender por debajo de cero |
 
 ## 3. Fases y criterio de terminado
 
@@ -61,7 +68,7 @@ cliente tiene wifi inestable y hoy, si la red se cae, recepción no puede dejar 
 | **0 · Base** | Proyecto Tauri, SQLite cifrado, ingreso del personal con PIN o contraseña, bloqueo por 5 min de inactividad | Se genera el `.exe`, abre y crea la base local |
 | **1 · Activación y sincronización** | Emparejamiento por subdominio + código de estación. Descarga inicial: branding, permisos, parámetros, planes, productos, deportistas y membresías. Outbox con reintentos. Indicador de conexión y de pendientes. Backend: `/sync/push`, `/sync/pull`, registro de estaciones con `device_token` y RLS | Prueba automática acelerada: 24 h simuladas sin red, cierre de la app a mitad de envío, reconexión, y conteos iguales en la estación y el servidor, sin duplicados ni pérdidas (decisión del 12-nov) |
 | **2 · Ingreso sin red** | Ingreso por documento o QR y cortesía con motivo. Pantalla grande con nombre, vigencia y días restantes (sin foto ni saldo: E-26); colores por estado (activo, gracia, vencido, congelado) y sonido. Antirrebote de 3 s | La evaluación local da el mismo resultado que el servidor: vectores compartidos de la regla (`casos_acceso.json`) y `pruebas/prueba_acceso.py` contra la API real. El estado se compara con `evaluar-acceso` y el "abre o no" con `checkin-manual`, que es el que tiene en cuenta el pase de día |
-| **3 · Caja sin red** | Abrir y cerrar turno con arqueo, venta de mostrador, cobro y renovación de membresías, pago mixto, egresos, anulaciones con motivo, cierre diario y cuadre mensual | Criterio por definir en el plan de la fase. Antes: regla para P-13 aprobada por Juan (§5, C-01) |
+| **3 · Caja sin red** | **3A:** abrir y cerrar turno con arqueo, venta de mostrador, pago mixto, egresos, cierre diario. **3B:** cobro y renovación de membresías, anulaciones con motivo, bandeja "Por revisar" con dinero y cuadre mensual (E-34) | **3A (aprobado el 22-nov):** una prueba automática simula un día de caja sin red (turno, ventas, pago mixto y egresos); al reconectar, el resumen del turno en el servidor es igual al de la estación peso por peso y por medio de pago, sin duplicados, y el stock coincide; dos conflictos provocados (turno simultáneo y stock negativo) terminan por revisar sin perder un solo movimiento (`pruebas/prueba_caja.py`). Además, pytest completo, `cargo test` y la ventana real probada |
 | **4 · Hardware** | Controladores de E-07 a E-10, cámara web para la foto y segunda pantalla de bienvenida (reutiliza `pantalla_tv`) | Criterio por definir en el plan de la fase |
 | **5 · Gestión en línea** | Inventario con movimientos de stock por delta, horario del personal, medidas corporales, asistencia a clases y reportes básicos | Criterio por definir en el plan de la fase |
 | **6 · Entrega** | Instalador `.exe`, actualización automática (GitHub Releases), registro de errores, respaldo de la base local y manual de instalación | Criterio por definir en el plan de la fase |
@@ -89,7 +96,7 @@ La primera revisión se hizo contra un `main` local atrasado 24 commits. Esta ta
 | Ingresos | `platform.checkins` usa `id bigserial`, hora `now()` del servidor y `metodo` solo `huella` o `manual`. No acepta identificador ni hora del cliente |
 | Turno único | Índice `ux_turno_abierto_por_gym` (migración 010) y error `TURNO_AJENO_ABIERTO` |
 | Ventas y pagos de membresía | Idempotencia con el header `X-Idempotency-Key`, único por gimnasio |
-| Egresos, anulaciones, abrir y cerrar turno | **Sin** clave de idempotencia |
+| Egresos, anulaciones, abrir y cerrar turno | **Sin** clave de idempotencia en este `main`. Se agrega en la rama `fix/idempotencia-caja` (B3, migración 080) |
 | Huella | Tabla `platform.huellas` con `template_cifrado` y endpoints para enrolar y eliminar. No hay comparación de huellas |
 | Pantalla TV | `tenant.pantalla_device_token_hash`: es el patrón a seguir para el `device_token` de la estación |
 | Migraciones | La última de otros carriles es la 065. Escritorio usa la 070 y la 071; **el rango 070–079 sigue pendiente de confirmar con el equipo** |
@@ -102,7 +109,7 @@ Ninguno bloquea la fase 0. Cada uno se debe resolver antes de la fase que lo usa
 
 | # | Tema | Qué choca | Fase |
 |---|---|---|---|
-| C-01 | Turno único (P-13) | Con la estación sin red y la web en línea pueden abrirse dos turnos. Juan pidió una propuesta y aprobarla antes de la fase 3 | 3 |
+| C-01 | Turno único (P-13) | **Resuelto (22-nov):** ver E-33 y P-13 en `00_decisiones-consolidacion.md` | 3 |
 | C-02 | "Sin outbox, jobs, webhooks ni n8n" (resolución 4 de `00_decisiones`) | **Resuelto (12-nov):** son compatibles. La resolución 4 aplica al servidor; la cola es local a la estación (E-15) | 1 |
 | C-03 | Header de idempotencia | `AGENTS.md` y los requisitos dicen `Idempotency-Key`; el contrato 1.5 y el código del GW usan `X-Idempotency-Key`. Se propone usar `X-Idempotency-Key` | 1 |
 | C-04 | Orden de fases | `VISION-Y-FASES.md` dice que el escritorio empieza después de que el primer cliente opere en la web. Se asume cumplido (producción desde el 16-oct). Ese documento no se editó | — |
@@ -119,9 +126,9 @@ Ninguno bloquea la fase 0. Cada uno se debe resolver antes de la fase que lo usa
 | V-03 | **"Saldo" en la pantalla de ingreso** | **Resuelto (14-nov):** no se muestra (E-26) | 2 |
 | V-04 | **QR** | **Resuelto (14-nov):** contiene el documento (E-27) | 2 |
 | V-05 | **Pago mixto** | **Ya existe** en `origin/main` (migración 060). La estación usa el mismo contrato | 3 |
-| V-06 | **Cierre diario y cuadre mensual** | Existen el historial de turnos con arqueo y el reporte de ingresos menos gastos, pero no un "cierre diario" ni un "cuadre mensual" con ese nombre. Falta definir si son esos mismos o algo nuevo | 3 |
+| V-06 | **Cierre diario y cuadre mensual** | **Resuelto (22-nov):** ver E-35 | 3 |
 | V-07 | **Horario del personal** | Existe el turno de trabajo (entrada, salida y horas, migración 065). Confirmar si "horario del personal" es eso | 5 |
-| V-08 | **Hora de los ingresos hechos sin red** | **Resuelto para los ingresos (14-nov):** ver E-28. Para la caja (regla C2 de renovación) se revisa en la fase 3 | 2–3 |
+| V-08 | **Hora de los ingresos hechos sin red** | **Resuelto para los ingresos (14-nov):** ver E-28. La caja usa la misma regla (E-38); la renovación, en la 3B (E-36) | 2–3 |
 | V-09 | **Cuando el servidor no puede aplicar algo ya cobrado** | **Resuelto (12-nov):** ver §5.1 | 1 y 3 |
 | V-10 | **Comparación de huellas en local** | El servidor guarda el template cifrado con su propia clave. Para comparar sin red la estación necesita los templates y un motor de comparación, que depende de la marca | 4 |
 | V-11 | **Salidas (GW-RF-54)** | **Resuelto (14-nov):** fuera de la fase 2 (E-29) | 2 |

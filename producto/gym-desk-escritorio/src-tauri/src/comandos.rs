@@ -9,6 +9,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::acceso::registro::{self, ClienteEvaluado, Objetivo, ResultadoIngreso, ResumenIngresos};
+use crate::caja;
 use crate::error::{ErrorApp, Resultado};
 use crate::reloj::{fecha_negocio, Reloj};
 use crate::sesion::{self, Credencial, EstadoSesion, GestorSesion, PersonaConPin};
@@ -343,5 +344,117 @@ pub fn ingresos_de_hoy(estado: State<'_, EstadoApp>) -> Resultado<ResumenIngreso
     estado.con_base(|conn, sesion, ahora| {
         sesion.exigir_activa(conn, ahora)?;
         registro::ingresos_del_dia(conn, ahora)
+    })
+}
+
+// --- Caja sin red (fase 3A) ---
+
+#[derive(Serialize)]
+pub struct EstadoCaja {
+    pub turno: Option<caja::ResumenTurno>,
+    pub mostrador: caja::DatosMostrador,
+}
+
+#[tauri::command]
+pub fn caja_estado(estado: State<'_, EstadoApp>) -> Resultado<EstadoCaja> {
+    estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        let turno = match caja::turno_abierto(conn)? {
+            Some(t) => Some(caja::resumen(conn, &t.id)?),
+            None => None,
+        };
+        Ok(EstadoCaja { turno, mostrador: caja::datos_mostrador(conn, &usuario)? })
+    })
+}
+
+/// Con red, nada cambia (A1): se consulta al servidor y se rechaza si ya hay otro turno abierto en el
+/// gimnasio. Sin red, se abre igual y queda marcado como "sin confirmar". Sale a la red: es `async`.
+#[tauri::command(async)]
+pub fn caja_abrir_turno(estado: State<'_, EstadoApp>, base_inicial: i64) -> Resultado<caja::ResumenTurno> {
+    let credenciales = estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        exigir_operable(conn, ahora)?;
+        caja::exigir_permiso_caja(conn, &usuario)?;
+        if caja::turno_abierto(conn)?.is_some() {
+            return Err(ErrorApp::nuevo("TURNO_YA_ABIERTO", "Ya hay un turno de caja abierto en esta estación."));
+        }
+        crate::sync::descarga::credenciales(conn)
+    })?;
+    let confirmacion = caja::confirmar_turno_unico(estado.transporte.as_ref(), credenciales.as_ref())?;
+    let resumen = estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        caja::abrir_turno(conn, ahora, &usuario, base_inicial, confirmacion)
+    })?;
+    estado.despertar();
+    Ok(resumen)
+}
+
+#[tauri::command]
+pub fn caja_cerrar_turno(estado: State<'_, EstadoApp>, efectivo_contado: i64, nota: Option<String>) -> Resultado<caja::ResumenTurno> {
+    let resumen = estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        exigir_operable(conn, ahora)?;
+        caja::cerrar_turno(conn, ahora, &usuario, efectivo_contado, nota.as_deref())
+    })?;
+    estado.despertar();
+    Ok(resumen)
+}
+
+#[tauri::command]
+pub fn caja_productos(estado: State<'_, EstadoApp>, texto: String) -> Resultado<Vec<caja::ProductoVenta>> {
+    estado.con_base(|conn, sesion, ahora| {
+        sesion.exigir_activa(conn, ahora)?;
+        caja::productos_para_venta(conn, &texto)
+    })
+}
+
+#[tauri::command]
+pub fn caja_registrar_venta(estado: State<'_, EstadoApp>, venta: caja::NuevaVenta) -> Resultado<caja::VentaRegistrada> {
+    let registrada = estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        exigir_operable(conn, ahora)?;
+        caja::registrar_venta(conn, ahora, &usuario, &venta)
+    })?;
+    estado.despertar();
+    Ok(registrada)
+}
+
+#[tauri::command]
+pub fn caja_registrar_egreso(estado: State<'_, EstadoApp>, monto: i64, motivo: String) -> Resultado<caja::EgresoRegistrado> {
+    let egreso = estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        exigir_operable(conn, ahora)?;
+        caja::registrar_egreso(conn, ahora, &usuario, monto, &motivo)
+    })?;
+    estado.despertar();
+    Ok(egreso)
+}
+
+/// Movimientos de un turno de esta estación (el abierto si no se indica).
+#[tauri::command]
+pub fn caja_movimientos(estado: State<'_, EstadoApp>, turno_id: Option<String>) -> Resultado<Vec<caja::Movimiento>> {
+    estado.con_base(|conn, sesion, ahora| {
+        sesion.exigir_activa(conn, ahora)?;
+        let id = match turno_id {
+            Some(id) => id,
+            None => match caja::turno_abierto(conn)? {
+                Some(t) => t.id,
+                None => return Ok(vec![]),
+            },
+        };
+        caja::movimientos(conn, &id)
+    })
+}
+
+/// Cierre diario de esta estación (A3). Sin fecha, el de hoy (día de Bogotá).
+#[tauri::command]
+pub fn caja_cierre_diario(estado: State<'_, EstadoApp>, fecha: Option<String>) -> Resultado<caja::CierreDiario> {
+    estado.con_base(|conn, sesion, ahora| {
+        sesion.exigir_activa(conn, ahora)?;
+        let dia = match fecha.as_deref() {
+            Some(f) => f.parse().map_err(|_| ErrorApp::nuevo("FECHA_INVALIDA", "La fecha debe tener la forma AAAA-MM-DD."))?,
+            None => fecha_negocio(ahora),
+        };
+        caja::cierre_diario(conn, dia)
     })
 }

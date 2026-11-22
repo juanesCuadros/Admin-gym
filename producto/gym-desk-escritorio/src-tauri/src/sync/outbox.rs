@@ -143,12 +143,16 @@ pub fn aplicar_resultados(conn: &Connection, ahora: DateTime<Utc>, lote: &[Opera
             "error" | "retenida" => (r["codigo"].as_str(), r["mensaje"].as_str()),
             _ => (None, None),
         };
-        tx.execute(
+        let cambiadas = tx.execute(
             "UPDATE sync_outbox SET estado = ?1, ultimo_error_codigo = ?2, ultimo_error_mensaje = ?3, resultado = ?4,
                resuelta_en = CASE WHEN ?5 THEN ?6 ELSE NULL END
              WHERE id = ?7 AND estado = 'enviando'",
             params![estado, codigo, mensaje, r.to_string(), resuelta, ts, id],
         )?;
+        let es_venta = lote.iter().any(|o| o.id == id && o.cuerpo["tipo"] == "venta");
+        if cambiadas == 1 && resuelta && es_venta {
+            crate::caja::stock_confirmado(&tx, id)?;
+        }
     }
     for op in lote {
         tx.execute("UPDATE sync_outbox SET estado = 'pendiente' WHERE id = ?1 AND estado = 'enviando'", [&op.id])?;
