@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useCajaTurno } from '../../contexts/CajaTurnoContext';
 import { Cargando, ErrorCarga, MensajeFijo } from '../../components/estados/Estados';
 import { useToast } from '../../contexts/ToastContext';
+import { useClaveIdempotencia } from '../../hooks/useClaveIdempotencia';
 import { ApiError, toApiError } from '../../api/client';
 import { Card, KpiCard } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -81,6 +82,12 @@ export const CajaPage: React.FC = () => {
 
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Un doble clic o un reintento tras un corte no abre, cierra ni registra dos veces (X-Idempotency-Key).
+  const claveAbrir = useClaveIdempotencia();
+  const claveCerrar = useClaveIdempotencia();
+  const claveAjeno = useClaveIdempotencia();
+  const claveEgreso = useClaveIdempotencia();
+
   const cargarMovimientos = useCallback(async () => {
     if (!turno || !turnoPropio) {
       setMovimientos([]);
@@ -120,7 +127,9 @@ export const CajaPage: React.FC = () => {
     setIsProcessing(true);
     setErrorAbrir(null);
     try {
-      await cajaService.abrirTurno({ base_inicial: base });
+      const datos = { base_inicial: base };
+      await cajaService.abrirTurno(datos, claveAbrir.clave(datos));
+      claveAbrir.reiniciar();
       setShowAbrirModal(false);
       setBaseInicial('');
       setAjenoDelError(null);
@@ -149,7 +158,9 @@ export const CajaPage: React.FC = () => {
     setIsProcessing(true);
     setErrorCerrar(null);
     try {
-      const res = await cajaService.cerrarTurno({ efectivo_contado: contado });
+      const datos = { efectivo_contado: contado };
+      const res = await cajaService.cerrarTurno(datos, claveCerrar.clave({ turno: turno?.id, ...datos }));
+      claveCerrar.reiniciar();
       setShowCerrarModal(false);
       setEfectivoContado('');
       const dif = Number(res.diferencia ?? 0);
@@ -178,10 +189,13 @@ export const CajaPage: React.FC = () => {
     setIsProcessing(true);
     setErrorAjeno(null);
     try {
-      const res = await cajaService.cerrarTurnoAjeno(ajenoACerrar.turno_id, {
-        conteo_efectivo: conteoAjenoNum,
-        nota: notaAjeno.trim() || undefined,
-      });
+      const datos = { conteo_efectivo: conteoAjenoNum, nota: notaAjeno.trim() || undefined };
+      const res = await cajaService.cerrarTurnoAjeno(
+        ajenoACerrar.turno_id,
+        datos,
+        claveAjeno.clave({ turno: ajenoACerrar.turno_id, ...datos })
+      );
+      claveAjeno.reiniciar();
       setConfirmarAjeno(false);
       setAjenoACerrar(null);
       setAjenoDelError(null);
@@ -213,7 +227,9 @@ export const CajaPage: React.FC = () => {
     setIsProcessing(true);
     setErrorEgreso(null);
     try {
-      await cajaService.registrarEgreso({ monto: montoEgreso, motivo: egresoMotivo.trim() });
+      const datos = { monto: montoEgreso, motivo: egresoMotivo.trim() };
+      await cajaService.registrarEgreso(datos, claveEgreso.clave(datos));
+      claveEgreso.reiniciar();
       setShowEgresoModal(false);
       setEgresoMonto('');
       setEgresoMotivo('');

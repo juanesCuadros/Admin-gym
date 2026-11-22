@@ -17,6 +17,9 @@ import {
   PreciosPasesResponse,
 } from '../types/caja.types';
 
+/** Contrato 1.5 (C-03): misma clave en el reintento = la operación no se repite. */
+const conClave = (idempotencyKey: string) => ({ headers: { 'X-Idempotency-Key': idempotencyKey } });
+
 export const cajaService = {
   /** Precio configurado de los pases (Configuración · Parámetros). */
   async getPreciosPases(): Promise<PreciosPasesResponse> {
@@ -24,8 +27,8 @@ export const cajaService = {
     return response.data;
   },
 
-  async abrirTurno(data: AbrirTurnoRequest): Promise<TurnoResumenDto> {
-    const response = await apiClient.post<TurnoResumenDto>('/caja/turnos/abrir', data);
+  async abrirTurno(data: AbrirTurnoRequest, idempotencyKey: string): Promise<TurnoResumenDto> {
+    const response = await apiClient.post<TurnoResumenDto>('/caja/turnos/abrir', data, conClave(idempotencyKey));
     return response.data;
   },
 
@@ -44,19 +47,27 @@ export const cajaService = {
     }
   },
 
-  async cerrarTurno(data: CerrarTurnoRequest): Promise<TurnoResumenDto> {
-    const response = await apiClient.post<TurnoResumenDto>('/caja/turnos/cerrar', data);
+  async cerrarTurno(data: CerrarTurnoRequest, idempotencyKey: string): Promise<TurnoResumenDto> {
+    const response = await apiClient.post<TurnoResumenDto>('/caja/turnos/cerrar', data, conClave(idempotencyKey));
     return response.data;
   },
 
   /** Contrato 1.1: cierra el turno que abrió otra persona; el descuadre queda a nombre de quien lo abrió. */
-  async cerrarTurnoAjeno(turnoId: string, data: CerrarTurnoAjenoRequest): Promise<TurnoResumenDto> {
-    const response = await apiClient.post<TurnoResumenDto>(`/caja/turnos/${turnoId}/cerrar-ajeno`, data);
+  async cerrarTurnoAjeno(turnoId: string, data: CerrarTurnoAjenoRequest, idempotencyKey: string): Promise<TurnoResumenDto> {
+    const response = await apiClient.post<TurnoResumenDto>(
+      `/caja/turnos/${turnoId}/cerrar-ajeno`,
+      data,
+      conClave(idempotencyKey)
+    );
     return response.data;
   },
 
-  async cierreForzado(turnoId: string, data: CierreForzadoRequest): Promise<TurnoResumenDto> {
-    const response = await apiClient.post<TurnoResumenDto>(`/caja/turnos/${turnoId}/cierre-forzado`, data);
+  async cierreForzado(turnoId: string, data: CierreForzadoRequest, idempotencyKey: string): Promise<TurnoResumenDto> {
+    const response = await apiClient.post<TurnoResumenDto>(
+      `/caja/turnos/${turnoId}/cierre-forzado`,
+      data,
+      conClave(idempotencyKey)
+    );
     return response.data;
   },
 
@@ -85,11 +96,17 @@ export const cajaService = {
     return response.data;
   },
 
-  async anularVenta(ventaId: string, motivo: string, tipoMedioReembolso: 'efectivo' | 'otro'): Promise<any> {
-    const response = await apiClient.post(`/caja/ventas/${ventaId}/anular`, {
-      motivo,
-      tipo_medio_reembolso: tipoMedioReembolso,
-    });
+  async anularVenta(
+    ventaId: string,
+    motivo: string,
+    tipoMedioReembolso: 'efectivo' | 'otro',
+    idempotencyKey: string
+  ): Promise<any> {
+    const response = await apiClient.post(
+      `/caja/ventas/${ventaId}/anular`,
+      { motivo, tipo_medio_reembolso: tipoMedioReembolso },
+      conClave(idempotencyKey)
+    );
     return response.data;
   },
 
@@ -102,13 +119,13 @@ export const cajaService = {
     return response.data;
   },
 
-  async anularPagoMembresia(pagoId: string, motivo: string): Promise<any> {
-    const response = await apiClient.post(`/caja/pagos-membresia/${pagoId}/anular`, { motivo });
+  async anularPagoMembresia(pagoId: string, motivo: string, idempotencyKey: string): Promise<any> {
+    const response = await apiClient.post(`/caja/pagos-membresia/${pagoId}/anular`, { motivo }, conClave(idempotencyKey));
     return response.data;
   },
 
-  async registrarEgreso(data: RegistrarEgresoRequest): Promise<EgresoResponseDto> {
-    const response = await apiClient.post<EgresoResponseDto>('/caja/egresos', data);
+  async registrarEgreso(data: RegistrarEgresoRequest, idempotencyKey: string): Promise<EgresoResponseDto> {
+    const response = await apiClient.post<EgresoResponseDto>('/caja/egresos', data, conClave(idempotencyKey));
     return response.data;
   },
 };
