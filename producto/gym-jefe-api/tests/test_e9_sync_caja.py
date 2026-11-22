@@ -209,8 +209,9 @@ async def test_cierre_forzado_y_lo_que_la_estacion_sigue_cobrando(cliente: Async
     assert (await sql(gym.id, "SELECT count(*) n FROM platform.egresos_caja WHERE turno_id = :t", {"t": t["id"]}))[0]["n"] == 1
     fila = (await sql(gym.id, "SELECT cierre_forzado, efectivo_contado FROM platform.turnos_caja WHERE id = :t", {"t": t["id"]}))[0]
     assert fila["cierre_forzado"] is True and fila["efectivo_contado"] is None
-    revs = await _revisiones(gym.id)
-    assert revs[-1]["detalle"]["efectivo_contado_estacion"] == 20000
+    # Las tres revisiones son de la misma transacción (mismo created_at): se busca la del cierre por su detalle.
+    cierre = [r for r in await _revisiones(gym.id) if "efectivo_contado_estacion" in r["detalle"]]
+    assert len(cierre) == 1 and cierre[0]["detalle"]["efectivo_contado_estacion"] == 20000
 
 
 async def test_stock_negativo_precio_distinto_y_descuento_fuera_de_regla(cliente: AsyncClient, fabrica: Fabrica):
