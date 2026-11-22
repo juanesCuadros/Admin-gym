@@ -20,6 +20,7 @@ from app.core.timezone import get_local_day_range_utc, today_local
 from app.modules.caja.schemas import RegistrarEgresoRequest
 from app.modules.caja.service import CajaService
 from app.modules.gastos.schemas import (
+    AnularGastoRequest,
     BeneficiarioStaff,
     ConfigPagoEntrenadorRequest,
     GastoResponse,
@@ -35,9 +36,12 @@ CATEGORIA_PAGO_ENTRENADOR = "Pago a entrenador"
 
 SELECT_GASTO = """
     SELECT g.id, g.categoria, g.descripcion, g.beneficiario_tipo, g.beneficiario_staff_id, g.beneficiario_nombre,
-           g.metodo, g.monto, g.fecha, g.turno_id, g.created_at, s.nombre AS registrado_por_nombre
+           g.metodo, g.monto, g.fecha, g.turno_id, g.created_at, s.nombre AS registrado_por_nombre,
+           g.anulado, g.motivo_anulacion, a.nombre AS anulado_por_nombre, g.anulado_en, r.turno_id AS turno_reintegro_id
     FROM platform.gastos g
     LEFT JOIN platform.staff s ON s.id = g.registrado_por
+    LEFT JOIN platform.staff a ON a.id = g.anulado_por
+    LEFT JOIN platform.reintegros_caja r ON r.gasto_id = g.id
 """
 
 
@@ -196,7 +200,8 @@ class GastosService:
             params["categoria"] = categoria.strip()
         resumen = (
             await session.execute(
-                text(f"SELECT COUNT(*) AS total, COALESCE(SUM(g.monto), 0) AS suma FROM platform.gastos g WHERE {condicion}"), params
+                text(f"SELECT COUNT(*) AS total, COALESCE(SUM(g.monto) FILTER (WHERE NOT g.anulado), 0) AS suma FROM platform.gastos g WHERE {condicion}"),
+                params,
             )
         ).mappings().one()
         filas = await session.execute(
@@ -232,7 +237,7 @@ class GastosService:
         filas = await session.execute(
             text("""
                 SELECT categoria, SUM(monto) AS suma FROM platform.gastos
-                WHERE gimnasio_id = :gym_id AND fecha BETWEEN :desde AND :hasta
+                WHERE gimnasio_id = :gym_id AND fecha BETWEEN :desde AND :hasta AND anulado = false
                 GROUP BY categoria ORDER BY suma DESC
             """),
             params,
@@ -268,9 +273,10 @@ class GastosService:
         pagado = (
             await session.execute(
                 text("""
-                    SELECT COALESCE(SUM(monto_pagado), 0) FROM platform.pagos_entrenador
-                    WHERE gimnasio_id = :gym_id AND staff_id = :staff
-                      AND periodo_desde <= :hasta AND periodo_hasta >= :desde
+                    SELECT COALESCE(SUM(p.monto_pagado), 0) FROM platform.pagos_entrenador p
+                    JOIN platform.gastos g ON g.id = p.gasto_id AND g.anulado = false
+                    WHERE p.gimnasio_id = :gym_id AND p.staff_id = :staff
+                      AND p.periodo_desde <= :hasta AND p.periodo_hasta >= :desde
                 """),
                 params,
             )
@@ -446,3 +452,128 @@ class GastosService:
             },
         )
         return PagoEntrenadorResponse(**dict(fila))
+
+    # ------------------------------------------------------------------
+    # Anular un gasto (B1)
+    # ------------------------------------------------------------------
+    @classmethod
+    async def anular_gasto(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        actor_id: UUID,
+        actor_nombre: str,
+        actor_rol: str,
+        gasto_id: UUID,
+        clave: str,
+        req: AnularGastoRequest,
+    ) -> GastoResponse:
+        """
+        Anula un gasto con motivo. No se borra: queda marcado y deja de contar en el listado, el reporte de
+        ingresos menos gastos y lo pagado a un entrenador. Si salió en efectivo de la caja, el efectivo vuelve
+        al turno abierto del gimnasio (P-11: el turno del gasto no se toca), con la misma regla que la anulación
+        de pagos de membresía: sin turno abierto no se puede anular.
+        """
+        clave = clave.strip()
+        motivo = req.motivo.strip()
+        if len(motivo) < 4:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"codigo": "MOTIVO_REQUERIDO", "mensaje": "Escribe el motivo de la anulación (mínimo 4 letras)."},
+            )
+        # Idempotencia: el reintento con la misma clave devuelve el gasto ya anulado.
+        previo = (
+            await session.execute(
+                text("SELECT id FROM platform.gastos WHERE gimnasio_id = :gym_id AND idempotency_key_anulacion = :clave"),
+                {"gym_id": gym_id, "clave": clave},
+            )
+        ).scalar()
+        if previo is not None:
+            if previo != gasto_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"codigo": "CLAVE_IDEMPOTENCIA_EN_USO", "mensaje": "Esta clave de envío ya se usó en otra operación."},
+                )
+            return await cls._gasto_por_id(session, gym_id, gasto_id)
+
+        gasto = (
+            await session.execute(
+                text("""
+                    SELECT id, categoria, beneficiario_nombre, metodo, monto, turno_id, anulado, idempotency_key_anulacion
+                    FROM platform.gastos WHERE id = :id AND gimnasio_id = :gym_id FOR UPDATE
+                """),
+                {"id": gasto_id, "gym_id": gym_id},
+            )
+        ).mappings().first()
+        if not gasto:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"codigo": "GASTO_NO_ENCONTRADO", "mensaje": "Ese gasto no existe en este gimnasio."},
+            )
+        if gasto["anulado"]:
+            if gasto["idempotency_key_anulacion"] == clave:  # doble envío simultáneo
+                return await cls._gasto_por_id(session, gym_id, gasto_id)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"codigo": "GASTO_YA_ANULADO", "mensaje": "Este gasto ya está anulado."},
+            )
+        # El pago a un entrenador solo lo registra el Jefe; también solo él lo anula.
+        if gasto["categoria"] == CATEGORIA_PAGO_ENTRENADOR and actor_rol != "jefe":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"codigo": "SOLO_JEFE", "mensaje": "Solo el Jefe puede anular el pago a un entrenador."},
+            )
+
+        turno_reintegro = None
+        if gasto["metodo"] == "efectivo":
+            turno_reintegro = (
+                await session.execute(
+                    text("SELECT id FROM platform.turnos_caja WHERE gimnasio_id = :gym_id AND estado = 'abierto' FOR UPDATE"),
+                    {"gym_id": gym_id},
+                )
+            ).scalar()
+            if turno_reintegro is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "codigo": "NO_HAY_TURNO_ABIERTO",
+                        "mensaje": "El gasto salió en efectivo: abre la caja para que el dinero vuelva a ella al anularlo.",
+                    },
+                )
+            await session.execute(
+                text("""
+                    INSERT INTO platform.reintegros_caja (gimnasio_id, turno_id, gasto_id, turno_original_id, monto, motivo, registrado_por)
+                    VALUES (:gym_id, :turno, :gasto, :original, :monto, :motivo, :actor)
+                """),
+                {"gym_id": gym_id, "turno": turno_reintegro, "gasto": gasto_id, "original": gasto["turno_id"],
+                 "monto": gasto["monto"], "motivo": motivo, "actor": actor_id},
+            )
+
+        await session.execute(
+            text("""
+                UPDATE platform.gastos
+                SET anulado = true, motivo_anulacion = :motivo, anulado_por = :actor, anulado_en = now(),
+                    idempotency_key_anulacion = :clave
+                WHERE id = :id AND gimnasio_id = :gym_id
+            """),
+            {"motivo": motivo, "actor": actor_id, "clave": clave, "id": gasto_id, "gym_id": gym_id},
+        )
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=gym_id,
+            actor_id=actor_id,
+            actor_nombre=actor_nombre,
+            accion="ANULAR_GASTO",
+            entidad="gastos",
+            entidad_id=str(gasto_id),
+            detalle={
+                "categoria": gasto["categoria"],
+                "beneficiario": gasto["beneficiario_nombre"],
+                "metodo": gasto["metodo"],
+                "monto": float(gasto["monto"]),
+                "motivo": motivo,
+                "turno_gasto_id": str(gasto["turno_id"]) if gasto["turno_id"] else None,
+                "turno_reintegro_id": str(turno_reintegro) if turno_reintegro else None,
+            },
+        )
+        return await cls._gasto_por_id(session, gym_id, gasto_id)

@@ -35,6 +35,7 @@ const ETIQUETA_MOVIMIENTO: Record<string, string> = {
   pago_membresia: 'Membresía',
   egreso: 'Egreso',
   devolucion: 'Devolución',
+  reintegro: 'Gasto anulado',
 };
 
 /**
@@ -337,7 +338,7 @@ export const CajaPage: React.FC = () => {
               label="Egresos"
               value={formatCOP(turno.egresos_efectivo)}
               icon={<MinusCircle size={20} />}
-              subtext={`Devoluciones: ${formatCOP(turno.devoluciones_efectivo)}`}
+              subtext={`Devoluciones: ${formatCOP(turno.devoluciones_efectivo)}${Number(turno.reintegros_efectivo ?? 0) > 0 ? ` · reintegros: ${formatCOP(turno.reintegros_efectivo)}` : ''}`}
             />
             <KpiCard
               label="Efectivo esperado"

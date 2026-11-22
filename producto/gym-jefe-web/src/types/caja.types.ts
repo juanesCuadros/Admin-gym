@@ -41,6 +41,8 @@ export interface TurnoResumenDto {
   pagos_membresia_otro: number;
   egresos_efectivo: number;
   devoluciones_efectivo: number;
+  /** Efectivo de gastos anulados que volvió a esta caja. */
+  reintegros_efectivo?: number;
   total_esperado_efectivo: number;
   efectivo_contado?: number | null;
   diferencia?: number | null;
@@ -207,7 +209,7 @@ export interface FiltrosTurnos {
 
 export interface MovimientoCajaItemDto {
   id: string;
-  tipo_movimiento: 'venta' | 'pago_membresia' | 'egreso' | 'devolucion';
+  tipo_movimiento: 'venta' | 'pago_membresia' | 'egreso' | 'devolucion' | 'reintegro';
   monto: number;
   metodo?: string | null;
   tipo_medio?: string | null;

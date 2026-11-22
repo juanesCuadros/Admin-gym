@@ -13,6 +13,12 @@ export interface Gasto {
   turno_id?: string | null;
   registrado_por_nombre?: string | null;
   created_at: string;
+  anulado?: boolean;
+  motivo_anulacion?: string | null;
+  anulado_por_nombre?: string | null;
+  anulado_en?: string | null;
+  /** Turno abierto al que volvió el efectivo al anular. */
+  turno_reintegro_id?: string | null;
 }
 
 export interface ListadoGastos {

@@ -38,6 +38,16 @@ class GastoResponse(BaseModel):
     turno_id: Optional[UUID] = None
     registrado_por_nombre: Optional[str] = None
     created_at: datetime
+    anulado: bool = False
+    motivo_anulacion: Optional[str] = None
+    anulado_por_nombre: Optional[str] = None
+    anulado_en: Optional[datetime] = None
+    # Turno abierto al que volvió el efectivo al anular (P-11).
+    turno_reintegro_id: Optional[UUID] = None
+
+
+class AnularGastoRequest(BaseModel):
+    motivo: str = Field(..., min_length=4, max_length=255, description="Por qué se anula el gasto")
 
 
 class ListadoGastosResponse(BaseModel):

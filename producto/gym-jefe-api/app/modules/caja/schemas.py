@@ -39,6 +39,8 @@ class TurnoResumenDto(BaseModel):
     pagos_membresia_otro: Decimal = Decimal("0.0")
     egresos_efectivo: Decimal = Decimal("0.0")
     devoluciones_efectivo: Decimal = Decimal("0.0")
+    # Efectivo que volvió a la caja al anular un gasto pagado en efectivo (B1).
+    reintegros_efectivo: Decimal = Decimal("0.0")
     total_esperado_efectivo: Decimal = Decimal("0.0")
     efectivo_contado: Optional[Decimal] = None
     diferencia: Optional[Decimal] = None
@@ -224,7 +226,7 @@ class EgresoResponseDto(BaseModel):
 # --- Movimientos Consolidados del Turno ---
 class MovimientoCajaItemDto(BaseModel):
     id: str
-    tipo_movimiento: str  # 'venta' | 'pago_membresia' | 'egreso' | 'devolucion'
+    tipo_movimiento: str  # 'venta' | 'pago_membresia' | 'egreso' | 'devolucion' | 'reintegro'
     monto: Decimal
     metodo: Optional[str] = None
     tipo_medio: Optional[str] = None

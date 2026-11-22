@@ -1822,6 +1822,24 @@ class CajaService:
                 ts=d["created_at"]
             ))
 
+        # 5. Reintegros: efectivo de gastos anulados que volvió a esta caja
+        r_res = await session.execute(text("""
+            SELECT r.id, r.monto, r.motivo, r.created_at, g.categoria, g.beneficiario_nombre
+            FROM platform.reintegros_caja r JOIN platform.gastos g ON g.id = r.gasto_id
+            WHERE r.turno_id = :turno_id AND r.gimnasio_id = :gym_id
+        """), {"turno_id": turno_id, "gym_id": gym_id})
+        for r in r_res.mappings():
+            movimientos.append(MovimientoCajaItemDto(
+                id=str(r["id"]),
+                tipo_movimiento="reintegro",
+                monto=r["monto"],
+                metodo="efectivo",
+                tipo_medio="efectivo",
+                concepto=f"Gasto anulado ({r['categoria']}: {r['beneficiario_nombre']}): {r['motivo']}",
+                anulado=False,
+                ts=r["created_at"]
+            ))
+
         # Ordenar cronológicamente descendente
         movimientos.sort(key=lambda m: m.ts, reverse=True)
 
@@ -1875,6 +1893,12 @@ class CajaService:
         d_res = await session.execute(d_query, {"turno_id": turno_id})
         devoluciones_total = Decimal(str(d_res.scalar() or 0))
 
+        # Reintegros: el efectivo de un gasto anulado que volvió a esta caja (B1, P-11).
+        r_res = await session.execute(
+            text("SELECT COALESCE(SUM(monto), 0) FROM platform.reintegros_caja WHERE turno_id = :turno_id"), {"turno_id": turno_id}
+        )
+        reintegros_total = Decimal(str(r_res.scalar() or 0))
+
         # Pagos mixtos: cada parte suma en su medio. Solo la parte en efectivo llega al efectivo esperado.
         m_query = text("""
             SELECT
@@ -1896,7 +1920,7 @@ class CajaService:
         p_efectivo = Decimal(str(p_st["p_efectivo"])) + Decimal(str(m_st["p_efectivo"]))
         p_otro = Decimal(str(p_st["p_otro"])) + Decimal(str(m_st["p_otro"]))
 
-        total_esperado = base + v_efectivo + p_efectivo - egresos_total - devoluciones_total
+        total_esperado = base + v_efectivo + p_efectivo - egresos_total - devoluciones_total + reintegros_total
 
         return TurnoResumenDto(
             id=turno["id"],
@@ -1913,6 +1937,7 @@ class CajaService:
             pagos_membresia_otro=p_otro,
             egresos_efectivo=egresos_total,
             devoluciones_efectivo=devoluciones_total,
+            reintegros_efectivo=reintegros_total,
             total_esperado_efectivo=total_esperado,
             efectivo_contado=Decimal(str(turno["efectivo_contado"])) if turno.get("efectivo_contado") is not None else None,
             diferencia=Decimal(str(turno["diferencia"])) if turno.get("diferencia") is not None else None,
