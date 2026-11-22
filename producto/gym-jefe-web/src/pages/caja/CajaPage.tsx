@@ -28,6 +28,8 @@ interface TurnoAjeno {
   abierto_por_nombre: string;
   abierto_en: string;
   total_esperado_efectivo?: number;
+  /** El turno es de una estación de GymDesk: se cierra allí, con su arqueo. */
+  estacion_nombre?: string | null;
 }
 
 const ETIQUETA_MOVIMIENTO: Record<string, string> = {
@@ -128,9 +130,14 @@ export const CajaPage: React.FC = () => {
       await trasCambioDeTurno();
     } catch (err) {
       const e = toApiError(err);
-      if (e.codigo === 'TURNO_AJENO_ABIERTO' && e.detalles) {
-        const d = e.detalles as DetallesTurnoAjeno;
-        setAjenoDelError({ turno_id: d.turno_id, abierto_por_nombre: d.abierto_por_nombre, abierto_en: d.abierto_en });
+      if ((e.codigo === 'TURNO_AJENO_ABIERTO' || e.codigo === 'CAJA_EN_ESTACION') && e.detalles) {
+        const d = e.detalles as DetallesTurnoAjeno & { estacion_nombre?: string };
+        setAjenoDelError({
+          turno_id: d.turno_id,
+          abierto_por_nombre: d.abierto_por_nombre,
+          abierto_en: d.abierto_en,
+          estacion_nombre: d.estacion_nombre ?? null,
+        });
         setShowAbrirModal(false);
         refrescar();
       } else {
@@ -235,6 +242,7 @@ export const CajaPage: React.FC = () => {
           abierto_por_nombre: turno.abierto_por_nombre ?? turno.staff_nombre ?? 'otra persona',
           abierto_en: turno.abierto_en,
           total_esperado_efectivo: Number(turno.total_esperado_efectivo),
+          estacion_nombre: turno.estacion_nombre ?? null,
         }
       : ajenoDelError;
 
@@ -299,7 +307,14 @@ export const CajaPage: React.FC = () => {
         </MensajeFijo>
       )}
 
-      {!error && turnoAjeno && (
+      {!error && turnoAjeno?.estacion_nombre && (
+        <MensajeFijo tono="advertencia" titulo={`La caja está abierta en la estación ${turnoAjeno.estacion_nombre}`} style={{ marginBottom: 20 }}>
+          La abrió {turnoAjeno.abierto_por_nombre} el {formatFechaHora(turnoAjeno.abierto_en)}. Mientras esté abierta, las ventas, los
+          cobros y los egresos se hacen en esa estación, y se cierra allí con su propio arqueo.
+        </MensajeFijo>
+      )}
+
+      {!error && turnoAjeno && !turnoAjeno.estacion_nombre && (
         <MensajeFijo
           tono="advertencia"
           titulo={`La caja está abierta por ${turnoAjeno.abierto_por_nombre}`}

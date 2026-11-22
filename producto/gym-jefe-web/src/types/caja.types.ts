@@ -52,6 +52,9 @@ export interface TurnoResumenDto {
   /** Contrato 1.1: solo en la respuesta de cerrar un turno ajeno. */
   cerrado_por_nombre?: string | null;
   descuadre_atribuido_a_nombre?: string | null;
+  /** Turno de una estación de GymDesk: la web no cobra ni anula contra él (decisión A1). */
+  estacion_id?: string | null;
+  estacion_nombre?: string | null;
 }
 
 /** `GET /caja/precios-pases`. null = el gimnasio no lo configuró y se escribe al cobrar. */

@@ -47,8 +47,54 @@ def _clave_idempotencia_en_uso() -> HTTPException:
     )
 
 
+def _caja_en_estacion(fila) -> HTTPException:
+    """Decisión A1 (22-nov): mientras una estación tenga su turno abierto, la web no cobra ni anula contra él."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "codigo": "CAJA_EN_ESTACION",
+            "mensaje": f"La caja está abierta en la estación {fila['estacion_nombre']}",
+            "detalles": {
+                "turno_id": str(fila["id"]),
+                "estacion_nombre": fila["estacion_nombre"],
+                "abierto_por_nombre": fila["staff_nombre"],
+                "abierto_en": fila["abierto_en"].isoformat(),
+            },
+        },
+    )
+
+
 class CajaService:
     """Orquestador de turnos de caja, punto de venta atómico, control de inventario e idempotencia."""
+
+    @staticmethod
+    async def turno_de_estacion_abierto(session: AsyncSession, gym_id: UUID) -> Optional[dict]:
+        """El turno abierto de una estación de escritorio, si hay alguno."""
+        res = await session.execute(
+            text("""
+                SELECT t.id, t.abierto_en, s.nombre AS staff_nombre, e.nombre AS estacion_nombre
+                FROM platform.turnos_caja t
+                JOIN platform.staff s ON s.id = t.staff_id
+                JOIN platform.estaciones e ON e.id = t.estacion_id
+                WHERE t.gimnasio_id = :gym_id AND t.estado = 'abierto' AND t.estacion_id IS NOT NULL
+                ORDER BY t.abierto_en
+                LIMIT 1
+            """),
+            {"gym_id": gym_id},
+        )
+        fila = res.mappings().first()
+        return dict(fila) if fila else None
+
+    @classmethod
+    async def _sin_turno_web(cls, session: AsyncSession, gym_id: UUID, error: HTTPException) -> HTTPException:
+        """Error para quien no tiene turno en la web: si la caja está en una estación, se lo dice."""
+        estacion = await cls.turno_de_estacion_abierto(session, gym_id)
+        return _caja_en_estacion(estacion) if estacion else error
+
+    @staticmethod
+    async def bloquear_apertura(session: AsyncSession, gym_id: UUID) -> None:
+        """Ordena las aperturas de turno de un gimnasio (web y estaciones): ver P-13 y A1."""
+        await session.execute(text("SELECT pg_advisory_xact_lock(hashtext('turno_caja:' || :g))"), {"g": str(gym_id)})
 
     # =========================================================================
     # 1. GESTIÓN DE TURNOS DE CAJA (RF-08, RF-09, RF-10)
@@ -63,15 +109,21 @@ class CajaService:
         staff_nombre: str,
         data: AbrirTurnoRequest
     ) -> TurnoResumenDto:
-        # 1. Validar si ya hay un turno abierto en el gimnasio (GW-RF-08, Contrato 1.1)
+        # 1. Validar si ya hay un turno abierto en el gimnasio (GW-RF-08, Contrato 1.1).
+        # Con red hay uno solo, también contando los de las estaciones (P-13, decisión A1).
+        await cls.bloquear_apertura(session, gym_id)
         check_query = text("""
-            SELECT t.id, t.staff_id, s.nombre as staff_nombre, t.abierto_en
+            SELECT t.id, t.staff_id, s.nombre as staff_nombre, t.abierto_en, e.nombre AS estacion_nombre
             FROM platform.turnos_caja t
             JOIN platform.staff s ON s.id = t.staff_id
+            LEFT JOIN platform.estaciones e ON e.id = t.estacion_id
             WHERE t.gimnasio_id = :gym_id AND t.estado = 'abierto'
+            ORDER BY (t.estacion_id IS NULL) DESC
         """)
         res_check = await session.execute(check_query, {"gym_id": gym_id})
         turno_existente = res_check.mappings().first()
+        if turno_existente and turno_existente["estacion_nombre"]:
+            raise _caja_en_estacion(turno_existente)
         if turno_existente:
             if turno_existente["staff_id"] == staff_id:
                 raise HTTPException(
@@ -165,10 +217,14 @@ class CajaService:
     ) -> TurnoResumenDto:
         query = text("""
             SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre as staff_nombre, t.base_inicial,
-                   t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia
+                   t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia,
+                   t.estacion_id, e.nombre AS estacion_nombre
             FROM platform.turnos_caja t
             JOIN platform.staff s ON s.id = t.staff_id
+            LEFT JOIN platform.estaciones e ON e.id = t.estacion_id
             WHERE t.gimnasio_id = :gym_id AND t.estado = 'abierto'
+            ORDER BY (t.estacion_id IS NULL) DESC, t.abierto_en
+            LIMIT 1
         """)
         res = await session.execute(query, {"gym_id": gym_id})
         turno_dict = res.mappings().first()
@@ -180,7 +236,8 @@ class CajaService:
             )
 
         turno = dict(turno_dict)
-        turno["es_propio"] = (turno["staff_id"] == staff_id)
+        # Un turno de estación nunca es "propio" en la web, aunque lo haya abierto la misma persona.
+        turno["es_propio"] = turno["staff_id"] == staff_id and turno["estacion_id"] is None
         turno["abierto_por_nombre"] = turno["staff_nombre"]
         return await cls._calcular_acumulados_turno(session, turno)
 
@@ -228,10 +285,12 @@ class CajaService:
             text(f"""
                 SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre as staff_nombre, t.base_inicial,
                        t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia,
-                       t.estado_revision, t.revisado_en, t.nota_revision, rev.nombre as revisado_por_nombre
+                       t.estado_revision, t.revisado_en, t.nota_revision, rev.nombre as revisado_por_nombre,
+                       t.estacion_id, e.nombre AS estacion_nombre
                 FROM platform.turnos_caja t
                 JOIN platform.staff s ON s.id = t.staff_id
                 LEFT JOIN platform.staff rev ON rev.id = t.revisado_por
+                LEFT JOIN platform.estaciones e ON e.id = t.estacion_id
                 WHERE {where}
                 ORDER BY t.abierto_en DESC
                 LIMIT :limite OFFSET :desplazamiento
@@ -333,16 +392,17 @@ class CajaService:
             FROM platform.turnos_caja t
             JOIN platform.staff s ON s.id = t.staff_id
             WHERE t.gimnasio_id = :gym_id AND t.staff_id = :staff_id AND t.estado = 'abierto'
-            FOR UPDATE
+              AND t.estacion_id IS NULL
+            FOR UPDATE OF t
         """)
         res = await session.execute(query, {"gym_id": gym_id, "staff_id": staff_id})
         turno = res.mappings().first()
 
         if not turno:
-            raise HTTPException(
+            raise await cls._sin_turno_web(session, gym_id, HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "No tiene un turno de caja abierto para cerrar"}
-            )
+            ))
 
         # 2. Calcular acumulados y diferencia (permite cierre con descuadre, RF-10)
         resumen = await cls._calcular_acumulados_turno(session, turno)
@@ -407,11 +467,13 @@ class CajaService:
         # 1. Bloqueo pesimista del turno ajeno
         query = text("""
             SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre as staff_nombre, t.base_inicial,
-                   t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia
+                   t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia,
+                   t.estacion_id, e.nombre AS estacion_nombre
             FROM platform.turnos_caja t
             JOIN platform.staff s ON s.id = t.staff_id
+            LEFT JOIN platform.estaciones e ON e.id = t.estacion_id
             WHERE t.id = :turno_id AND t.gimnasio_id = :gym_id
-            FOR UPDATE
+            FOR UPDATE OF t
         """)
         res = await session.execute(query, {"turno_id": turno_id, "gym_id": gym_id})
         turno = res.mappings().first()
@@ -425,6 +487,15 @@ class CajaService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"codigo": "TURNO_YA_CERRADO", "mensaje": "El turno de caja ya se encuentra cerrado"}
+            )
+        if turno["estacion_id"] is not None:
+            # A1: cada turno se cierra con su propio arqueo; el efectivo está en la estación.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "codigo": "TURNO_DE_ESTACION",
+                    "mensaje": f"Ese turno es de la estación {turno['estacion_nombre']}: se cierra allí, con su arqueo.",
+                },
             )
 
         # 2. Calcular acumulados y diferencia
@@ -684,15 +755,16 @@ class CajaService:
         turno_query = text("""
             SELECT id FROM platform.turnos_caja
             WHERE gimnasio_id = :gym_id AND staff_id = :staff_id AND estado = 'abierto'
+              AND estacion_id IS NULL
             FOR UPDATE
         """)
         res_turno = await session.execute(turno_query, {"gym_id": gym_id, "staff_id": staff_id})
         turno = res_turno.mappings().first()
         if not turno:
-            raise HTTPException(
+            raise await cls._sin_turno_web(session, gym_id, HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "Debe abrir un turno de caja para registrar ventas"}
-            )
+            ))
         turno_id = turno["id"]
 
         # GW-RF-17 CA3: el visitante con pase de día queda con registro mínimo (nombre, documento y consentimiento).
@@ -948,15 +1020,16 @@ class CajaService:
         turno_query = text("""
             SELECT id FROM platform.turnos_caja
             WHERE gimnasio_id = :gym_id AND staff_id = :staff_id AND estado = 'abierto'
+              AND estacion_id IS NULL
             FOR UPDATE
         """)
         res_turno = await session.execute(turno_query, {"gym_id": gym_id, "staff_id": staff_id})
         turno_actual = res_turno.mappings().first()
         if not turno_actual:
-            raise HTTPException(
+            raise await cls._sin_turno_web(session, gym_id, HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "Debe tener un turno de caja abierto para registrar la devolución de una venta"}
-            )
+            ))
         turno_devolucion_id = turno_actual["id"]
 
         # 2. Bloqueo de la venta
@@ -1112,15 +1185,16 @@ class CajaService:
         turno_query = text("""
             SELECT id FROM platform.turnos_caja
             WHERE gimnasio_id = :gym_id AND staff_id = :staff_id AND estado = 'abierto'
+              AND estacion_id IS NULL
             FOR UPDATE
         """)
         res_turno = await session.execute(turno_query, {"gym_id": gym_id, "staff_id": staff_id})
         turno = res_turno.mappings().first()
         if not turno:
-            raise HTTPException(
+            raise await cls._sin_turno_web(session, gym_id, HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "Debe tener un turno de caja abierto para registrar pagos de membresía"}
-            )
+            ))
         turno_id = turno["id"]
 
         # 3. Validación de destino: membresía individual o paquete grupal (GW-RF-52, Contrato 1.3)
@@ -1567,15 +1641,15 @@ class CajaService:
         # 1. Validar turno de caja abierto actual en el gimnasio (GW-RF-16 CA3)
         q_turno = text("""
             SELECT id FROM platform.turnos_caja
-            WHERE gimnasio_id = :gym_id AND estado = 'abierto'
+            WHERE gimnasio_id = :gym_id AND estado = 'abierto' AND estacion_id IS NULL
         """)
         res_t = await session.execute(q_turno, {"gym_id": gym_id})
         t_row = res_t.mappings().first()
         if not t_row:
-            raise HTTPException(
+            raise await cls._sin_turno_web(session, gym_id, HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "Se requiere un turno de caja abierto actualmente para registrar el reverso contable de la anulación"}
-            )
+            ))
         turno_actual_id = t_row["id"]
 
         # 2. Bloqueo pesimista del pago
@@ -1687,15 +1761,16 @@ class CajaService:
         turno_query = text("""
             SELECT id FROM platform.turnos_caja
             WHERE gimnasio_id = :gym_id AND staff_id = :staff_id AND estado = 'abierto'
+              AND estacion_id IS NULL
             FOR UPDATE
         """)
         res_turno = await session.execute(turno_query, {"gym_id": gym_id, "staff_id": staff_id})
         turno = res_turno.mappings().first()
         if not turno:
-            raise HTTPException(
+            raise await cls._sin_turno_web(session, gym_id, HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "Debe tener un turno de caja abierto para registrar egresos"}
-            )
+            ))
         turno_id = turno["id"]
 
         # 2. Insertar egreso (RF-14: puede dejar la caja en saldo negativo sin bloquear)
@@ -1920,7 +1995,9 @@ class CajaService:
             es_propio=turno.get("es_propio", True),
             abierto_por_nombre=turno.get("abierto_por_nombre") or turno.get("staff_nombre"),
             cerrado_por_nombre=turno.get("cerrado_por_nombre"),
-            descuadre_atribuido_a_nombre=turno.get("descuadre_atribuido_a_nombre")
+            descuadre_atribuido_a_nombre=turno.get("descuadre_atribuido_a_nombre"),
+            estacion_id=turno.get("estacion_id"),
+            estacion_nombre=turno.get("estacion_nombre"),
         )
 
     @staticmethod

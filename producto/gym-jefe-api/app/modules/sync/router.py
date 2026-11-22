@@ -11,7 +11,7 @@ from app.modules.sync.activacion import ActivacionService
 from app.modules.sync.dependencias import Estacion, EstacionOperativa
 from app.modules.sync.estaciones import EstacionesService
 from app.modules.sync.pull import LIMITE_MAXIMO, LIMITE_POR_DEFECTO, PullService
-from app.modules.sync import ingresos
+from app.modules.sync import caja, ingresos
 from app.modules.sync.push import MANEJADORES, PushService
 from app.modules.sync.revisiones import ListadoRevisionesResponse, RevisarRequest, RevisionDto, RevisionesService
 from app.modules.sync.schemas import (
@@ -30,6 +30,10 @@ from app.modules.sync.schemas import (
 
 # Tipos de operación de la fase 2.
 MANEJADORES.update({"ingreso": ingresos.ingreso, "cortesia": ingresos.cortesia})
+# Tipos de la fase 3A: caja sin red.
+MANEJADORES.update({
+    "turno_abrir": caja.turno_abrir, "venta": caja.venta, "egreso": caja.egreso, "turno_cerrar": caja.turno_cerrar,
+})
 
 Sesion = Annotated[AsyncSession, Depends(get_db_session)]
 Jefe = Annotated[AuthenticatedStaff, Depends(require_role("jefe"))]
@@ -101,6 +105,14 @@ async def pull(
     version_app: Annotated[Optional[str], Header(alias="X-GymDesk-Version", max_length=20)] = None,
 ):
     return await PullService.pull(session, estacion, cursor, limite, version_app)
+
+
+@sync_router.get(
+    "/caja/turno-abierto", response_model=caja.TurnoAbiertoDto,
+    summary="Antes de abrir caja en la estación: ¿hay otro turno abierto en el gimnasio? (P-13 con red)",
+)
+async def turno_abierto(estacion: EstacionOperativa, session: Sesion):
+    return await caja.turno_abierto(session, estacion)
 
 
 @sync_router.post(

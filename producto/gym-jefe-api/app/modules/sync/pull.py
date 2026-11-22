@@ -37,7 +37,8 @@ LIMITE_MAXIMO = 1000
 _TABLAS: List[tuple] = [
     ("gimnasio", "tenant", "uuid", """
         id, nombre, subdominio, zona_horaria, dias_gracia_mora, dias_umbral_por_vencer,
-        permitir_descuentos, tope_descuento_pct, metodos_pago, branding, duracion_sesion_minutos
+        permitir_descuentos, tope_descuento_pct, metodos_pago, branding, duracion_sesion_minutos,
+        round(precio_pase_dia)::bigint AS precio_pase_dia, round(precio_pase_clase)::bigint AS precio_pase_clase
     """),
     ("staff", "staff", "uuid", """
         id, nombre, correo::text AS correo, rol, activo, (deleted_at IS NOT NULL) AS eliminado, password_cambiada_en

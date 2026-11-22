@@ -48,6 +48,9 @@ class TurnoResumenDto(BaseModel):
     abierto_por_nombre: Optional[str] = None
     cerrado_por_nombre: Optional[str] = None
     descuadre_atribuido_a_nombre: Optional[str] = None
+    # GymDesk Escritorio: el turno es de una estación (A1). La web no cobra ni anula contra él.
+    estacion_id: Optional[UUID] = None
+    estacion_nombre: Optional[str] = None
 
 
 # --- Punto de Venta (Ventas Multi-Ítem) ---

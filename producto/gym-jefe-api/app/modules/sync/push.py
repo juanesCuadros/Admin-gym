@@ -172,10 +172,12 @@ class PushService:
     async def _buscar_previa(session: AsyncSession, gym_id: UUID, op: Operacion) -> Optional[dict]:
         res = await session.execute(
             text("""
-                SELECT operacion_id, idempotency_key, contenido_hash, resultado, respuesta
-                FROM platform.sync_operaciones
-                WHERE gimnasio_id = :g AND (operacion_id = :id OR idempotency_key = :clave)
-                ORDER BY (operacion_id = :id) DESC
+                SELECT o.operacion_id, o.idempotency_key, o.contenido_hash, o.resultado, o.respuesta,
+                       r.motivo_codigo, r.motivo
+                FROM platform.sync_operaciones o
+                LEFT JOIN platform.sync_revisiones r ON r.operacion_id = o.id
+                WHERE o.gimnasio_id = :g AND (o.operacion_id = :id OR o.idempotency_key = :clave)
+                ORDER BY (o.operacion_id = :id) DESC
                 LIMIT 1
             """),
             {"g": gym_id, "id": op.id, "clave": op.idempotency_key},
@@ -195,8 +197,12 @@ class PushService:
                 indice=indice, id=op.id, resultado="invalida", codigo="OPERACION_ID_REUTILIZADO",
                 mensaje="Ya se recibió una operación con este identificador y otro contenido.",
             )
+        # Si la primera vez quedó por revisar, el reenvío trae el mismo motivo: la estación lo muestra igual
+        # aunque la primera respuesta se haya perdido.
+        revision = {"motivo_codigo": previa["motivo_codigo"], "motivo": previa["motivo"]} if previa.get("motivo_codigo") else None
         return ResultadoOperacionDto(
             indice=indice, id=op.id, resultado="duplicada", resultado_original=previa["resultado"], datos=previa["respuesta"],
+            revision=revision,
         )
 
     @classmethod

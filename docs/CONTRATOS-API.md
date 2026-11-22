@@ -64,6 +64,17 @@ Las renovaciones guardan en `dias_agregados` los días que sumaron. Anular el co
 vigencia propia.
 El header de idempotencia en todo el GW es `X-Idempotency-Key`.
 
+### 1.7 Turno de una estación visto desde la web (decisión A1, 22-nov, migración 072)
+Un turno abierto en una estación de GymDesk es de esa estación. Mientras siga abierto:
+
+| Método y ruta | Cambio |
+|---|---|
+| `POST /caja/turnos/abrir` | `409 CAJA_EN_ESTACION` "La caja está abierta en la estación <nombre>", `detalles: {turno_id, estacion_nombre, abierto_por_nombre, abierto_en}` |
+| `POST /caja/ventas`, `/caja/pagos-membresia`, `/caja/egresos`, `/caja/turnos/cerrar`, anular venta o pago (y lo que cobra a través de ellos: vender membresía, gasto en efectivo, reserva con cobro) | Sin turno propio de la web: `409 CAJA_EN_ESTACION` en lugar de `404 NO_HAY_TURNO_ABIERTO`. Nunca cobran ni anulan contra el turno de la estación, aunque lo haya abierto la misma persona |
+| `POST /caja/turnos/{id}/cerrar-ajeno` | `409 TURNO_DE_ESTACION`: se cierra en la estación, con su arqueo |
+| `POST /caja/turnos/{id}/cierre-forzado` | Sin cambio: el Jefe puede cerrarlo. Lo que la estación cobre después llega por revisar |
+| `GET /caja/turnos/actual`, `GET /caja/turnos` | Agregan `estacion_id?` y `estacion_nombre?`. En `actual`, `es_propio` es `false` para un turno de estación |
+
 ### 1.4 Copia del plan en la venta (GW-RF-24 CA2) y regla C2 (GW-RF-25 CA2)
 Sin cambio de contrato: las respuestas de membresía agregan `plan_precio_vendido`, `plan_duracion_dias_vendida`.
 
@@ -210,7 +221,7 @@ La fuente es `platform.estado_suscripcion()` (no se duplica la regla en Python).
 
 ---
 
-## Escritorio · GymDesk Escritorio (GW, migraciones 070 y 071)
+## Escritorio · GymDesk Escritorio (GW, migraciones 070 a 072)
 
 Alcance y reglas en `ALCANCE_APP_ESCRITORIO.md`. El cuerpo de error real de la API es
 `{"success": false, "error": {"codigo", "mensaje", "detalles"}}`; la estación lee `error.codigo`.
@@ -245,7 +256,7 @@ y aplica lo que llega como descarga inicial.
 
 | Clave | Campos |
 |---|---|
-| `gimnasio` | `id, nombre, subdominio, zona_horaria, dias_gracia_mora, dias_umbral_por_vencer, permitir_descuentos, tope_descuento_pct, metodos_pago, branding, duracion_sesion_minutos` |
+| `gimnasio` | `id, nombre, subdominio, zona_horaria, dias_gracia_mora, dias_umbral_por_vencer, permitir_descuentos, tope_descuento_pct, metodos_pago, branding, duracion_sesion_minutos, precio_pase_dia?, precio_pase_clase?` (COP enteros; nulo = se escribe al cobrar, fase 3A) |
 | `staff` | `id, nombre, correo, rol, activo, eliminado, password_cambiada_en` |
 | `permisos` | `id, rol, submodulo, puede_crear, puede_leer, puede_editar, puede_eliminar` |
 | `planes` | `id, nombre, precio (COP entero), duracion_dias, tipo, cupo_personas, activo` |
@@ -283,9 +294,34 @@ Tipos de operación:
 | `auditoria_estacion` | `{accion, entidad, entidad_id?, detalle}` con `accion` en `CREAR_BASE_LOCAL, ACTIVAR_ESTACION, INICIAR_SESION, INGRESO_FALLIDO, BLOQUEAR_SESION, DESBLOQUEAR_SESION, CERRAR_SESION, CREAR_PIN, CAMBIAR_PIN, INVALIDAR_CREDENCIAL` | Queda en la auditoría del gimnasio como `ESTACION_<accion>`, con la hora de la estación. Si quien la hizo figura desactivado: `pendiente_revision` con `STAFF_DESACTIVADO` |
 | `ingreso` (fase 2) | `{deportista_id, metodo: manual\|huella, resultado: abrio\|alerta_mora\|negado, estado, con_pase_dia}`. Exige `staff_id` | Inserta en `checkins` con la hora de la estación, `estacion_id`, `operacion_id` y `recibido_en`. **No vuelve a decidir** ni avisa a la Pantalla TV. `datos: {checkin_id, ts_utc}` |
 | `cortesia` (fase 2) | `{motivo}` (4 a 255 letras). Exige `staff_id` | Inserta la cortesía en `checkins` y audita `INGRESO_CORTESIA` |
+| `turno_abrir` (fase 3A) | `{base_inicial, sin_confirmar}`. Exige `staff_id`. El `id` de la operación es el del turno | Crea el turno con `estacion_id` y la hora de la estación; audita `ABRIR_TURNO_CAJA`. `datos: {turno_id, abierto_en}` |
+| `venta` (fase 3A) | `{turno_id, deportista_id?, items: [{tipo: producto\|pase_dia\|pase_clase, producto_id?, descripcion, cantidad, precio_lista, precio_cobrado, motivo_descuento?}], total, tipo_medio: efectivo\|otro\|mixto, metodo, pagos?: [{metodo, tipo_medio, monto}], valor_recibido?}`. `depende_de: [turno_id]`. El `id` es el de la venta | Inserta venta, ítems, reparto (`cobro_medios`) y movimientos de stock en el turno de la estación, con su hora (el pase de día cuenta para ese día). Respeta el precio de la estación. Audita `REGISTRAR_VENTA_ESTACION`. `datos: {venta_id, turno_id, created_at}` |
+| `egreso` (fase 3A) | `{turno_id, monto, motivo}`. `depende_de: [turno_id]` | Inserta el egreso en el turno de la estación; audita `REGISTRAR_EGRESO_CAJA` |
+| `turno_cerrar` (fase 3A) | `{turno_id, efectivo_contado, total_esperado_efectivo, nota?}`. `depende_de: [turno_id]` | Cierra con el arqueo de la estación y la diferencia calculada por el servidor; audita `CERRAR_TURNO_CAJA`. `datos: {turno_id, estado, total_esperado_efectivo, diferencia}` |
 
 `invalida` propias de estos tipos: `STAFF_REQUERIDO`, `DEPORTISTA_DESCONOCIDO` (cliente de otro gimnasio o inexistente),
-`PAYLOAD_INVALIDO`.
+`PAYLOAD_INVALIDO`. De la caja: `TURNO_DESCONOCIDO` (el turno no es de esta estación), `TURNO_YA_ABIERTO_EN_ESTACION`,
+`TOTAL_NO_CUADRA`, `MEDIOS_NO_SUMAN_TOTAL`, `PAGO_INSUFICIENTE`, `PRODUCTO_ID_REQUERIDO`, `PRODUCTO_DESCONOCIDO`,
+`PASE_DIA_REQUIERE_CLIENTE`, `MOTIVO_DESCUENTO_REQUERIDO`. Son errores de programación de la estación: ella valida lo
+mismo antes de cobrar.
+
+**Caja (fase 3A).** Un conflicto de negocio nunca rechaza dinero cobrado: se registra igual y queda `pendiente_revision`
+sobre el movimiento (`entidad`: `turnos_caja`, `ventas` o `egresos_caja`) con uno de estos motivos:
+
+| `motivo_codigo` | Cuándo |
+|---|---|
+| `TURNO_SIMULTANEO` | La estación abrió sin red y, al llegar, había (o hubo mientras tanto) otro turno abierto en la web u otra estación. Los dos quedan y cada uno se cierra con su arqueo. `detalle.otros_turnos` |
+| `TURNO_CERRADO_EN_SERVIDOR` | Venta, egreso o cierre de un turno que el Jefe ya cerró a la fuerza. La venta y el egreso se guardan en ese turno; el cierre no lo toca y deja el arqueo de la estación en `detalle` |
+| `PRECIO_DISTINTO` | El precio de la estación no es el actual. Se respeta el de la estación |
+| `STOCK_NEGATIVO` | La venta deja el stock por debajo de cero. Se descuenta igual |
+| `DESCUENTO_FUERA_DE_REGLA` | El descuento ya no cabe en la regla vigente (descuentos apagados, sin permiso o sobre el tope) |
+| `PRODUCTO_INACTIVO` / `DEPORTISTA_DESACTIVADO` / `DEPORTISTA_DESCONOCIDO` | Se vendió un producto desactivado, o a un cliente desactivado o que ya no existe (la venta queda sin cliente) |
+| `RESUMEN_NO_COINCIDE` | Al cerrar, el efectivo esperado de la estación y el del servidor no son iguales |
+| `STAFF_DESACTIVADO` / `STAFF_SIN_PERMISO` / `RELOJ_DESFASADO` | Igual que en los ingresos, con el permiso `caja` |
+
+`GET /sync/caja/turno-abierto` (con red, antes de abrir): `{abierto, turno_id?, es_de_esta_estacion, donde?, abierto_por_nombre?,
+abierto_en?, consultado_en}`. Si `abierto` es `true`, la estación no abre (P-13 con red). Sin respuesta, abre igual con
+`sin_confirmar: true`.
 
 Un ingreso o una cortesía queda `pendiente_revision` (registrado igual, sin cambiar su resultado) con uno de estos
 motivos. Si hay varios, manda el primero de la lista y los demás van en `detalle.otros_motivos`:
@@ -311,5 +347,5 @@ registrado_por_nombre?, ocurrida_en, recibida_en, estado_revision, resoluciones_
 revisado_por_nombre?, revisado_en?, nota_revision?}`.
 
 Se revisa una sola vez y queda en auditoría (`REVISAR_SYNC`). `visto` no cambia el registro: solo deja constancia.
-Aplica a lo que no mueve dinero (`entidad` en `checkins`, `staff`, `estaciones`). Aplicar, ajustar y anular llegan con la
-caja sin red (fase 3). Errores: `404 REVISION_NO_ENCONTRADA`, `409 REVISION_YA_REVISADA`, `409 RESOLUCION_NO_DISPONIBLE`.
+Aplica a lo que no mueve dinero (`entidad` en `checkins`, `staff`, `estaciones`). Las revisiones de la caja
+(`turnos_caja`, `ventas`, `egresos_caja`) quedan pendientes hasta la fase 3B, que trae aplicar, ajustar y anular. Errores: `404 REVISION_NO_ENCONTRADA`, `409 REVISION_YA_REVISADA`, `409 RESOLUCION_NO_DISPONIBLE`.
