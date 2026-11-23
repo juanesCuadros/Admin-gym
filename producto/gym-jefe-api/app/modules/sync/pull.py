@@ -47,7 +47,8 @@ _TABLAS: List[tuple] = [
     ("planes", "planes", "uuid", "id, nombre, round(precio)::bigint AS precio, duracion_dias, tipo, cupo_personas, activo"),
     ("productos", "productos", "uuid", "id, nombre, round(precio)::bigint AS precio, stock, activo"),
     ("deportistas", "deportistas", "uuid", "id, tipo_documento, documento, nombre, activo, (deleted_at IS NOT NULL) AS eliminado"),
-    ("membresias", "membresias", "uuid", "id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada, created_at"),
+    ("membresias", "membresias", "uuid", "id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada, created_at, "
+                                         "round(plan_precio_vendido)::bigint AS plan_precio_vendido"),
     ("eliminados", "sync_eliminados", "bigint", "id, tabla, registro_id"),
     # Fase 2 · regla de acceso sin red.
     ("congelamientos", "congelamientos", "uuid", "id, membresia_id, fecha_inicio, fecha_fin"),

@@ -11,7 +11,7 @@ from app.modules.sync.activacion import ActivacionService
 from app.modules.sync.dependencias import Estacion, EstacionOperativa
 from app.modules.sync.estaciones import EstacionesService
 from app.modules.sync.pull import LIMITE_MAXIMO, LIMITE_POR_DEFECTO, PullService
-from app.modules.sync import caja, ingresos
+from app.modules.sync import caja, ingresos, membresias
 from app.modules.sync.push import MANEJADORES, PushService
 from app.modules.sync.revisiones import ListadoRevisionesResponse, RevisarRequest, RevisionDto, RevisionesService
 from app.modules.sync.schemas import (
@@ -34,6 +34,8 @@ MANEJADORES.update({"ingreso": ingresos.ingreso, "cortesia": ingresos.cortesia})
 MANEJADORES.update({
     "turno_abrir": caja.turno_abrir, "venta": caja.venta, "egreso": caja.egreso, "turno_cerrar": caja.turno_cerrar,
 })
+# Tipos de la fase 3B (parte 1): renovar y vender membresías sin red.
+MANEJADORES.update({"membresia_renovar": membresias.renovar, "membresia_vender": membresias.vender})
 
 Sesion = Annotated[AsyncSession, Depends(get_db_session)]
 Jefe = Annotated[AuthenticatedStaff, Depends(require_role("jefe"))]
