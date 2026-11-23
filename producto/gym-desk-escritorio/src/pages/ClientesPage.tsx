@@ -13,6 +13,7 @@ import { MensajeError } from '../components/Piezas';
 import type { EstadoEstacion } from '../types/estacion.types';
 import type { ClienteEvaluado, EstadoCliente, FichaCliente } from '../types/ingreso.types';
 import { RegistrarHuellaModal, useHuella } from './Huella';
+import { MedicionesCliente } from './Mediciones';
 import { NuevoClienteModal } from './NuevoClienteModal';
 
 const fecha = (dia: string) => formatFecha(`${dia}T12:00:00-05:00`);
@@ -201,6 +202,8 @@ export const ClientesPage: React.FC<{
                 <div className={`gd-ficha-acceso ${c.abre ? 'si' : 'no'}`}>{c.abre ? 'Puede entrar hoy' : 'No puede entrar hoy'} · {c.mensaje}</div>
               </div>
             </div>
+
+            <MedicionesCliente deportistaId={c.id} nombre={c.nombre} enLinea={estacion.en_linea} />
 
             <h4>Salud y emergencia</h4>
             {ficha.salud && Object.values(ficha.salud).some(Boolean) ? (

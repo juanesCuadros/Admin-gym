@@ -19,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditService
-from app.modules.deportistas.schemas import CrearDeportistaRequest
+from app.modules.deportistas.schemas import CrearDeportistaRequest, RegistrarMedicionRequest
 from app.modules.deportistas.service import DeportistasService
 from app.modules.my_gym.service import MAX_BYTES_IMAGEN, MyGymService
 from app.modules.sync.dependencias import EstacionAutenticada
@@ -112,4 +112,43 @@ async def registrar(session: AsyncSession, estacion: EstacionAutenticada, data: 
     return ClienteRegistradoDto(
         id=dep.id, tipo_documento=dep.tipo_documento, documento=dep.documento, nombre=dep.nombre, activo=dep.activo,
         con_foto=foto is not None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Mediciones desde la estación (registrar y consultar). Exigen conexión; mismas reglas de la web.
+# ---------------------------------------------------------------------------
+class RegistrarMedicionEstacionRequest(BaseModel):
+    staff_id: UUID
+    medicion: RegistrarMedicionRequest
+
+
+async def _staff_que_lee(session: AsyncSession, estacion: EstacionAutenticada, staff_id: UUID) -> dict:
+    res = await session.execute(
+        text("SELECT id, nombre, rol, activo, deleted_at FROM platform.staff WHERE id = :s AND gimnasio_id = :g"),
+        {"s": staff_id, "g": estacion.gimnasio_id},
+    )
+    staff = res.mappings().first()
+    if not staff or not staff["activo"] or staff["deleted_at"] is not None:
+        raise _error("STAFF_NO_AUTORIZADO", "Tu usuario no está activo en este gimnasio. Pídele ayuda al Jefe.", status.HTTP_403_FORBIDDEN)
+    if staff["rol"] != "jefe":
+        res = await session.execute(
+            text("SELECT puede_leer FROM platform.permisos_rol WHERE gimnasio_id = :g AND rol = :r AND submodulo = 'deportistas'"),
+            {"g": estacion.gimnasio_id, "r": staff["rol"]},
+        )
+        if not res.scalar_one_or_none():
+            raise _error("PERMISO_DENEGADO", "No tienes permiso para ver clientes. Pídeselo al Jefe.", status.HTTP_403_FORBIDDEN)
+    return dict(staff)
+
+
+async def mediciones(session: AsyncSession, estacion: EstacionAutenticada, deportista_id: UUID, staff_id: UUID):
+    await _staff_que_lee(session, estacion, staff_id)
+    return await DeportistasService.listar_mediciones(session=session, gym_id=estacion.gimnasio_id, deportista_id=deportista_id)
+
+
+async def registrar_medicion(session: AsyncSession, estacion: EstacionAutenticada, deportista_id: UUID, data: RegistrarMedicionEstacionRequest):
+    staff = await _staff_con_permiso(session, estacion, data.staff_id)
+    return await DeportistasService.registrar_medicion(
+        session=session, gym_id=estacion.gimnasio_id, staff_id=staff["id"], staff_nombre=staff["nombre"],
+        deportista_id=deportista_id, req=data.medicion,
     )

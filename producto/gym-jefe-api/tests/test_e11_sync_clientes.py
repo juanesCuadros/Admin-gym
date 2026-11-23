@@ -81,3 +81,17 @@ async def test_la_huella_registrada_en_la_estacion_queda_cifrada_en_el_servidor(
     assert fila["dedo"] == "indice_derecho"
     assert b"pedro" not in bytes(fila["template_cifrado"])  # cifrada, nunca en claro
     assert "ENROLAR_HUELLA" in [a["accion"] for a in await u.acciones_auditoria(gym.id)]
+
+async def test_mediciones_desde_la_estacion(cliente: AsyncClient, fabrica: Fabrica):
+    gym, jefe, hj, estacion, he = await estacion_activa(cliente, fabrica)
+    dep = await u.deportista(gym.id)
+    url = f"{API}/sync/clientes/{dep}/mediciones"
+    medicion = {"sexo": "M", "altura_cm": 175, "peso": 80, "cintura": 85, "pecho": 100, "brazo": 34}
+    r = await cliente.post(url, json={"staff_id": str(jefe["id"]), "medicion": medicion}, headers=he)
+    assert r.status_code == 201, r.text
+    assert float(r.json()["peso"]) == 80
+    r = await cliente.get(url, params={"staff_id": str(jefe["id"])}, headers=he)
+    assert r.status_code == 200 and len(r.json()) == 1 and float(r.json()[0]["cintura"]) == 85
+    # Sin ninguna métrica: mismas reglas de la web.
+    r = await cliente.post(url, json={"staff_id": str(jefe["id"]), "medicion": {"sexo": "M", "altura_cm": 175}}, headers=he)
+    assert r.status_code == 422

@@ -11,6 +11,7 @@ from app.modules.sync.activacion import ActivacionService
 from app.modules.sync.dependencias import Estacion, EstacionOperativa
 from app.modules.sync.estaciones import EstacionesService
 from app.modules.sync.pull import LIMITE_MAXIMO, LIMITE_POR_DEFECTO, PullService
+from app.modules.deportistas.schemas import MedicionCorporalResponse
 from app.modules.sync import caja, clientes, huellas, ingresos, membresias
 from app.modules.sync.push import MANEJADORES, PushService
 from app.modules.sync.revisiones import ListadoRevisionesResponse, RevisarRequest, RevisionDto, RevisionesService
@@ -125,6 +126,26 @@ async def turno_abierto(estacion: EstacionOperativa, session: Sesion):
 )
 async def registrar_cliente(data: clientes.RegistrarClienteRequest, estacion: EstacionOperativa, session: Sesion):
     return await clientes.registrar(session, estacion, data)
+
+
+@sync_router.get(
+    "/clientes/{deportista_id}/mediciones", response_model=List[MedicionCorporalResponse],
+    summary="Historial de mediciones de un cliente, desde la estación. Exige conexión",
+)
+async def mediciones_cliente(
+    deportista_id: Annotated[UUID, Path()], estacion: EstacionOperativa, session: Sesion, staff_id: UUID = Query(...),
+):
+    return await clientes.mediciones(session, estacion, deportista_id, staff_id)
+
+
+@sync_router.post(
+    "/clientes/{deportista_id}/mediciones", response_model=MedicionCorporalResponse, status_code=status.HTTP_201_CREATED,
+    summary="Registrar una medición desde la estación. Exige conexión",
+)
+async def registrar_medicion_cliente(
+    deportista_id: Annotated[UUID, Path()], data: clientes.RegistrarMedicionEstacionRequest, estacion: EstacionOperativa, session: Sesion,
+):
+    return await clientes.registrar_medicion(session, estacion, deportista_id, data)
 
 
 @sync_router.post(

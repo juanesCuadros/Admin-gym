@@ -128,6 +128,43 @@ pub fn foto(conn: &Connection, deportista_id: &str) -> Resultado<Option<String>>
     Ok(conn.query_row("SELECT data_url FROM fotos_clientes WHERE deportista_id = ?1", [deportista_id], |f| f.get(0)).optional()?)
 }
 
+
+/// Llamada al servidor en nombre de la persona con sesión (mediciones). Exige conexión.
+pub fn en_linea(
+    base: &Mutex<Connection>,
+    sesion: &Mutex<GestorSesion>,
+    transporte: &dyn Transporte,
+    reloj: &dyn Reloj,
+    metodo: Metodo,
+    ruta: &str,
+    cuerpo: Option<Value>,
+) -> Resultado<Value> {
+    let (usuario, cred) = {
+        let mut gestor = sesion.lock().map_err(|_| interno())?;
+        let conn = base.lock().map_err(|_| interno())?;
+        let ahora = reloj.ahora();
+        let usuario = gestor.exigir_activa(&conn, ahora)?;
+        exigir_operable(&conn, ahora)?;
+        let cred = credenciales(&conn)?.ok_or_else(|| ErrorApp::nuevo("ESTACION_SIN_ACTIVAR", "Esta estación aún no está activada."))?;
+        (usuario, cred)
+    };
+    let es_get = matches!(metodo, Metodo::Get);
+    let cuerpo = cuerpo.map(|c| json!({ "staff_id": usuario.id, "medicion": c }));
+    let consulta = if es_get { vec![("staff_id", usuario.id.clone())] } else { vec![] };
+    match transporte.enviar(&cred.api_base, Peticion { metodo, ruta, token: Some(&cred.token), consulta, cuerpo: cuerpo.as_ref() }) {
+        Ok(r) => Ok(r),
+        Err(ErrorTransporte::SinConexion(_)) => Err(ErrorApp::nuevo("NECESITA_CONEXION", "Las medidas se consultan y registran con internet.")),
+        Err(e) => Err(e.a_error_app()),
+    }
+}
+
+/// Ruta segura hacia las mediciones de un cliente (el id no puede traer barras ni nada raro).
+pub fn ruta_mediciones(deportista_id: &str) -> Resultado<String> {
+    if deportista_id.is_empty() || !deportista_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return Err(ErrorApp::nuevo("DATOS_INVALIDOS", "Cliente inválido."));
+    }
+    Ok(format!("/sync/clientes/{deportista_id}/mediciones"))
+}
 #[cfg(test)]
 mod pruebas {
     use super::*;

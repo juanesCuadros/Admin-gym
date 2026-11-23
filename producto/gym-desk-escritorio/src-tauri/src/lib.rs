@@ -67,6 +67,8 @@ pub fn run() {
             comandos::listar_clientes,
             comandos::abrir_pantalla_bienvenida,
             comandos::ficha_cliente,
+            comandos::mediciones_cliente,
+            comandos::registrar_medicion,
             comandos::huella_estado,
             comandos::huella_configurar,
             comandos::huella_capturar,

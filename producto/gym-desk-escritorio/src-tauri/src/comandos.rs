@@ -452,6 +452,30 @@ pub async fn abrir_pantalla_bienvenida(app: tauri::AppHandle) -> Resultado<Strin
     }
 }
 
+/// Historial de mediciones de un cliente (con internet).
+#[tauri::command]
+pub async fn mediciones_cliente(estado: State<'_, EstadoApp>, deportista_id: String) -> Resultado<serde_json::Value> {
+    let ruta = crate::sync::clientes::ruta_mediciones(&deportista_id)?;
+    let (base, sesion, transporte, reloj) = (estado.base()?.clone(), estado.sesion.clone(), estado.transporte.clone(), estado.reloj.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::sync::clientes::en_linea(&base, &sesion, transporte.as_ref(), reloj.as_ref(), crate::sync::transporte::Metodo::Get, &ruta, None)
+    })
+    .await
+    .map_err(|_| error_interno())?
+}
+
+/// Registra una medición del cliente en el servidor (con internet), con las mismas reglas de la web.
+#[tauri::command]
+pub async fn registrar_medicion(estado: State<'_, EstadoApp>, deportista_id: String, medicion: serde_json::Value) -> Resultado<serde_json::Value> {
+    let ruta = crate::sync::clientes::ruta_mediciones(&deportista_id)?;
+    let (base, sesion, transporte, reloj) = (estado.base()?.clone(), estado.sesion.clone(), estado.transporte.clone(), estado.reloj.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::sync::clientes::en_linea(&base, &sesion, transporte.as_ref(), reloj.as_ref(), crate::sync::transporte::Metodo::Post, &ruta, Some(medicion))
+    })
+    .await
+    .map_err(|_| error_interno())?
+}
+
 /// Módulo Clientes: lista con búsqueda y filtro por estado.
 #[tauri::command]
 pub fn listar_clientes(
