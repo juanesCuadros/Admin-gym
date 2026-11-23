@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ArrowLeft,
+  ChevronUp,
+  Home,
   CalendarPlus,
   Dumbbell,
   KeyRound,
@@ -30,6 +32,8 @@ import { ControlIngresoPanel } from './ControlIngresoPanel';
 import { ConfigLector, useHuella } from './Huella';
 import { MembresiasPage, VentasPage } from './ModulosCobro';
 import { PendientesPanel } from './PendientesPanel';
+import { InicioModulo } from './InicioModulo';
+import { BotonAbrirPuerta, ConfigPuertaTarjeta } from './ConfigPuerta';
 
 const NOMBRE_ROL: Record<UsuarioSesion['rol'], string> = {
   jefe: 'Jefe',
@@ -37,17 +41,18 @@ const NOMBRE_ROL: Record<UsuarioSesion['rol'], string> = {
   entrenador: 'Entrenador',
 };
 
-type Modulo = 'ingreso' | 'clientes' | 'membresias' | 'ventas' | 'caja';
+type Modulo = 'inicio' | 'ingreso' | 'clientes' | 'membresias' | 'ventas' | 'caja';
 type Vista = Modulo | 'pendientes' | 'pin' | 'equipo';
 
 const MODULOS: { id: Modulo; etiqueta: string; tecla: string; icono: React.ReactNode; descripcion: string }[] = [
+  { id: 'inicio', etiqueta: 'Inicio', tecla: 'Inicio', icono: <Home size={18} />, descripcion: 'Resumen del día y accesos rápidos' },
   { id: 'ingreso', etiqueta: 'Ingreso', tecla: 'F1', icono: <ScanLine size={18} />, descripcion: 'Documento, carné o huella' },
   { id: 'clientes', etiqueta: 'Clientes', tecla: 'F2', icono: <Users size={18} />, descripcion: 'Buscar, registrar y ver la ficha' },
   { id: 'membresias', etiqueta: 'Membresías', tecla: 'F3', icono: <CalendarPlus size={18} />, descripcion: 'Renovar o vender un plan' },
   { id: 'ventas', etiqueta: 'Ventas', tecla: 'F4', icono: <ShoppingCart size={18} />, descripcion: 'Productos y pases' },
   { id: 'caja', etiqueta: 'Caja', tecla: 'F5', icono: <Wallet size={18} />, descripcion: 'Turno, egresos y cierre' },
 ];
-const TECLAS: Record<string, Modulo> = { F1: 'ingreso', F2: 'clientes', F3: 'membresias', F4: 'ventas', F5: 'caja' };
+const TECLAS: Record<string, Modulo> = { Home: 'inicio', F1: 'ingreso', F2: 'clientes', F3: 'membresias', F4: 'ventas', F5: 'caja' };
 
 /**
  * Sesión abierta. Menú lateral con los cinco módulos de recepción (atajos F1 a F5, F6 = nuevo cliente),
@@ -59,8 +64,17 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
   const accion = useEnvio();
   const formPin = useEnvio();
 
-  const [vista, setVista] = useState<Vista>('ingreso');
-  const [modulo, setModulo] = useState<Modulo>('ingreso');
+  const [vista, setVista] = useState<Vista>('inicio');
+  const [modulo, setModulo] = useState<Modulo>('inicio');
+  const [menuPerfil, setMenuPerfil] = useState(false);
+  useEffect(() => {
+    if (!menuPerfil) return;
+    const cerrarMenu = (e: MouseEvent) => { if (!(e.target as Element).closest('.gd-cuenta')) setMenuPerfil(false); };
+    const conEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuPerfil(false); };
+    document.addEventListener('mousedown', cerrarMenu);
+    document.addEventListener('keydown', conEsc);
+    return () => { document.removeEventListener('mousedown', cerrarMenu); document.removeEventListener('keydown', conEsc); };
+  }, [menuPerfil]);
   const [huella, recargarHuella] = useHuella();
   // Cliente que pasa de un módulo a otro (ficha → renovar, ingreso negado → renovar, ficha → vender).
   const [clienteMembresia, setClienteMembresia] = useState<string | null>(null);
@@ -115,7 +129,7 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
   };
 
   const actual = MODULOS.find((m) => m.id === vista);
-  const titulo = actual?.etiqueta ?? (vista === 'pin' ? 'Mi PIN' : vista === 'equipo' ? 'Equipo' : 'Pendientes de sincronizar');
+  const titulo = actual?.etiqueta ?? (vista === 'pin' ? 'Mi PIN' : vista === 'equipo' ? 'Configuración del equipo' : 'Pendientes de sincronizar');
 
   return (
     <div className="app-layout gd-app-escritorio">
@@ -136,38 +150,30 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
                         aria-current={vista === m.id ? 'page' : undefined} onClick={() => irA(m.id)} title={m.descripcion}>
                   {m.icono}
                   <span>{m.etiqueta}</span>
-                  <kbd className="gd-kbd">{m.tecla}</kbd>
+                  {m.tecla !== 'Inicio' && <kbd className="gd-kbd">{m.tecla}</kbd>}
                 </button>
               ))}
-            </div>
-          </div>
-          <div className="nav-seccion">
-            <div className="nav-grupo">Estación</div>
-            <div className="nav-lista">
-              <button type="button" className={`nav-modulo ${vista === 'equipo' ? 'activo' : ''}`} onClick={() => { recargarHuella(); setVista('equipo'); }}>
-                <Settings size={18} /><span>Equipo y huella</span>
-              </button>
-              <button type="button" className={`nav-modulo ${vista === 'pin' ? 'activo' : ''}`} onClick={() => setVista('pin')}>
-                <KeyRound size={18} /><span>Mi PIN</span>
-              </button>
-              <button type="button" className="nav-modulo" disabled={accion.enviando} onClick={() => void accion.enviar(bloquear)}>
-                <Lock size={18} /><span>Bloquear</span>
-              </button>
             </div>
           </div>
         </nav>
         <div className="sidebar-footer">
           {estacion && <IndicadorSync estacion={estacion} onAbrirPendientes={() => setVista(vista === 'pendientes' ? modulo : 'pendientes')} />}
         </div>
-        <div className="sidebar-cuenta">
+        <div className="sidebar-cuenta gd-cuenta" onClick={() => setMenuPerfil((v) => !v)} role="button" tabIndex={0} aria-haspopup="menu" aria-expanded={menuPerfil}>
           <Avatar name={usuario.nombre} />
           <div className="sidebar-cuenta-texto">
             <span className="sidebar-cuenta-nombre" title={usuario.nombre}>{usuario.nombre}</span>
             <span className="sidebar-cuenta-rol">{NOMBRE_ROL[usuario.rol]}</span>
           </div>
-          <button type="button" className="icon-btn ghost" title="Cerrar sesión" aria-label="Cerrar sesión" disabled={accion.enviando} onClick={() => void accion.enviar(cerrar)}>
-            <LogOut size={17} />
-          </button>
+          <ChevronUp size={16} className="gd-cuenta-flecha" />
+          {menuPerfil && (
+            <div className="gd-menu-perfil" role="menu" onClick={(e) => e.stopPropagation()}>
+              <button role="menuitem" onClick={() => { setMenuPerfil(false); recargarHuella(); setVista('equipo'); }}><Settings size={16} /> Configuración del equipo</button>
+              <button role="menuitem" onClick={() => { setMenuPerfil(false); setVista('pin'); }}><KeyRound size={16} /> Mi PIN</button>
+              <button role="menuitem" disabled={accion.enviando} onClick={() => { setMenuPerfil(false); void accion.enviar(bloquear); }}><Lock size={16} /> Bloquear la estación</button>
+              <button role="menuitem" className="peligro" disabled={accion.enviando} onClick={() => { setMenuPerfil(false); void accion.enviar(cerrar); }}><LogOut size={16} /> Cerrar sesión</button>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -179,6 +185,7 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
             {actual && <p className="page-subtitle">{actual.descripcion}</p>}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
+            {vista === 'ingreso' && <BotonAbrirPuerta />}
             {vista === 'clientes' && (
               <Button leftIcon={<UserPlus size={16} />} onClick={() => { irA('clientes'); setAtajoNuevo((n) => n + 1); }}>
                 Nuevo cliente <kbd>F6</kbd>
@@ -193,15 +200,19 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
         <main>
           {accion.error && <MensajeError>{accion.error}</MensajeError>}
           {vista === 'pendientes' && estacion && <PendientesPanel estacion={estacion} onCerrar={() => setVista(modulo)} />}
+          {vista === 'inicio' && estacion && (
+            <InicioModulo estacion={estacion} nombreUsuario={usuario.nombre} irA={irA} nuevoCliente={() => { irA('clientes'); setAtajoNuevo((n) => n + 1); }} />
+          )}
           {vista === 'ingreso' && estacion && <ControlIngresoPanel estacion={estacion} onCobrar={cobrar} />}
           {vista === 'clientes' && estacion && <ClientesPage estacion={estacion} onCobrar={cobrar} onVender={vender} atajoNuevo={atajoNuevo} />}
           {vista === 'membresias' && estacion && <MembresiasPage estacion={estacion} clienteInicial={clienteMembresia} onClienteUsado={limpiarMembresia} />}
           {vista === 'ventas' && estacion && <VentasPage estacion={estacion} clienteInicial={clienteVenta} onClienteUsado={limpiarVenta} />}
           {vista === 'caja' && estacion && <CajaPanel enLinea={estacion.en_linea} />}
           {vista === 'equipo' && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
-              {huella ? <ConfigLector huella={huella} onCambio={recargarHuella} /> : <div className="skeleton" style={{ height: 160, width: 520 }} />}
-              <section className="gd-tarjeta" style={{ maxWidth: 520 }}>
+            <div className="gd-config-grid">
+              {huella ? <ConfigLector huella={huella} onCambio={recargarHuella} /> : <div className="skeleton" style={{ height: 160 }} />}
+              <ConfigPuertaTarjeta />
+              <section className="gd-tarjeta">
                 <h2 className="gd-titulo" style={{ fontSize: '1.15rem' }}><Tv size={18} style={{ marginRight: 8 }} /> Pantalla de bienvenida (TV)</h2>
                 <p className="gd-subtitulo">
                   Conecta el TV a este computador por HDMI y en Windows elige “Extender” (tecla Windows + P). La bienvenida se abre en el TV en

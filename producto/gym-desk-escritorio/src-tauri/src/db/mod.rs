@@ -142,7 +142,7 @@ pub mod pruebas {
         assert_eq!(id1, id2);
         assert_eq!(migraciones::aplicar(&mut segunda, "x").unwrap(), 0);
         let n: i64 = segunda.query_row("SELECT count(*) FROM _migraciones", [], |f| f.get(0)).unwrap();
-        assert_eq!(n, 8);
+        assert_eq!(n, 9);
         let creaciones: i64 = segunda
             .query_row("SELECT count(*) FROM auditoria_local WHERE accion = 'CREAR_BASE_LOCAL'", [], |f| f.get(0))
             .unwrap();

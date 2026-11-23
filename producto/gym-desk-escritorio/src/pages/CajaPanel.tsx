@@ -302,7 +302,7 @@ export const Mostrador: React.FC<{
   const [metodo, setMetodo] = useState(() => mostrador.metodos_pago.find((m) => m.toLowerCase() === 'efectivo') ?? mostrador.metodos_pago[0]);
   const [filasMedio, setFilasMedio] = useState<FilaMedio[] | null>(null);
   const [recibido, setRecibido] = useState('');
-  const [confirmando, setConfirmando] = useState(false);
+  const [pagando, setPagando] = useState(false);
   const envio = useEnvio();
 
   const cargarProductos = useCallback(async (texto: string) => {
@@ -368,13 +368,15 @@ export const Mostrador: React.FC<{
       if (cobrado !== null && cobrado < precioDe(l) && l.motivo.trim().length < MOTIVO_MINIMO) return `Escribe el motivo del descuento en ${l.descripcion}.`;
     }
     if (necesitaCliente && !cliente) return 'El pase de día necesita un cliente registrado.';
+    return null;
+  })();
+  const problemaPago = (() => {
     if (filasMedio && !repartoCompleto(filasMedio, total)) return 'El reparto del pago no suma el total.';
     if (cambio !== null && cambio < 0) return 'El efectivo recibido no alcanza.';
     return null;
   })();
 
   const cobrar = () => {
-    setConfirmando(false);
     const items: NuevoItem[] = lineas.map((l) => {
       const item: NuevoItem = { tipo: l.tipo, cantidad: l.cantidad };
       if (l.producto) item.producto_id = l.producto.id;
@@ -399,6 +401,7 @@ export const Mostrador: React.FC<{
       setBuscaCliente('');
       setRecibido('');
       setFilasMedio(null);
+      setPagando(false);
       void cargarProductos(busqueda);
       onVendida(v);
     });
@@ -508,32 +511,37 @@ export const Mostrador: React.FC<{
         )}
 
         <div className="gd-total"><span>Total</span><strong>{formatCOP(total)}</strong></div>
-
-        {filasMedio ? (
-          <>
-            <PagoDividido metodos={mostrador.metodos_pago} total={total} filas={filasMedio} onChange={setFilasMedio} disabled={envio.enviando} />
-            <Button variant="ghost" size="sm" onClick={() => setFilasMedio(null)}>Pagar con un solo medio</Button>
-          </>
-        ) : (
-          <MediosPago metodos={mostrador.metodos_pago} valor={metodo} onCambio={setMetodo} disabled={envio.enviando}
-                      onMixto={() => setFilasMedio(filasIniciales(mostrador.metodos_pago))} />
-        )}
-        {enEfectivo > 0 && lineas.length > 0 && <EfectivoRapido aCobrar={enEfectivo} recibido={recibido} onRecibido={setRecibido} />}
-        {envio.error && <MensajeError>{envio.error}</MensajeError>}
         {problema && lineas.length > 0 && <p className="gd-pista">{problema}</p>}
-        <Button style={{ width: '100%', marginTop: 8 }} isLoading={envio.enviando} disabled={problema !== null} onClick={() => setConfirmando(true)}>
-          Cobrar {formatCOP(total)}
+        <Button className="gd-boton-pagar" disabled={problema !== null} onClick={() => setPagando(true)}>
+          Pagar {formatCOP(total)}
         </Button>
       </div>
 
-      <ConfirmDialog
-        isOpen={confirmando}
-        onClose={() => setConfirmando(false)}
-        onConfirm={cobrar}
-        title="Confirmar cobro"
-        message={`Vas a cobrar ${formatCOP(total)}${filasMedio ? ' repartido entre varios medios' : ` con ${metodo}`}${cliente ? ` a ${cliente.nombre}` : ''}. Queda registrado en este turno.`}
-        confirmText="Cobrar"
-      />
+      <Modal isOpen={pagando} onClose={() => !envio.enviando && setPagando(false)} title="Pago" maxWidth="560px"
+        footer={<>
+          <Button variant="outline" onClick={() => setPagando(false)} disabled={envio.enviando}>Volver</Button>
+          <Button isLoading={envio.enviando} disabled={problemaPago !== null} onClick={cobrar}>Confirmar venta</Button>
+        </>}>
+        <div className="gd-pago">
+          <div className="gd-pago-total">
+            <span>Total a cobrar{cliente ? ` · ${cliente.nombre}` : ''}</span>
+            <strong>{formatCOP(total)}</strong>
+            <small>{lineas.reduce((n, l) => n + l.cantidad, 0)} artículo(s)</small>
+          </div>
+          {filasMedio ? (
+            <>
+              <PagoDividido metodos={mostrador.metodos_pago} total={total} filas={filasMedio} onChange={setFilasMedio} disabled={envio.enviando} />
+              <Button variant="ghost" size="sm" onClick={() => setFilasMedio(null)}>Pagar con un solo medio</Button>
+            </>
+          ) : (
+            <MediosPago metodos={mostrador.metodos_pago} valor={metodo} onCambio={setMetodo} disabled={envio.enviando}
+                        onMixto={() => setFilasMedio(filasIniciales(mostrador.metodos_pago))} />
+          )}
+          {enEfectivo > 0 && <EfectivoRapido aCobrar={enEfectivo} recibido={recibido} onRecibido={setRecibido} />}
+          {problemaPago && <p className="gd-pista">{problemaPago}</p>}
+          {envio.error && <MensajeError>{envio.error}</MensajeError>}
+        </div>
+      </Modal>
     </section>
   );
 };

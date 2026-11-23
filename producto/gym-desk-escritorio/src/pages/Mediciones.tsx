@@ -111,10 +111,10 @@ export const MedicionesCliente: React.FC<{ deportistaId: string; nombre: string;
   );
 };
 
-/** Una casilla de medida sobre la figura del cuerpo. */
-const Casilla: React.FC<{ etiqueta: string; unidad: string; valor: string; onCambio: (v: string) => void; className?: string }> = ({ etiqueta, unidad, valor, onCambio, className }) => (
-  <label className={`gd-casilla ${className ?? ''}`}>
-    <span>{etiqueta}</span>
+/** Una casilla de medida; `marca` es el número que la ubica sobre la figura. */
+const Casilla: React.FC<{ etiqueta: string; unidad: string; valor: string; onCambio: (v: string) => void; marca?: number }> = ({ etiqueta, unidad, valor, onCambio, marca }) => (
+  <label className="gd-casilla">
+    <span>{marca !== undefined && <b className="gd-marca">{marca}</b>}{etiqueta}</span>
     <div>
       <input inputMode="decimal" value={valor} onChange={(e) => onCambio(e.target.value.replace(',', '.').replace(/[^\d.]/g, ''))} placeholder="—" />
       <small>{unidad}</small>
@@ -122,11 +122,35 @@ const Casilla: React.FC<{ etiqueta: string; unidad: string; valor: string; onCam
   </label>
 );
 
-/** Silueta simple del cuerpo para ubicar las medidas. */
+/** Media figura (lado izquierdo); la derecha es su reflejo. */
+const MEDIO_CUERPO =
+  'M100 64 C92 64 88 66 88 74 L88 80 C76 84 60 86 52 94 C44 102 42 120 42 140 L38 196 C36 216 32 236 30 252 ' +
+  'C28 262 24 272 28 278 C32 282 38 278 40 270 C42 256 46 236 50 214 L56 160 C58 150 62 140 64 132 ' +
+  'C66 160 68 186 70 204 C70 220 64 236 64 252 C64 290 68 330 72 380 L74 420 C74 428 70 432 74 436 L94 436 ' +
+  'C96 430 94 424 94 416 L96 330 C97 300 98 276 100 262 Z';
+
+/** Bandas de medida sobre la figura, con el mismo número de su casilla. */
+const BANDAS: { n: number; x1: number; x2: number; y: number }[] = [
+  { n: 1, x1: 64, x2: 136, y: 118 }, // pecho
+  { n: 2, x1: 141, x2: 159, y: 150 }, // brazo (derecho)
+  { n: 3, x1: 70, x2: 130, y: 200 }, // cintura
+  { n: 4, x1: 64, x2: 136, y: 246 }, // cadera
+  { n: 5, x1: 66, x2: 97, y: 300 }, // pierna (muslo izquierdo)
+];
+
+/** Figura del cuerpo de frente con las zonas que se miden. */
 const Silueta: React.FC = () => (
-  <svg viewBox="0 0 120 260" className="gd-silueta" aria-hidden="true">
-    <circle cx="60" cy="22" r="16" />
-    <path d="M38 46 Q60 38 82 46 L96 108 Q98 116 92 118 L84 80 L82 128 Q84 150 80 170 L78 250 Q76 256 68 256 L64 176 L56 176 L52 256 Q44 256 42 250 L40 170 Q36 150 38 128 L36 80 L28 118 Q22 116 24 108 Z" />
+  <svg viewBox="0 0 200 440" className="gd-silueta" aria-hidden="true">
+    <ellipse cx="100" cy="36" rx="22" ry="27" className="gd-silueta-cuerpo" />
+    <path d={MEDIO_CUERPO} className="gd-silueta-cuerpo" />
+    <path d={MEDIO_CUERPO} className="gd-silueta-cuerpo" transform="translate(200 0) scale(-1 1)" />
+    {BANDAS.map((b) => (
+      <g key={b.n}>
+        <line x1={b.x1} x2={b.x2} y1={b.y} y2={b.y} className="gd-silueta-banda" />
+        <circle cx={b.n === 2 ? b.x2 + 14 : b.n === 5 ? b.x1 - 14 : b.x2 + 14} cy={b.y} r="9" className="gd-silueta-marca" />
+        <text x={b.n === 2 ? b.x2 + 14 : b.n === 5 ? b.x1 - 14 : b.x2 + 14} y={b.y + 4} textAnchor="middle" className="gd-silueta-numero">{b.n}</text>
+      </g>
+    ))}
   </svg>
 );
 
@@ -162,7 +186,7 @@ export const RegistrarMedidasModal: React.FC<{ abierto: boolean; deportistaId: s
   };
 
   return (
-    <Modal isOpen={abierto} onClose={() => !enviando && onCerrar()} title={`Registrar medidas · ${nombre}`} maxWidth="760px"
+    <Modal isOpen={abierto} onClose={() => !enviando && onCerrar()} title={`Registrar medidas · ${nombre}`} maxWidth="860px"
       footer={<><Button variant="outline" onClick={onCerrar} disabled={enviando}>Cancelar</Button>
         <Button leftIcon={<Ruler size={16} />} onClick={() => void guardar()} isLoading={enviando} disabled={problema !== null}>Guardar medidas</Button></>}>
       <div className="gd-medir-arriba">
@@ -173,19 +197,19 @@ export const RegistrarMedidasModal: React.FC<{ abierto: boolean; deportistaId: s
         </div>
         <Casilla etiqueta="Estatura" unidad="cm" valor={v.altura_cm} onCambio={cambiar('altura_cm')} />
         <Casilla etiqueta="Peso" unidad="kg" valor={v.peso} onCambio={cambiar('peso')} />
+        <Casilla etiqueta="Masa muscular" unidad="kg" valor={v.masa_muscular} onCambio={cambiar('masa_muscular')} />
       </div>
       <div className="gd-cuerpo-medidas">
         <div className="gd-cuerpo-columna">
-          <Casilla etiqueta="Pecho" unidad="cm" valor={v.pecho} onCambio={cambiar('pecho')} />
-          <Casilla etiqueta="Cintura" unidad="cm" valor={v.cintura} onCambio={cambiar('cintura')} />
-          <Casilla etiqueta="Pierna (muslo)" unidad="cm" valor={v.pierna} onCambio={cambiar('pierna')} />
+          <Casilla marca={1} etiqueta="Pecho" unidad="cm" valor={v.pecho} onCambio={cambiar('pecho')} />
+          <Casilla marca={3} etiqueta="Cintura" unidad="cm" valor={v.cintura} onCambio={cambiar('cintura')} />
+          <Casilla marca={5} etiqueta="Pierna (muslo)" unidad="cm" valor={v.pierna} onCambio={cambiar('pierna')} />
         </div>
         <Silueta />
         <div className="gd-cuerpo-columna">
-          <Casilla etiqueta="Brazo" unidad="cm" valor={v.brazo} onCambio={cambiar('brazo')} />
-          <Casilla etiqueta="Cadera" unidad="cm" valor={v.cadera} onCambio={cambiar('cadera')} />
+          <Casilla marca={2} etiqueta="Brazo" unidad="cm" valor={v.brazo} onCambio={cambiar('brazo')} />
+          <Casilla marca={4} etiqueta="Cadera" unidad="cm" valor={v.cadera} onCambio={cambiar('cadera')} />
           <Casilla etiqueta="Grasa corporal" unidad="%" valor={v.grasa_pct} onCambio={cambiar('grasa_pct')} />
-          <Casilla etiqueta="Masa muscular" unidad="kg" valor={v.masa_muscular} onCambio={cambiar('masa_muscular')} />
         </div>
       </div>
       {problema && <p className="gd-pista">{problema}</p>}

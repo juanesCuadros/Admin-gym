@@ -239,6 +239,23 @@ const Dato: React.FC<{ etiqueta: string; children: React.ReactNode }> = ({ etiqu
 
 const numero = (n: number | null | undefined, unidad: string) => (n === null || n === undefined ? '—' : `${n} ${unidad}`);
 
+/** Foto tomada en recepción (escritorio); si no tiene, las iniciales. */
+const FotoDeportista: React.FC<{ id: string; nombre: string }> = ({ id, nombre }) => {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let vigente = true;
+    let creada: string | null = null;
+    setUrl(null);
+    deportistasService.foto(id).then((b) => {
+      if (!vigente || !b) return;
+      creada = URL.createObjectURL(b);
+      setUrl(creada);
+    }).catch(() => undefined);
+    return () => { vigente = false; if (creada) URL.revokeObjectURL(creada); };
+  }, [id]);
+  return url ? <img src={url} alt={`Foto de ${nombre}`} className="ficha-foto" /> : <Avatar name={nombre} size="lg" />;
+};
+
 export const DeportistasPage: React.FC = () => {
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
@@ -618,7 +635,7 @@ export const DeportistasPage: React.FC = () => {
           <>
             {/* Encabezado */}
             <div className="ficha-perfil">
-              <Avatar name={dep.nombre} size="lg" />
+              <FotoDeportista id={dep.id} nombre={dep.nombre} />
               <div className="ficha-perfil-text">
                 <div className="ficha-nombre">{dep.nombre}</div>
                 <div className="ficha-doc">{formatDocumento(dep.tipo_documento, dep.documento)}</div>

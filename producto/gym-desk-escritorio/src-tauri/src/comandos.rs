@@ -321,6 +321,7 @@ pub fn registrar_ingreso(app: tauri::AppHandle, estado: State<'_, EstadoApp>, de
         };
         registro::registrar_ingreso(conn, ahora, &usuario, objetivo, "manual")
     })?;
+    abrir_puerta_si_corresponde(&estado, &resultado);
     if !resultado.relectura_ignorada {
         estado.despertar();
         // La pantalla de bienvenida (TV) lo muestra al instante, sin pasar por el servidor.
@@ -449,6 +450,65 @@ pub async fn abrir_pantalla_bienvenida(app: tauri::AppHandle) -> Resultado<Strin
         Ok("en_tv".into())
     } else {
         Ok("sin_segundo_monitor".into())
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct EstadoPuerta {
+    pub config: crate::puerta::ConfigPuerta,
+    pub tipos: Vec<(String, String)>,
+    pub puede_configurar: bool,
+}
+
+#[tauri::command]
+pub fn puerta_estado(estado: State<'_, EstadoApp>) -> Resultado<EstadoPuerta> {
+    estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        Ok(EstadoPuerta {
+            config: crate::puerta::leer(conn)?,
+            tipos: crate::puerta::TIPOS.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect(),
+            puede_configurar: usuario.rol == "jefe",
+        })
+    })
+}
+
+#[tauri::command]
+pub fn puerta_configurar(estado: State<'_, EstadoApp>, config: crate::puerta::ConfigPuerta) -> Resultado<crate::puerta::ConfigPuerta> {
+    let cfg = estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        crate::puerta::configurar(conn, ahora, &usuario, &config)
+    })?;
+    estado.despertar();
+    Ok(cfg)
+}
+
+/// Abre la puerta a mano (botón de Ingreso o "Probar apertura"). Queda en la auditoría de la estación.
+#[tauri::command]
+pub async fn puerta_abrir(estado: State<'_, EstadoApp>, motivo: Option<String>) -> Resultado<()> {
+    let cfg = estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        let cfg = crate::puerta::leer(conn)?;
+        let motivo: String = motivo.as_deref().unwrap_or("manual").chars().take(60).collect();
+        crate::auditoria::registrar(conn, ahora, crate::auditoria::Actor::persona(&usuario.id, &usuario.nombre), "ABRIR_PUERTA_MANUAL", "estacion", None,
+            &serde_json::json!({ "motivo": motivo }))?;
+        Ok(cfg)
+    })?;
+    tauri::async_runtime::spawn_blocking(move || crate::puerta::abrir(&cfg)).await.map_err(|_| error_interno())?
+}
+
+/// Si el ingreso quedó verde y hay puerta configurada, la abre en segundo plano (no frena la pantalla).
+fn abrir_puerta_si_corresponde(estado: &EstadoApp, resultado: &ResultadoIngreso) {
+    if !resultado.abre || resultado.relectura_ignorada {
+        return;
+    }
+    if let Ok(cfg) = estado.con_base(|conn, _, _| crate::puerta::leer(conn)) {
+        if cfg.tipo != "ninguna" {
+            std::thread::spawn(move || {
+                if let Err(e) = crate::puerta::abrir(&cfg) {
+                    eprintln!("[puerta] {}", e.mensaje);
+                }
+            });
+        }
     }
 }
 
@@ -613,6 +673,7 @@ pub async fn ingreso_por_huella(app: tauri::AppHandle, estado: State<'_, EstadoA
         exigir_operable(conn, ahora)?;
         registro::registrar_ingreso(conn, ahora, &usuario, Objetivo::Id(&deportista_id), "huella")
     })?;
+    abrir_puerta_si_corresponde(&estado, &resultado);
     if !resultado.relectura_ignorada {
         estado.despertar();
         let _ = app.emit("ingreso-registrado", &resultado);

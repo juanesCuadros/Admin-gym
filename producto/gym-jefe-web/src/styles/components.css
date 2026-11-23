@@ -3236,3 +3236,4 @@
 .descarga-escritorio-icono { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; background: var(--primary-light, rgba(37,99,235,.1)); color: var(--primary); flex-shrink: 0; }
 .descarga-escritorio ol { margin: 6px 0 0; padding-left: 18px; color: var(--text-secondary); font-size: 0.88rem; line-height: 1.5; }
 .descarga-escritorio a.btn { text-decoration: none; gap: 8px; }
+.ficha-foto { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; flex: none; border: 2px solid var(--border-color); }

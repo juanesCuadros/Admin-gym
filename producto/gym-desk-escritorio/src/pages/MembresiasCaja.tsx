@@ -3,7 +3,7 @@ import { AlertTriangle, CalendarPlus, Plus, UserRound, X } from 'lucide-react';
 import { Button } from '@web/components/ui/Button';
 import { EstadoDeportistaBadge } from '@web/components/ui/EstadoDeportistaBadge';
 import { Input } from '@web/components/ui/Input';
-import { ConfirmDialog } from '@web/components/ui/Modal';
+import { Modal } from '@web/components/ui/Modal';
 import { efectivoDeFilas, filasIniciales, mediosDeFilas, PagoDividido, repartoCompleto, type FilaMedio } from '@web/components/ui/PagoDividido';
 import { formatCOP, formatDocumento, formatFecha } from '@web/utils/formato';
 import { cajaService } from '../api/caja.service';
@@ -104,13 +104,15 @@ export const MembresiasCaja: React.FC<{
     if (!puedeCobrar) return 'Elige un cliente.';
     if (total <= 0) return 'El valor a cobrar debe ser mayor que cero.';
     if (cobradoEscrito !== null && cobradoEscrito < lista && motivo.trim().length < MOTIVO_MINIMO) return 'Escribe el motivo del descuento.';
+    return null;
+  })();
+  const problemaPago = (() => {
     if (filasMedio && !repartoCompleto(filasMedio, total)) return 'El reparto del pago no suma el total.';
     if (cambio !== null && cambio < 0) return 'El efectivo recibido no alcanza.';
     return null;
   })();
 
   const cobrar = () => {
-    setConfirmando(false);
     if (!opciones) return;
     const conDescuento = cobradoEscrito !== null && cobradoEscrito !== lista;
     void envio.enviar(async () => {
@@ -126,6 +128,7 @@ export const MembresiasCaja: React.FC<{
       });
       setOpciones(null);
       limpiarCobro();
+      setConfirmando(false);
       onCobrado(c);
     });
   };
@@ -205,36 +208,40 @@ export const MembresiasCaja: React.FC<{
                 </details>
               )}
               <div className="gd-total"><span>Total</span><strong>{formatCOP(total)}</strong></div>
-              {filasMedio ? (
-                <>
-                  <PagoDividido metodos={mostrador.metodos_pago} total={total} filas={filasMedio} onChange={setFilasMedio} disabled={envio.enviando} />
-                  <Button variant="ghost" size="sm" onClick={() => setFilasMedio(null)}>Pagar con un solo medio</Button>
-                </>
-              ) : (
-                <MediosPago metodos={mostrador.metodos_pago} valor={metodo} onCambio={setMetodo} disabled={envio.enviando}
-                            onMixto={() => setFilasMedio(filasIniciales(mostrador.metodos_pago))} />
-              )}
-              {enEfectivo > 0 && <EfectivoRapido aCobrar={enEfectivo} recibido={recibido} onRecibido={setRecibido} />}
-              {envio.error && <MensajeError>{envio.error}</MensajeError>}
               {problema && <p className="gd-pista">{problema}</p>}
-              <Button style={{ width: '100%', marginTop: 8 }} isLoading={envio.enviando} disabled={problema !== null} onClick={() => setConfirmando(true)}>
-                {renovar ? 'Renovar' : 'Vender plan'} · {formatCOP(total)}
+              <Button className="gd-boton-pagar" disabled={problema !== null} onClick={() => setConfirmando(true)}>
+                Pagar {formatCOP(total)}
               </Button>
             </>
           )}
         </>
       )}
 
-      <ConfirmDialog
-        isOpen={confirmando}
-        onClose={() => setConfirmando(false)}
-        onConfirm={cobrar}
-        title={renovar ? 'Confirmar renovación' : 'Confirmar venta del plan'}
-        message={`Vas a cobrar ${formatCOP(total)}${filasMedio ? ' repartido entre varios medios' : ` con ${metodo}`} a ${c?.nombre ?? ''}${
-          venceNueva ? `. La membresía queda hasta el ${fecha(venceNueva)}` : ''
-        }. Queda registrado en este turno.`}
-        confirmText="Cobrar"
-      />
+      <Modal isOpen={confirmando} onClose={() => !envio.enviando && setConfirmando(false)} title={renovar ? 'Pago de la renovación' : 'Pago del plan'} maxWidth="560px"
+        footer={<>
+          <Button variant="outline" onClick={() => setConfirmando(false)} disabled={envio.enviando}>Volver</Button>
+          <Button isLoading={envio.enviando} disabled={problemaPago !== null} onClick={cobrar}>{renovar ? 'Confirmar renovación' : 'Confirmar venta'}</Button>
+        </>}>
+        <div className="gd-pago">
+          <div className="gd-pago-total">
+            <span>{c?.nombre ?? ''}</span>
+            <strong>{formatCOP(total)}</strong>
+            <small>{renovar ? `Renovar ${opciones?.membresia?.plan_nombre ?? 'plan'}` : plan?.nombre ?? ''}{venceNueva ? ` · queda hasta el ${fecha(venceNueva)}` : ''}</small>
+          </div>
+          {filasMedio ? (
+            <>
+              <PagoDividido metodos={mostrador.metodos_pago} total={total} filas={filasMedio} onChange={setFilasMedio} disabled={envio.enviando} />
+              <Button variant="ghost" size="sm" onClick={() => setFilasMedio(null)}>Pagar con un solo medio</Button>
+            </>
+          ) : (
+            <MediosPago metodos={mostrador.metodos_pago} valor={metodo} onCambio={setMetodo} disabled={envio.enviando}
+                        onMixto={() => setFilasMedio(filasIniciales(mostrador.metodos_pago))} />
+          )}
+          {enEfectivo > 0 && <EfectivoRapido aCobrar={enEfectivo} recibido={recibido} onRecibido={setRecibido} />}
+          {problemaPago && <p className="gd-pista">{problemaPago}</p>}
+          {envio.error && <MensajeError>{envio.error}</MensajeError>}
+        </div>
+      </Modal>
     </section>
   );
 };

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CalendarPlus, Fingerprint, LogIn, Search, ShoppingCart, UserPlus, UserRound } from 'lucide-react';
+import { CalendarPlus, Filter, Fingerprint, LogIn, Search, ShoppingCart, UserPlus, UserRound } from 'lucide-react';
 import { Badge } from '@web/components/ui/Badge';
 import { Button } from '@web/components/ui/Button';
 import { Drawer } from '@web/components/ui/Drawer';
@@ -19,7 +19,7 @@ import { NuevoClienteModal } from './NuevoClienteModal';
 const fecha = (dia: string) => formatFecha(`${dia}T12:00:00-05:00`);
 
 const FILTROS: { id: string; etiqueta: string; estados?: EstadoCliente[] }[] = [
-  { id: '', etiqueta: 'Todos' },
+  { id: '', etiqueta: 'Todos los estados' },
   { id: 'activo', etiqueta: 'Activos', estados: ['activo'] },
   { id: 'por_cobrar', etiqueta: 'Por cobrar', estados: ['vencido', 'en_gracia', 'por_vencer', 'sin_membresia'] },
   { id: 'vencido', etiqueta: 'Vencidos', estados: ['vencido'] },
@@ -104,10 +104,6 @@ export const ClientesPage: React.FC<{
     }
   };
 
-  const cuenta = (ids?: EstadoCliente[]) =>
-    ids ? (pagina?.por_estado ?? []).filter(([e]) => ids.includes(e as EstadoCliente)).reduce((a, [, n]) => a + n, 0)
-        : (pagina?.por_estado ?? []).reduce((a, [, n]) => a + n, 0);
-
   const c = ficha?.cliente;
   const cobrable = c && ['vencido', 'en_gracia', 'por_vencer', 'sin_membresia', 'cancelado', 'activo'].includes(c.estado);
 
@@ -118,13 +114,13 @@ export const ClientesPage: React.FC<{
           <Search size={18} />
           <input autoFocus placeholder="Buscar por nombre o documento" value={texto} onChange={(e) => { setTexto(e.target.value); setLimite(50); }} />
         </div>
-        <div className="gd-chips" role="tablist" aria-label="Filtrar por estado">
-          {FILTROS.map((f) => (
-            <button key={f.id} role="tab" aria-selected={filtro === f.id} className={filtro === f.id ? 'activa' : ''} onClick={() => { setFiltro(f.id); setLimite(50); }}>
-              {f.etiqueta} {filtro === f.id && pagina && <span>{pagina.total}</span>}
-            </button>
-          ))}
-        </div>
+        <label className="gd-filtro-select">
+          <Filter size={16} />
+          <select aria-label="Filtrar por estado" value={filtro} onChange={(e) => { setFiltro(e.target.value); setLimite(50); }}>
+            {FILTROS.map((f) => <option key={f.id} value={f.id}>{f.etiqueta}</option>)}
+          </select>
+        </label>
+        {pagina && <span className="gd-filtro-total">{pagina.total} {pagina.total === 1 ? 'cliente' : 'clientes'}</span>}
       </div>
 
       {error && <MensajeError>{error}</MensajeError>}

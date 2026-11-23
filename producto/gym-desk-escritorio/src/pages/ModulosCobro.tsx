@@ -16,16 +16,6 @@ const fecha = (dia: string) => formatFecha(`${dia}T12:00:00-05:00`);
 /** Referencia estable: una función nueva en cada render volvería a cargar al cliente sin fin. */
 const nada = () => undefined;
 
-/** Resumen de la caja abierta, arriba de Ventas y Membresías. */
-const FranjaCaja: React.FC<{ efectivo: number; otros: number; esperado: number }> = ({ efectivo, otros, esperado }) => (
-  <div className="gd-franja-caja">
-    <span>Caja abierta</span>
-    <span>Efectivo <strong>{formatCOP(efectivo)}</strong></span>
-    <span>Otros medios <strong>{formatCOP(otros)}</strong></span>
-    <span>Esperado en caja <strong>{formatCOP(esperado)}</strong></span>
-  </div>
-);
-
 /**
  * Membresías: a la izquierda los clientes por cobrar (vencidos, en gracia, por vencer y sin plan); a la derecha
  * el cobro: renovar o vender un plan. Con o sin red. Exige la caja abierta.
@@ -60,11 +50,9 @@ export const MembresiasPage: React.FC<{
   if (errorCarga) return <MensajeError>{errorCarga}</MensajeError>;
   if (!estado) return <div className="skeleton" style={{ height: 220 }} />;
   if (!estado.turno) return <CajaCerradaAviso estado={estado} enLinea={estacion.en_linea} onAbierta={() => void cargar()} para="cobrar membresías" />;
-  const t = estado.turno.totales;
 
   return (
     <div className="gd-modulo">
-      <FranjaCaja efectivo={t.ventas_efectivo + t.membresias_efectivo} otros={t.ventas_otro + t.membresias_otro} esperado={t.total_esperado_efectivo} />
       <div className="gd-dos-columnas">
         <section className="gd-panel gd-lista-cobrar">
           <h3 className="gd-titulo" style={{ fontSize: '1rem' }}>Por cobrar ({porCobrar.length})</h3>
@@ -128,10 +116,8 @@ export const VentasPage: React.FC<{ estacion: EstadoEstacion; clienteInicial: st
   if (errorCarga) return <MensajeError>{errorCarga}</MensajeError>;
   if (!estado) return <div className="skeleton" style={{ height: 220 }} />;
   if (!estado.turno) return <CajaCerradaAviso estado={estado} enLinea={estacion.en_linea} onAbierta={() => void cargar()} para="vender" />;
-  const t = estado.turno.totales;
   return (
     <div className="gd-modulo">
-      <FranjaCaja efectivo={t.ventas_efectivo + t.membresias_efectivo} otros={t.ventas_otro + t.membresias_otro} esperado={t.total_esperado_efectivo} />
       <Mostrador
         mostrador={estado.mostrador}
         clienteInicial={cliente}

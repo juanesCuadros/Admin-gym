@@ -7,6 +7,7 @@ pub mod comandos;
 pub mod db;
 pub mod error;
 pub mod huella;
+pub mod puerta;
 pub mod reloj;
 pub mod sesion;
 pub mod sync;
@@ -75,6 +76,9 @@ pub fn run() {
             comandos::huella_registrar,
             comandos::huella_dedos,
             comandos::ingreso_por_huella,
+            comandos::puerta_estado,
+            comandos::puerta_configurar,
+            comandos::puerta_abrir,
             comandos::puede_registrar_clientes,
             comandos::caja_opciones_membresia,
             comandos::caja_cobrar_membresia,

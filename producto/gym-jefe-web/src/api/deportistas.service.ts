@@ -35,6 +35,17 @@ export const deportistasService = {
   },
 
   /** Ficha 360° (`GET /deportistas/{id}`): el backend no expone `/ficha`. */
+  /** Foto tomada en recepción, como Blob; null si no tiene. */
+  async foto(id: string): Promise<Blob | null> {
+    try {
+      const res = await apiClient.get(`/deportistas/${id}/foto`, { responseType: 'blob' });
+      return res.data as Blob;
+    } catch (e) {
+      if ((e as { response?: { status?: number } }).response?.status === 404) return null;
+      throw e;
+    }
+  },
+
   async getFicha(id: string): Promise<FichaDeportistaResponse> {
     const response = await apiClient.get<FichaDeportistaResponse>(`/deportistas/${id}`);
     return response.data;
