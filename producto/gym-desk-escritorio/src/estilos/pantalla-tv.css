@@ -36,3 +36,7 @@
 .tv-abre { background: radial-gradient(circle at 30% 20%, #16a34a 0%, #065f46 75%); }
 .tv-alerta { background: radial-gradient(circle at 30% 20%, #f59e0b 0%, #92400e 75%); }
 .tv-negado { background: radial-gradient(circle at 30% 20%, #dc2626 0%, #7f1d1d 75%); }
+
+.tv-marca { flex-direction: column; gap: 14px; }
+.tv-logo { border-radius: 24px; background: #fff; padding: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+.tv-logo-pie { border-radius: 10px; background: #fff; padding: 3px; }

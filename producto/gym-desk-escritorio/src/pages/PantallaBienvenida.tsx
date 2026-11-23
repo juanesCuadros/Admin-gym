@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { CheckCircle2, Dumbbell, Fingerprint, ScanLine, XCircle, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, Fingerprint, ScanLine, XCircle, AlertTriangle } from 'lucide-react';
 import { invocar } from '../api/tauri';
 import type { EstadoEstacion } from '../types/estacion.types';
+import { LogoGimnasio } from '../components/LogoGimnasio';
 import type { ResultadoIngreso } from '../types/ingreso.types';
 
 /** Lo que se muestra de cada ingreso antes de volver a la pantalla de espera. */
@@ -25,13 +26,14 @@ function iniciales(nombre: string): string {
  */
 export const PantallaBienvenida: React.FC = () => {
   const [gimnasio, setGimnasio] = useState('GymDesk');
+  const [subdominio, setSubdominio] = useState<string | null>(null);
   const [actual, setActual] = useState<ResultadoIngreso | null>(null);
   const [ahora, setAhora] = useState(new Date());
   const [hoy, setHoy] = useState(0);
   const espera = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    invocar<EstadoEstacion>('estado_estacion').then((e) => setGimnasio(e.gimnasio_nombre ?? 'GymDesk')).catch(() => undefined);
+    invocar<EstadoEstacion>('estado_estacion').then((e) => { setGimnasio(e.gimnasio_nombre ?? 'GymDesk'); setSubdominio(e.subdominio); }).catch(() => undefined);
     const reloj = window.setInterval(() => setAhora(new Date()), 1000);
     const quitar = listen<ResultadoIngreso>('ingreso-registrado', (e) => {
       setActual(e.payload);
@@ -57,7 +59,7 @@ export const PantallaBienvenida: React.FC = () => {
   if (!actual || !actual.cliente) {
     return (
       <main className="tv tv-espera" onDoubleClick={() => void alternarPantallaCompleta()}>
-        <div className="tv-marca"><Dumbbell size={44} /> {gimnasio}</div>
+        <div className="tv-marca"><LogoGimnasio subdominio={subdominio} tam={140} className="tv-logo" /> {gimnasio}</div>
         <div className="tv-hora">{hora}</div>
         <div className="tv-fecha">{fecha}</div>
         <div className="tv-indicacion">
@@ -94,7 +96,7 @@ export const PantallaBienvenida: React.FC = () => {
           {c.estado === 'por_vencer' && <p className="tv-aviso">Tu plan está por vencer: renuévalo en recepción</p>}
         </div>
       </div>
-      <div className="tv-pie"><Dumbbell size={22} /> {gimnasio} · {hora}</div>
+      <div className="tv-pie"><LogoGimnasio subdominio={subdominio} tam={40} className="tv-logo-pie" /> {gimnasio} · {hora}</div>
     </main>
   );
 };
