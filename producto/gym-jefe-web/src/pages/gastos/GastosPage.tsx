@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Plus, Receipt, Settings2, Wallet } from 'lucide-react';
+import { Ban, Plus, Receipt, Settings2, Wallet } from 'lucide-react';
 import { gastosService } from '../../api/gastos.service';
 import { parseApiError } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
@@ -9,6 +9,8 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import { ConfirmarConMotivo } from '../../components/ui/ConfirmarConMotivo';
+import { useClaveIdempotencia } from '../../hooks/useClaveIdempotencia';
 import { Table } from '../../components/ui/Table';
 import { ErrorCarga, MensajeFijo, VacioInicial } from '../../components/estados/Estados';
 import { formatCOP } from '../../utils/formato';
@@ -54,6 +56,12 @@ export const GastosPage: React.FC = () => {
   const { hasPermission, isJefe } = useAuth();
   const { showToast } = useToast();
   const puedeCrear = hasPermission('gastos', 'crear');
+  // Anular: el Jefe, o quien tenga gastos:eliminar en la matriz. El pago a un entrenador, solo el Jefe.
+  const puedeAnular = (g: Gasto) => !g.anulado && (isJefe || (hasPermission('gastos', 'eliminar') && g.categoria !== 'Pago a entrenador'));
+  const [aAnular, setAAnular] = useState<Gasto | null>(null);
+  const [anulando, setAnulando] = useState(false);
+  const [errorAnular, setErrorAnular] = useState<string | null>(null);
+  const claveAnular = useClaveIdempotencia();
 
   const [pestana, setPestana] = useState<Pestana>('gastos');
   const [desde, setDesde] = useState(inicioMesBogota());
@@ -120,6 +128,27 @@ export const GastosPage: React.FC = () => {
   useEffect(() => {
     cargar();
   }, [cargar]);
+
+  const anular = async (motivo: string) => {
+    if (!aAnular || anulando) return;
+    setAnulando(true);
+    setErrorAnular(null);
+    try {
+      const g = await gastosService.anular(aAnular.id, motivo, claveAnular.clave({ gasto: aAnular.id, motivo }));
+      claveAnular.reiniciar();
+      setAAnular(null);
+      showToast(
+        'success',
+        'Gasto anulado',
+        g.turno_reintegro_id ? `${formatCOP(g.monto)} volvieron a la caja del turno abierto.` : 'Ya no cuenta en los gastos ni en el resultado.'
+      );
+      cargar();
+    } catch (e) {
+      setErrorAnular(parseApiError(e));
+    } finally {
+      setAnulando(false);
+    }
+  };
 
   useEffect(() => {
     setPagina(1);
@@ -316,7 +345,30 @@ export const GastosPage: React.FC = () => {
                   render: (g) => <Badge variant={g.metodo === 'efectivo' ? 'warning' : 'info'}>{g.metodo === 'efectivo' ? 'Efectivo de caja' : 'Transferencia'}</Badge>,
                 },
                 { header: 'Registró', accessor: (g) => g.registrado_por_nombre ?? '—' },
-                { header: 'Valor', align: 'right', accessor: (g) => formatCOP(g.monto) },
+                {
+                  header: 'Valor',
+                  align: 'right',
+                  render: (g) =>
+                    g.anulado ? (
+                      <div title={`Anulado por ${g.anulado_por_nombre ?? '—'}: ${g.motivo_anulacion ?? ''}`}>
+                        <s style={{ color: 'var(--text-muted)' }}>{formatCOP(g.monto)}</s>
+                        <div><Badge variant="danger">Anulado</Badge></div>
+                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>{g.motivo_anulacion}</div>
+                      </div>
+                    ) : (
+                      formatCOP(g.monto)
+                    ),
+                },
+                {
+                  header: '',
+                  width: '110px',
+                  render: (g) =>
+                    puedeAnular(g) ? (
+                      <Button variant="ghost" size="sm" leftIcon={<Ban size={14} />} onClick={() => { setErrorAnular(null); setAAnular(g); }}>
+                        Anular
+                      </Button>
+                    ) : null,
+                },
               ]}
               data={gastos}
               isLoading={cargando}
@@ -495,6 +547,25 @@ export const GastosPage: React.FC = () => {
         <Input label="Valor a pagar (COP) *" moneda value={montoPago} onChange={(e) => setMontoPago(e.target.value)} />
         {errorForm && <MensajeFijo tono="error">{errorForm}</MensajeFijo>}
       </Modal>
+      <ConfirmarConMotivo
+        isOpen={aAnular !== null}
+        onClose={() => setAAnular(null)}
+        onConfirm={anular}
+        title="Anular gasto"
+        message={
+          aAnular
+            ? `Vas a anular ${aAnular.categoria} de ${formatCOP(aAnular.monto)} (${aAnular.beneficiario_nombre}).` +
+              (aAnular.metodo === 'efectivo'
+                ? ' Salió en efectivo: el dinero vuelve a la caja del turno abierto. El turno del gasto no cambia.'
+                : ' Dejará de contar en los gastos y en el resultado.') +
+              ' Queda en la auditoría y no se puede deshacer.'
+            : ''
+        }
+        confirmText="Anular gasto"
+        etiquetaMotivo="Motivo de la anulación"
+        isLoading={anulando}
+        error={errorAnular}
+      />
     </div>
   );
 };

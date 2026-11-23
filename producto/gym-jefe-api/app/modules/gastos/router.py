@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
 from app.core.dependencies import AuthenticatedStaff, require_permission, require_role
 from app.modules.gastos.schemas import (
+    AnularGastoRequest,
     BeneficiarioStaff,
     ConfigPagoEntrenadorRequest,
     GastoResponse,
@@ -49,6 +50,24 @@ async def registrar_gasto(
 ):
     return await GastosService.registrar_gasto(
         session, current_staff.gimnasio_id, current_staff.staff_id, current_staff.nombre, x_idempotency_key, data
+    )
+
+
+@router.post(
+    "/{gasto_id}/anular",
+    response_model=GastoResponse,
+    summary="Anular un gasto con motivo. El efectivo vuelve al turno abierto (P-11)",
+)
+async def anular_gasto(
+    gasto_id: Annotated[UUID, Path()],
+    data: AnularGastoRequest,
+    current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("gastos", "eliminar"))],
+    session: Sesion,
+    x_idempotency_key: Annotated[str, Header(min_length=8, max_length=128)],
+):
+    return await GastosService.anular_gasto(
+        session, current_staff.gimnasio_id, current_staff.staff_id, current_staff.nombre, current_staff.rol,
+        gasto_id, x_idempotency_key, data,
     )
 
 

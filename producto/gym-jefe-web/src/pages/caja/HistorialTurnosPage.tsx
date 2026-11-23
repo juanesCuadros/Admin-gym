@@ -23,6 +23,7 @@ const ETIQUETA_MOVIMIENTO: Record<MovimientoCajaItemDto['tipo_movimiento'], stri
   pago_membresia: 'Membresía',
   egreso: 'Egreso',
   devolucion: 'Devolución',
+  reintegro: 'Gasto anulado',
 };
 
 const DiferenciaBadge: React.FC<{ turno: TurnoHistorialDto }> = ({ turno }) => {
