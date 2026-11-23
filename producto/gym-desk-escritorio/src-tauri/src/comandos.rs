@@ -408,6 +408,27 @@ pub fn caja_productos(estado: State<'_, EstadoApp>, texto: String) -> Resultado<
     })
 }
 
+/// Registra un cliente en el servidor, con foto opcional, y lo guarda en la estación (E-41). Exige conexión.
+#[tauri::command]
+pub fn registrar_cliente(
+    estado: State<'_, EstadoApp>,
+    cliente: serde_json::Value,
+    foto: Option<String>,
+) -> Resultado<ClienteEvaluado> {
+    let r = crate::sync::clientes::registrar(estado.base()?, &estado.sesion, estado.transporte.as_ref(), estado.reloj.as_ref(), &cliente, foto.as_deref())?;
+    estado.despertar();
+    Ok(r)
+}
+
+/// ¿La persona con sesión puede registrar clientes? (permiso de crear deportistas)
+#[tauri::command]
+pub fn puede_registrar_clientes(estado: State<'_, EstadoApp>) -> Resultado<bool> {
+    estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        crate::sync::clientes::puede_registrar(conn, &usuario)
+    })
+}
+
 /// Qué se le puede cobrar a un cliente: renovar su membresía o venderle un plan (fase 3B).
 #[tauri::command]
 pub fn caja_opciones_membresia(estado: State<'_, EstadoApp>, deportista_id: String) -> Resultado<caja::membresias::OpcionesMembresia> {

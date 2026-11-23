@@ -354,3 +354,31 @@ async def suprimir_datos(
         deportista_id=id,
         req=req,
     )
+
+
+# =====================================================================
+# Foto del deportista (E-41): la toma la estación de escritorio; no es pública
+# =====================================================================
+
+@router.get(
+    "/{deportista_id}/foto",
+    summary="Foto del deportista (si la tiene)",
+    description="Dato personal (Ley 1581): solo para el personal con permiso de leer deportistas. 404 FOTO_NO_ENCONTRADA si no tiene.",
+)
+async def obtener_foto(
+    deportista_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    staff: Annotated[AuthenticatedStaff, Depends(require_permission("deportistas", "leer"))],
+):
+    from fastapi import HTTPException, Response
+    from sqlalchemy import text
+
+    fila = (await session.execute(
+        text("SELECT contenido, media_type FROM platform.deportista_fotos WHERE deportista_id = :d AND gimnasio_id = :g"),
+        {"d": deportista_id, "g": staff.gimnasio_id},
+    )).mappings().first()
+    if not fila:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"codigo": "FOTO_NO_ENCONTRADA", "mensaje": "Este deportista no tiene foto."})
+    return Response(content=bytes(fila["contenido"]), media_type=fila["media_type"],
+                    headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"})

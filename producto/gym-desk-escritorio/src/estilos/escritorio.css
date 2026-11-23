@@ -898,3 +898,17 @@ button.gd-sync:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* Nuevo cliente con foto (E-41) */
+.gd-form-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.gd-acudiente { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin: 12px 0; }
+.gd-acudiente legend { font-weight: 600; padding: 0 6px; }
+.gd-check { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0; font-size: 0.92rem; line-height: 1.35; cursor: pointer; }
+.gd-check input { margin-top: 3px; width: 18px; height: 18px; flex-shrink: 0; }
+.gd-camara { margin: 12px 0; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.gd-camara-etiqueta { font-weight: 500; font-size: 0.9rem; }
+.gd-camara-vista { display: flex; gap: 12px; align-items: flex-end; }
+.gd-camara-vista video, .gd-camara-vista img { width: 200px; height: 200px; object-fit: cover; border-radius: 12px; background: #000; }
+.gd-camara-acciones { display: flex; flex-direction: column; gap: 8px; }
+.gd-ingreso-foto { width: 96px; height: 96px; object-fit: cover; border-radius: 14px; flex-shrink: 0; }
+.gd-enlace { background: none; border: 0; padding: 0; color: var(--primary); text-decoration: underline; cursor: pointer; font: inherit; }

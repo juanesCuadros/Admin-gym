@@ -8,6 +8,7 @@ pub mod suscripcion;
 pub mod transporte;
 
 pub mod activacion;
+pub mod clientes;
 pub mod descarga;
 pub mod ingreso;
 pub mod motor;

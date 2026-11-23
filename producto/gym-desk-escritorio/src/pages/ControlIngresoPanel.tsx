@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CalendarPlus, CheckCircle2, CloudUpload, Gift, ScanLine, ShieldAlert, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarPlus, CheckCircle2, CloudUpload, Gift, ScanLine, ShieldAlert, UserPlus, XCircle } from 'lucide-react';
+import { NuevoClienteModal } from './NuevoClienteModal';
 import { Badge } from '@web/components/ui/Badge';
 import { Button } from '@web/components/ui/Button';
 import { EstadoDeportistaBadge } from '@web/components/ui/EstadoDeportistaBadge';
@@ -69,7 +70,7 @@ const ResultadoGrande: React.FC<{ resultado: ResultadoIngreso }> = ({ resultado 
   const c = resultado.cliente;
   return (
     <div className={`gd-ingreso-resultado gd-ingreso-${tono}`} role="status" aria-live="assertive">
-      <div className="gd-ingreso-icono">{ICONO[tono]}</div>
+      {c?.foto ? <img className="gd-ingreso-foto" src={c.foto} alt={`Foto de ${c.nombre}`} /> : <div className="gd-ingreso-icono">{ICONO[tono]}</div>}
       <div style={{ minWidth: 0 }}>
         <div className="gd-ingreso-titular">{titular(resultado)}</div>
         {c && <div className="gd-ingreso-nombre">{c.nombre}</div>}
@@ -112,7 +113,20 @@ export const ControlIngresoPanel: React.FC<{
   const [motivo, setMotivo] = useState('');
   const [errorCortesia, setErrorCortesia] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  const [puedeRegistrar, setPuedeRegistrar] = useState(false);
+  const [nuevoAbierto, setNuevoAbierto] = useState(false);
+  const [documentoNuevo, setDocumentoNuevo] = useState('');
+  const [registrado, setRegistrado] = useState<ClienteEvaluado | null>(null);
   const campo = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    ingresoService.puedeRegistrar().then(setPuedeRegistrar).catch(() => setPuedeRegistrar(false));
+  }, []);
+
+  const abrirNuevo = (documento = '') => {
+    setDocumentoNuevo(/^\d{3,}$/.test(documento.trim()) ? documento.trim() : '');
+    setNuevoAbierto(true);
+  };
   const enCurso = useRef(false);
 
   const cargarResumen = useCallback(async () => {
@@ -294,8 +308,28 @@ export const ControlIngresoPanel: React.FC<{
             >
               Cortesía
             </Button>
+            {puedeRegistrar && (
+              <Button type="button" variant="outline" size="lg" leftIcon={<UserPlus size={18} />} disabled={ocupado} onClick={() => abrirNuevo(texto)}>
+                Nuevo cliente
+              </Button>
+            )}
           </div>
         </form>
+
+        {registrado && (
+          <div className="gd-aviso" role="status" style={{ alignItems: 'center' }}>
+            {registrado.foto && <img className="gd-ingreso-foto" style={{ width: 56, height: 56 }} src={registrado.foto} alt="" />}
+            <span style={{ flex: 1 }}>
+              <strong>{registrado.nombre}</strong> quedó registrado. Para que pueda entrar, véndele un plan o un pase de día.
+            </span>
+            {onCobrar && (
+              <Button size="sm" leftIcon={<CalendarPlus size={15} />} onClick={() => { onCobrar(registrado.id); setRegistrado(null); }}>
+                Venderle un plan
+              </Button>
+            )}
+            <button type="button" className="icon-btn ghost" aria-label="Cerrar aviso" onClick={() => setRegistrado(null)}>×</button>
+          </div>
+        )}
 
         {sugerencias.length > 0 && (
           <ul className="gd-ingreso-sugerencias" aria-label="Clientes encontrados">
@@ -311,7 +345,15 @@ export const ControlIngresoPanel: React.FC<{
           </ul>
         )}
         {texto.trim().length >= 2 && sugerencias.length === 0 && !ocupado && (
-          <p className="gd-ingreso-pista">Nadie coincide con “{texto.trim()}” en esta estación.</p>
+          <p className="gd-ingreso-pista">
+            Nadie coincide con “{texto.trim()}” en esta estación.
+            {puedeRegistrar && (
+              <>
+                {' '}
+                <button type="button" className="gd-enlace" onClick={() => abrirNuevo(texto)}>Registrarlo como cliente nuevo</button>
+              </>
+            )}
+          </p>
         )}
 
         {error && <MensajeError>{error}</MensajeError>}
@@ -427,6 +469,21 @@ export const ControlIngresoPanel: React.FC<{
           disabled={ocupado}
         />
       </Modal>
+
+      <NuevoClienteModal
+        abierto={nuevoAbierto}
+        enLinea={estacion.en_linea}
+        documentoInicial={documentoNuevo}
+        onCerrar={() => { setNuevoAbierto(false); enfocar(); }}
+        onRegistrado={(c) => {
+          setNuevoAbierto(false);
+          setTexto('');
+          setSugerencias([]);
+          setError(null);
+          setRegistrado(c);
+          enfocar();
+        }}
+      />
     </div>
   );
 };

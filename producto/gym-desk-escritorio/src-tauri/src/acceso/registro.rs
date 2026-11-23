@@ -39,6 +39,8 @@ pub struct ClienteEvaluado {
     /// abrio | alerta_mora | negado
     pub resultado: &'static str,
     pub mensaje: String,
+    /// Foto tomada en esta estación (data URL), si la hay.
+    pub foto: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -170,6 +172,7 @@ pub fn evaluar_cliente(conn: &Connection, deportista_id: &str, hoy: NaiveDate) -
         con_pase_dia = true;
     }
     Ok(Some(ClienteEvaluado {
+        foto: crate::sync::clientes::foto(conn, &id)?,
         id,
         nombre,
         tipo_documento,
