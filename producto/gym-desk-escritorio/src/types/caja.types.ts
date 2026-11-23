@@ -86,6 +86,8 @@ export interface NuevaVenta {
   metodo?: string;
   pagos?: { metodo: string; monto: number }[];
   valor_recibido?: number;
+  /** Anotación de quien cobra (opcional, hasta 300 letras). */
+  nota?: string;
 }
 
 export interface ItemVendido {
@@ -164,6 +166,8 @@ export interface NuevoCobroMembresia {
   metodo?: string;
   pagos?: { metodo: string; monto: number }[];
   valor_recibido?: number;
+  /** Anotación de quien cobra (opcional, hasta 300 letras). */
+  nota?: string;
 }
 
 export interface CobroMembresiaRegistrado {

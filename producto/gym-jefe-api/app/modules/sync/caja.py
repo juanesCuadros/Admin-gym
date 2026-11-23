@@ -65,6 +65,7 @@ class _PayloadVenta(BaseModel):
     metodo: str = Field(..., min_length=2, max_length=50)
     pagos: List[_Medio] = Field(default_factory=list, max_length=5)
     valor_recibido: Optional[int] = Field(None, ge=0, le=MAX_MONTO)
+    nota: Optional[str] = Field(None, max_length=300)
 
 
 class _PayloadEgreso(BaseModel):
@@ -377,12 +378,12 @@ async def venta(ctx: Contexto) -> Efecto:
     await ctx.session.execute(
         text("""
             INSERT INTO platform.ventas (id, gimnasio_id, turno_id, deportista_id, total, metodo, tipo_medio, valor_recibido,
-                                         idempotency_key, registrada_por, created_at, recibida_en)
-            VALUES (:id, :g, :t, :d, :total, :metodo, :tipo_medio, :recibido, :clave, :staff, :momento, now())
+                                         idempotency_key, registrada_por, created_at, recibida_en, nota)
+            VALUES (:id, :g, :t, :d, :total, :metodo, :tipo_medio, :recibido, :clave, :staff, :momento, now(), :nota)
         """),
         {"id": venta_id, "g": gym_id, "t": turno["id"], "d": deportista_id, "total": Decimal(datos.total), "metodo": datos.metodo.strip(),
          "tipo_medio": datos.tipo_medio, "recibido": Decimal(datos.valor_recibido) if datos.valor_recibido is not None else None,
-         "clave": ctx.op.idempotency_key, "staff": staff["id"], "momento": momento},
+         "clave": ctx.op.idempotency_key, "staff": staff["id"], "momento": momento, "nota": (datos.nota or "").strip() or None},
     )
     for m in datos.pagos:
         await ctx.session.execute(

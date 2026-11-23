@@ -446,6 +446,9 @@ pub struct NuevaVenta {
     /// Pago mixto: el reparto entre dos o más medios.
     pub pagos: Option<Vec<NuevoMedio>>,
     pub valor_recibido: Option<i64>,
+    /// Lo que anota quien cobra (opcional, hasta 300 letras).
+    #[serde(default)]
+    pub nota: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -520,6 +523,15 @@ struct Cobro {
     pagos: Vec<PorMetodo>,
     valor_recibido: Option<i64>,
     cambio: Option<i64>,
+}
+
+/// Nota opcional de un cobro: sin espacios sobrantes y hasta 300 letras.
+pub(crate) fn validar_nota(nota: Option<&str>) -> Resultado<Option<String>> {
+    let nota = nota.map(str::trim).filter(|n| !n.is_empty());
+    if nota.is_some_and(|n| n.chars().count() > 300) {
+        return Err(error("NOTA_MUY_LARGA", "La nota no puede pasar de 300 letras."));
+    }
+    Ok(nota.map(str::to_string))
 }
 
 fn resolver_cobro(metodo: Option<&str>, pagos: Option<&[NuevoMedio]>, total: i64, valor_recibido: Option<i64>) -> Resultado<Cobro> {
@@ -656,6 +668,7 @@ pub fn registrar_venta(conn: &Connection, ahora: DateTime<Utc>, usuario: &Usuari
 
     let Cobro { tipo_medio, metodo, pagos, valor_recibido, cambio } =
         resolver_cobro(venta.metodo.as_deref(), venta.pagos.as_deref(), total, venta.valor_recibido)?;
+    let nota = validar_nota(venta.nota.as_deref())?;
 
     let ts = a_texto(ahora);
     let tx = conn.unchecked_transaction()?;
@@ -671,15 +684,16 @@ pub fn registrar_venta(conn: &Connection, ahora: DateTime<Utc>, usuario: &Usuari
         "metodo": metodo,
         "pagos": pagos.iter().map(|p| json!({ "metodo": p.metodo, "tipo_medio": p.tipo_medio, "monto": p.monto })).collect::<Vec<_>>(),
         "valor_recibido": valor_recibido,
+        "nota": nota,
     });
     let id = outbox::encolar(&tx, ahora, "venta", Some(&usuario.id), std::slice::from_ref(&turno.id), &payload)?;
     tx.execute(
         "INSERT INTO caja_ventas (id, turno_id, deportista_id, deportista_nombre, total, tipo_medio, metodo, valor_recibido, cambio,
-                                  staff_id, ocurrida_en, fecha_negocio)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                                  staff_id, ocurrida_en, fecha_negocio, nota)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             id, turno.id, cliente.as_ref().map(|c| &c.0), cliente.as_ref().map(|c| &c.1), total, tipo_medio, metodo, valor_recibido,
-            cambio, usuario.id, ts, fecha_negocio(ahora).to_string(),
+            cambio, usuario.id, ts, fecha_negocio(ahora).to_string(), nota,
         ],
     )?;
     for i in &items {

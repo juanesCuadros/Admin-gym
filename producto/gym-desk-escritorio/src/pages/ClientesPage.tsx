@@ -5,7 +5,7 @@ import { Button } from '@web/components/ui/Button';
 import { Drawer } from '@web/components/ui/Drawer';
 import { EstadoDeportistaBadge } from '@web/components/ui/EstadoDeportistaBadge';
 import { useToast } from '@web/contexts/ToastContext';
-import { formatCOP, formatDocumento, formatFecha, formatFechaHora } from '@web/utils/formato';
+import { formatCOP, formatDocumento, formatFecha, formatHora } from '@web/utils/formato';
 import { ingresoService } from '../api/ingreso.service';
 import { NOMBRE_DEDO } from '../api/huella.service';
 import { aErrorGymDesk } from '../api/tauri';
@@ -17,6 +17,8 @@ import { MedicionesCliente } from './Mediciones';
 import { NuevoClienteModal } from './NuevoClienteModal';
 
 const fecha = (dia: string) => formatFecha(`${dia}T12:00:00-05:00`);
+const diaBogota = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+const esHoy = (instante: string) => diaBogota(new Date(instante)) === diaBogota(new Date());
 
 const FILTROS: { id: string; etiqueta: string; estados?: EstadoCliente[] }[] = [
   { id: '', etiqueta: 'Todos los estados' },
@@ -52,7 +54,9 @@ export const ClientesPage: React.FC<{
   onCobrar: (deportistaId: string) => void;
   onVender: (deportistaId: string) => void;
   atajoNuevo: number;
-}> = ({ estacion, onCobrar, onVender, atajoNuevo }) => {
+  /** El pedido de "nuevo cliente" se consume una vez: volver a Clientes no lo reabre. */
+  onAtajoUsado: () => void;
+}> = ({ estacion, onCobrar, onVender, atajoNuevo, onAtajoUsado }) => {
   const { showToast } = useToast();
   const [texto, setTexto] = useState('');
   const [filtro, setFiltro] = useState('');
@@ -80,8 +84,11 @@ export const ClientesPage: React.FC<{
   }, [cargar, estacion.cola.por_enviar]);
 
   useEffect(() => {
-    if (atajoNuevo > 0) setNuevo(true);
-  }, [atajoNuevo]);
+    if (atajoNuevo > 0) {
+      setNuevo(true);
+      onAtajoUsado();
+    }
+  }, [atajoNuevo, onAtajoUsado]);
 
   const abrirFicha = useCallback(async (id: string) => {
     setElegido(id);
@@ -196,6 +203,9 @@ export const ClientesPage: React.FC<{
                   {vigencia(c)}{ficha.membresia_desde ? ` · desde el ${fecha(ficha.membresia_desde)}` : ''}
                 </div>
                 <div className={`gd-ficha-acceso ${c.abre ? 'si' : 'no'}`}>{c.abre ? 'Puede entrar hoy' : 'No puede entrar hoy'} · {c.mensaje}</div>
+                {ficha.huellas.length > 0 && (
+                  <div className="gd-ficha-huella"><Fingerprint size={14} /> Huella registrada ({ficha.huellas.map((d) => NOMBRE_DEDO[d] ?? d).join(', ').toLowerCase()})</div>
+                )}
               </div>
             </div>
 
@@ -214,47 +224,30 @@ export const ClientesPage: React.FC<{
               <p className="gd-subtitulo" style={{ marginTop: 0 }}>Sin datos registrados. Se agregan desde la web.</p>
             )}
 
-            <h4>Huellas</h4>
-            <p className="gd-subtitulo" style={{ marginTop: 0 }}>
-              {ficha.huellas.length ? ficha.huellas.map((d) => NOMBRE_DEDO[d] ?? d).join(', ') : 'Sin huella registrada en esta estación.'}
-            </p>
-
-            <h4>Últimos ingresos</h4>
-            {ficha.ingresos.length === 0 ? (
-              <p className="gd-vacio">Sin ingresos registrados en esta estación.</p>
-            ) : (
-              <table className="gd-tabla">
-                <tbody>
-                  {ficha.ingresos.map((i) => (
-                    <tr key={i.ocurrido_en}>
-                      <td>{formatFechaHora(i.ocurrido_en)}</td>
-                      <td><Badge variant={i.resultado === 'negado' ? 'danger' : i.resultado === 'alerta_mora' ? 'warning' : 'success'}>
-                        {i.resultado === 'negado' ? 'Negado' : i.resultado === 'alerta_mora' ? 'Con alerta' : 'Entró'}
-                      </Badge></td>
-                      <td>{i.metodo === 'huella' ? 'Huella' : 'Documento'}</td>
-                    </tr>
+            {/* Solo lo de hoy: el historial completo de ingresos y pagos se consulta en la web. */}
+            <h4>Hoy</h4>
+            {(() => {
+              const ingresosHoy = ficha.ingresos.filter((i) => esHoy(i.ocurrido_en));
+              const cobrosHoy = ficha.cobros.filter((x) => esHoy(x.ocurrido_en));
+              if (ingresosHoy.length === 0 && cobrosHoy.length === 0) return <p className="gd-subtitulo" style={{ marginTop: 0 }}>Aún no ha entrado hoy.</p>;
+              return (
+                <div className="gd-hoy">
+                  {ingresosHoy.map((i) => (
+                    <span key={i.ocurrido_en} className={`gd-hoy-item ${i.resultado === 'negado' ? 'no' : i.resultado === 'alerta_mora' ? 'alerta' : 'si'}`}>
+                      <strong>{formatHora(i.ocurrido_en)}</strong>
+                      {i.resultado === 'negado' ? 'Negado' : i.resultado === 'alerta_mora' ? 'Entró con alerta' : 'Entró'} · {i.metodo === 'huella' ? 'huella' : 'documento'}
+                    </span>
                   ))}
-                </tbody>
-              </table>
-            )}
-
-            <h4>Cobros en esta estación</h4>
-            {ficha.cobros.length === 0 ? (
-              <p className="gd-vacio">Sin cobros registrados en esta estación. Los de la web se ven en el sistema web.</p>
-            ) : (
-              <table className="gd-tabla">
-                <tbody>
-                  {ficha.cobros.map((x) => (
-                    <tr key={x.ocurrido_en + x.concepto}>
-                      <td>{formatFechaHora(x.ocurrido_en)}</td>
-                      <td>{x.concepto}</td>
-                      <td>{x.metodo}</td>
-                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatCOP(x.monto)}</td>
-                    </tr>
+                  {cobrosHoy.map((x) => (
+                    <span key={x.ocurrido_en + x.concepto} className="gd-hoy-item cobro">
+                      <strong>{formatHora(x.ocurrido_en)}</strong>
+                      {x.concepto} · {formatCOP(x.monto)}
+                    </span>
                   ))}
-                </tbody>
-              </table>
-            )}
+                </div>
+              );
+            })()}
+            <p className="gd-pista">El historial completo de ingresos y pagos está en la web, en la ficha del deportista.</p>
           </div>
         )}
       </Drawer>

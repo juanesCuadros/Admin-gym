@@ -91,7 +91,12 @@ async def test_mediciones_desde_la_estacion(cliente: AsyncClient, fabrica: Fabri
     assert r.status_code == 201, r.text
     assert float(r.json()["peso"]) == 80
     r = await cliente.get(url, params={"staff_id": str(jefe["id"])}, headers=he)
-    assert r.status_code == 200 and len(r.json()) == 1 and float(r.json()[0]["cintura"]) == 85
+    assert r.status_code == 200, r.text
+    cuerpo = r.json()
+    assert len(cuerpo["mediciones"]) == 1 and float(cuerpo["mediciones"][0]["cintura"]) == 85
+    # El perfil queda con lo de la toma, y la grasa y el músculo los calcula el servidor.
+    assert cuerpo["perfil"]["sexo"] == "M" and cuerpo["perfil"]["altura_cm"] == 175
+    assert cuerpo["mediciones"][0]["grasa_pct"] is not None and cuerpo["mediciones"][0]["masa_muscular"] is not None
     # Sin ninguna métrica: mismas reglas de la web.
     r = await cliente.post(url, json={"staff_id": str(jefe["id"]), "medicion": {"sexo": "M", "altura_cm": 175}}, headers=he)
     assert r.status_code == 422

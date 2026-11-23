@@ -67,7 +67,7 @@ fn base(vence_luis: &str, caja_editar: bool) -> (tempfile::TempDir, Connection) 
 fn renovar(deportista: &str, metodo: &str) -> NuevoCobroMembresia {
     NuevoCobroMembresia {
         deportista_id: deportista.into(), accion: "renovar".into(), plan_id: None, precio_cobrado: None, motivo_descuento: None,
-        metodo: Some(metodo.into()), pagos: None, valor_recibido: None,
+        metodo: Some(metodo.into()), pagos: None, valor_recibido: None, nota: None,
     }
 }
 

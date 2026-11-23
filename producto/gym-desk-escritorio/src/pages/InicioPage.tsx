@@ -80,6 +80,7 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
   const [clienteMembresia, setClienteMembresia] = useState<string | null>(null);
   const [clienteVenta, setClienteVenta] = useState<string | null>(null);
   const [atajoNuevo, setAtajoNuevo] = useState(0);
+  const atajoUsado = useCallback(() => setAtajoNuevo(0), []);
   const limpiarMembresia = useCallback(() => setClienteMembresia(null), []);
   const limpiarVenta = useCallback(() => setClienteVenta(null), []);
 
@@ -204,7 +205,7 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
             <InicioModulo estacion={estacion} nombreUsuario={usuario.nombre} irA={irA} nuevoCliente={() => { irA('clientes'); setAtajoNuevo((n) => n + 1); }} />
           )}
           {vista === 'ingreso' && estacion && <ControlIngresoPanel estacion={estacion} onCobrar={cobrar} />}
-          {vista === 'clientes' && estacion && <ClientesPage estacion={estacion} onCobrar={cobrar} onVender={vender} atajoNuevo={atajoNuevo} />}
+          {vista === 'clientes' && estacion && <ClientesPage estacion={estacion} onCobrar={cobrar} onVender={vender} atajoNuevo={atajoNuevo} onAtajoUsado={atajoUsado} />}
           {vista === 'membresias' && estacion && <MembresiasPage estacion={estacion} clienteInicial={clienteMembresia} onClienteUsado={limpiarMembresia} />}
           {vista === 'ventas' && estacion && <VentasPage estacion={estacion} clienteInicial={clienteVenta} onClienteUsado={limpiarVenta} />}
           {vista === 'caja' && estacion && <CajaPanel enLinea={estacion.en_linea} />}

@@ -17,14 +17,12 @@ import { Badge } from '@web/components/ui/Badge';
 import { Button } from '@web/components/ui/Button';
 import { Input, Textarea } from '@web/components/ui/Input';
 import { ConfirmDialog, Modal } from '@web/components/ui/Modal';
-import { filasIniciales, mediosDeFilas, PagoDividido, repartoCompleto, efectivoDeFilas, type FilaMedio } from '@web/components/ui/PagoDividido';
 import { useToast } from '@web/contexts/ToastContext';
 import { formatCOP, formatDocumento, formatHora } from '@web/utils/formato';
 import { cajaService } from '../api/caja.service';
 import { ingresoService } from '../api/ingreso.service';
 import { aErrorGymDesk } from '../api/tauri';
-import { EfectivoRapido } from '../components/EfectivoRapido';
-import { MediosPago } from '../components/MediosPago';
+import { PanelPago, usePago } from '../components/PanelPago';
 import { MensajeError } from '../components/Piezas';
 import { useEnvio } from '../hooks/useEnvio';
 import type { EstadoCaja, MovimientoCaja, NuevoItem, ProductoVenta, ResumenTurno, TipoLinea, VentaRegistrada } from '../types/caja.types';
@@ -234,7 +232,7 @@ const TurnoAbierto: React.FC<{
           <div><dt>Base</dt><dd>{formatCOP(t.base_inicial)}</dd></div>
           <div><dt>Efectivo cobrado</dt><dd>{formatCOP(t.ventas_efectivo + t.membresias_efectivo)}</dd></div>
           <div><dt>Otros medios</dt><dd>{formatCOP(t.ventas_otro + t.membresias_otro)}</dd></div>
-          <div><dt>Egresos</dt><dd>−{formatCOP(t.egresos_efectivo)}</dd></div>
+          <div><dt>Egresos</dt><dd>{t.egresos_efectivo > 0 ? `−${formatCOP(t.egresos_efectivo)}` : formatCOP(0)}</dd></div>
           <div className="gd-caja-esperado"><dt>Efectivo esperado</dt><dd>{formatCOP(t.total_esperado_efectivo)}</dd></div>
         </dl>
       </section>
@@ -299,9 +297,6 @@ export const Mostrador: React.FC<{
   }, [clienteInicial]);
   const [buscaCliente, setBuscaCliente] = useState('');
   const [sugerencias, setSugerencias] = useState<ClienteEvaluado[]>([]);
-  const [metodo, setMetodo] = useState(() => mostrador.metodos_pago.find((m) => m.toLowerCase() === 'efectivo') ?? mostrador.metodos_pago[0]);
-  const [filasMedio, setFilasMedio] = useState<FilaMedio[] | null>(null);
-  const [recibido, setRecibido] = useState('');
   const [pagando, setPagando] = useState(false);
   const envio = useEnvio();
 
@@ -354,9 +349,7 @@ export const Mostrador: React.FC<{
   const cambiar = (clave: string, cambios: Partial<Linea>) => setLineas((ls) => ls.map((l) => (l.clave === clave ? { ...l, ...cambios } : l)));
 
   const total = useMemo(() => lineas.reduce((acc, l) => acc + cobradoDe(l) * l.cantidad, 0), [lineas]);
-  const enEfectivo = filasMedio ? efectivoDeFilas(filasMedio) : metodo.toLowerCase() === 'efectivo' ? total : 0;
-  const recibidoNum = entero(recibido);
-  const cambio = recibidoNum !== null && enEfectivo > 0 ? recibidoNum - enEfectivo : null;
+  const pago = usePago(mostrador.metodos_pago, total, pagando);
   const necesitaCliente = lineas.some((l) => l.tipo === 'pase_dia');
 
   const problema = (() => {
@@ -370,13 +363,10 @@ export const Mostrador: React.FC<{
     if (necesitaCliente && !cliente) return 'El pase de día necesita un cliente registrado.';
     return null;
   })();
-  const problemaPago = (() => {
-    if (filasMedio && !repartoCompleto(filasMedio, total)) return 'El reparto del pago no suma el total.';
-    if (cambio !== null && cambio < 0) return 'El efectivo recibido no alcanza.';
-    return null;
-  })();
 
   const cobrar = () => {
+    const r = pago.resultado;
+    if (!r) return;
     const items: NuevoItem[] = lineas.map((l) => {
       const item: NuevoItem = { tipo: l.tipo, cantidad: l.cantidad };
       if (l.producto) item.producto_id = l.producto.id;
@@ -392,15 +382,14 @@ export const Mostrador: React.FC<{
       const v = await cajaService.vender({
         deportista_id: cliente?.id,
         items,
-        metodo: filasMedio ? undefined : metodo,
-        pagos: filasMedio ? mediosDeFilas(filasMedio).map((m) => ({ metodo: m.metodo, monto: m.monto })) : undefined,
-        valor_recibido: enEfectivo > 0 && recibidoNum !== null ? recibidoNum : undefined,
+        metodo: r.metodo,
+        pagos: r.pagos,
+        valor_recibido: r.valor_recibido,
+        nota: r.nota,
       });
       setLineas([]);
       setCliente(null);
       setBuscaCliente('');
-      setRecibido('');
-      setFilasMedio(null);
       setPagando(false);
       void cargarProductos(busqueda);
       onVendida(v);
@@ -520,27 +509,11 @@ export const Mostrador: React.FC<{
       <Modal isOpen={pagando} onClose={() => !envio.enviando && setPagando(false)} title="Pago" maxWidth="560px"
         footer={<>
           <Button variant="outline" onClick={() => setPagando(false)} disabled={envio.enviando}>Volver</Button>
-          <Button isLoading={envio.enviando} disabled={problemaPago !== null} onClick={cobrar}>Confirmar venta</Button>
+          <Button isLoading={envio.enviando} disabled={!pago.resultado} onClick={cobrar}>Confirmar venta</Button>
         </>}>
-        <div className="gd-pago">
-          <div className="gd-pago-total">
-            <span>Total a cobrar{cliente ? ` · ${cliente.nombre}` : ''}</span>
-            <strong>{formatCOP(total)}</strong>
-            <small>{lineas.reduce((n, l) => n + l.cantidad, 0)} artículo(s)</small>
-          </div>
-          {filasMedio ? (
-            <>
-              <PagoDividido metodos={mostrador.metodos_pago} total={total} filas={filasMedio} onChange={setFilasMedio} disabled={envio.enviando} />
-              <Button variant="ghost" size="sm" onClick={() => setFilasMedio(null)}>Pagar con un solo medio</Button>
-            </>
-          ) : (
-            <MediosPago metodos={mostrador.metodos_pago} valor={metodo} onCambio={setMetodo} disabled={envio.enviando}
-                        onMixto={() => setFilasMedio(filasIniciales(mostrador.metodos_pago))} />
-          )}
-          {enEfectivo > 0 && <EfectivoRapido aCobrar={enEfectivo} recibido={recibido} onRecibido={setRecibido} />}
-          {problemaPago && <p className="gd-pista">{problemaPago}</p>}
-          {envio.error && <MensajeError>{envio.error}</MensajeError>}
-        </div>
+        <PanelPago metodos={mostrador.metodos_pago} total={total} pago={pago} disabled={envio.enviando}
+          detalle={`${lineas.reduce((n, l) => n + l.cantidad, 0)} artículo(s)${cliente ? ` · ${cliente.nombre}` : ''}`} />
+        {envio.error && <MensajeError>{envio.error}</MensajeError>}
       </Modal>
     </section>
   );

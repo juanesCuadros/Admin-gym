@@ -19,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import AuditService
-from app.modules.deportistas.schemas import CrearDeportistaRequest, RegistrarMedicionRequest
+from app.modules.deportistas.schemas import CrearDeportistaRequest, MedicionCorporalResponse, RegistrarMedicionRequest
 from app.modules.deportistas.service import DeportistasService
 from app.modules.my_gym.service import MAX_BYTES_IMAGEN, MyGymService
 from app.modules.sync.dependencias import EstacionAutenticada
@@ -141,9 +141,38 @@ async def _staff_que_lee(session: AsyncSession, estacion: EstacionAutenticada, s
     return dict(staff)
 
 
-async def mediciones(session: AsyncSession, estacion: EstacionAutenticada, deportista_id: UUID, staff_id: UUID):
+class PerfilMedidas(BaseModel):
+    """Lo que ya se sabe del cliente para precargar la toma y calcular grasa y músculo igual que el servidor."""
+    sexo: Optional[str] = None
+    altura_cm: Optional[float] = None
+    edad: Optional[int] = None
+
+
+class MedicionesEstacionResponse(BaseModel):
+    perfil: PerfilMedidas
+    mediciones: list[MedicionCorporalResponse]
+
+
+async def mediciones(session: AsyncSession, estacion: EstacionAutenticada, deportista_id: UUID, staff_id: UUID) -> MedicionesEstacionResponse:
     await _staff_que_lee(session, estacion, staff_id)
-    return await DeportistasService.listar_mediciones(session=session, gym_id=estacion.gimnasio_id, deportista_id=deportista_id)
+    fila = (await session.execute(
+        text("""SELECT sexo, altura_cm, fecha_nacimiento FROM platform.deportistas
+                WHERE id = :d AND gimnasio_id = :g AND deleted_at IS NULL"""),
+        {"d": deportista_id, "g": estacion.gimnasio_id},
+    )).mappings().first()
+    if not fila:
+        raise _error("DEPORTISTA_NO_ENCONTRADO", "Deportista no encontrado.", status.HTTP_404_NOT_FOUND)
+    edad = None
+    if fila["fecha_nacimiento"]:
+        hoy = DeportistasService._obtener_fecha_hoy_bogota()
+        n = fila["fecha_nacimiento"]
+        # Mismo rango que usa el servidor al calcular (10 a 95 años).
+        edad = max(10, min(95, hoy.year - n.year - ((hoy.month, hoy.day) < (n.month, n.day))))
+    lista = await DeportistasService.listar_mediciones(session=session, gym_id=estacion.gimnasio_id, deportista_id=deportista_id)
+    return MedicionesEstacionResponse(
+        perfil=PerfilMedidas(sexo=fila["sexo"], altura_cm=float(fila["altura_cm"]) if fila["altura_cm"] else None, edad=edad),
+        mediciones=lista,
+    )
 
 
 async def registrar_medicion(session: AsyncSession, estacion: EstacionAutenticada, deportista_id: UUID, data: RegistrarMedicionEstacionRequest):

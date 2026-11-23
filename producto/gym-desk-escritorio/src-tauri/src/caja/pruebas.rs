@@ -66,7 +66,7 @@ fn pase(tipo: &str, precio: Option<i64>) -> NuevoItem {
 }
 
 fn en(metodo: &str, items: Vec<NuevoItem>) -> NuevaVenta {
-    NuevaVenta { deportista_id: None, items, metodo: Some(metodo.into()), pagos: None, valor_recibido: None }
+    NuevaVenta { deportista_id: None, items, metodo: Some(metodo.into()), pagos: None, valor_recibido: None, nota: None }
 }
 
 fn cola(conn: &Connection) -> Vec<(String, String, String)> {
@@ -274,4 +274,20 @@ fn el_porcentaje_de_descuento_redondea_igual_que_el_servidor() {
     assert_eq!(super::descuento_centesimas(10000, 8000), 2000);
     assert_eq!(super::descuento_centesimas(10000, 10000), 0);
     assert_eq!(super::descuento_centesimas(0, 0), 0);
+}
+
+#[test]
+fn la_nota_del_cobro_viaja_al_servidor_y_queda_en_la_estacion() {
+    let (_d, conn) = base(true, false);
+    let yo = recepcion();
+    abrir_turno(&conn, ahora(), &yo, 0, Confirmacion::SinRed).unwrap();
+    let mut v = en("Efectivo", vec![pase("pase_clase", Some(10_000))]);
+    v.nota = Some("  paga mañana el resto  ".into());
+    let venta = registrar_venta(&conn, ahora(), &yo, &v).unwrap();
+    let guardada: Option<String> = conn.query_row("SELECT nota FROM caja_ventas WHERE id = ?1", [&venta.id], |f| f.get(0)).unwrap();
+    assert_eq!(guardada.as_deref(), Some("paga mañana el resto"));
+    let payload: String = conn.query_row("SELECT payload FROM sync_outbox WHERE id = ?1", [&venta.id], |f| f.get(0)).unwrap();
+    assert!(payload.contains("paga mañana el resto"));
+    v.nota = Some("x".repeat(301));
+    assert_eq!(codigo(registrar_venta(&conn, ahora(), &yo, &v)), "NOTA_MUY_LARGA");
 }

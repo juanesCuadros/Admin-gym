@@ -4,13 +4,11 @@ import { Button } from '@web/components/ui/Button';
 import { EstadoDeportistaBadge } from '@web/components/ui/EstadoDeportistaBadge';
 import { Input } from '@web/components/ui/Input';
 import { Modal } from '@web/components/ui/Modal';
-import { efectivoDeFilas, filasIniciales, mediosDeFilas, PagoDividido, repartoCompleto, type FilaMedio } from '@web/components/ui/PagoDividido';
 import { formatCOP, formatDocumento, formatFecha } from '@web/utils/formato';
 import { cajaService } from '../api/caja.service';
 import { ingresoService } from '../api/ingreso.service';
 import { aErrorGymDesk } from '../api/tauri';
-import { EfectivoRapido } from '../components/EfectivoRapido';
-import { MediosPago } from '../components/MediosPago';
+import { PanelPago, usePago } from '../components/PanelPago';
 import { MensajeError } from '../components/Piezas';
 import { useEnvio } from '../hooks/useEnvio';
 import type { CobroMembresiaRegistrado, DatosMostrador, OpcionesMembresia } from '../types/caja.types';
@@ -45,17 +43,12 @@ export const MembresiasCaja: React.FC<{
   const [planId, setPlanId] = useState<string | null>(null);
   const [precioCobrado, setPrecioCobrado] = useState('');
   const [motivo, setMotivo] = useState('');
-  const [metodo, setMetodo] = useState(() => mostrador.metodos_pago.find((m) => m.toLowerCase() === 'efectivo') ?? mostrador.metodos_pago[0]);
-  const [filasMedio, setFilasMedio] = useState<FilaMedio[] | null>(null);
-  const [recibido, setRecibido] = useState('');
   const [confirmando, setConfirmando] = useState(false);
   const envio = useEnvio();
 
   const limpiarCobro = () => {
     setPrecioCobrado('');
     setMotivo('');
-    setRecibido('');
-    setFilasMedio(null);
   };
 
   const elegir = useCallback(async (deportistaId: string) => {
@@ -95,9 +88,7 @@ export const MembresiasCaja: React.FC<{
   const venceNueva = renovar ? renovar.fecha_vencimiento_nueva : plan?.fecha_vencimiento ?? null;
   const cobradoEscrito = entero(precioCobrado);
   const total = cobradoEscrito ?? lista;
-  const enEfectivo = filasMedio ? efectivoDeFilas(filasMedio) : metodo.toLowerCase() === 'efectivo' ? total : 0;
-  const recibidoNum = entero(recibido);
-  const cambio = recibidoNum !== null && enEfectivo > 0 ? recibidoNum - enEfectivo : null;
+  const pago = usePago(mostrador.metodos_pago, total, confirmando);
   const puedeCobrar = !!opciones && !opciones.aviso && (!!renovar || !!plan);
 
   const problema = (() => {
@@ -106,14 +97,9 @@ export const MembresiasCaja: React.FC<{
     if (cobradoEscrito !== null && cobradoEscrito < lista && motivo.trim().length < MOTIVO_MINIMO) return 'Escribe el motivo del descuento.';
     return null;
   })();
-  const problemaPago = (() => {
-    if (filasMedio && !repartoCompleto(filasMedio, total)) return 'El reparto del pago no suma el total.';
-    if (cambio !== null && cambio < 0) return 'El efectivo recibido no alcanza.';
-    return null;
-  })();
-
   const cobrar = () => {
-    if (!opciones) return;
+    const r = pago.resultado;
+    if (!opciones || !r) return;
     const conDescuento = cobradoEscrito !== null && cobradoEscrito !== lista;
     void envio.enviar(async () => {
       const c = await cajaService.cobrarMembresia({
@@ -122,9 +108,10 @@ export const MembresiasCaja: React.FC<{
         plan_id: renovar ? undefined : planId ?? undefined,
         precio_cobrado: conDescuento ? cobradoEscrito ?? undefined : undefined,
         motivo_descuento: conDescuento ? motivo.trim() : undefined,
-        metodo: filasMedio ? undefined : metodo,
-        pagos: filasMedio ? mediosDeFilas(filasMedio).map((m) => ({ metodo: m.metodo, monto: m.monto })) : undefined,
-        valor_recibido: enEfectivo > 0 && recibidoNum !== null ? recibidoNum : undefined,
+        metodo: r.metodo,
+        pagos: r.pagos,
+        valor_recibido: r.valor_recibido,
+        nota: r.nota,
       });
       setOpciones(null);
       limpiarCobro();
@@ -220,27 +207,11 @@ export const MembresiasCaja: React.FC<{
       <Modal isOpen={confirmando} onClose={() => !envio.enviando && setConfirmando(false)} title={renovar ? 'Pago de la renovación' : 'Pago del plan'} maxWidth="560px"
         footer={<>
           <Button variant="outline" onClick={() => setConfirmando(false)} disabled={envio.enviando}>Volver</Button>
-          <Button isLoading={envio.enviando} disabled={problemaPago !== null} onClick={cobrar}>{renovar ? 'Confirmar renovación' : 'Confirmar venta'}</Button>
+          <Button isLoading={envio.enviando} disabled={!pago.resultado} onClick={cobrar}>{renovar ? 'Confirmar renovación' : 'Confirmar venta'}</Button>
         </>}>
-        <div className="gd-pago">
-          <div className="gd-pago-total">
-            <span>{c?.nombre ?? ''}</span>
-            <strong>{formatCOP(total)}</strong>
-            <small>{renovar ? `Renovar ${opciones?.membresia?.plan_nombre ?? 'plan'}` : plan?.nombre ?? ''}{venceNueva ? ` · queda hasta el ${fecha(venceNueva)}` : ''}</small>
-          </div>
-          {filasMedio ? (
-            <>
-              <PagoDividido metodos={mostrador.metodos_pago} total={total} filas={filasMedio} onChange={setFilasMedio} disabled={envio.enviando} />
-              <Button variant="ghost" size="sm" onClick={() => setFilasMedio(null)}>Pagar con un solo medio</Button>
-            </>
-          ) : (
-            <MediosPago metodos={mostrador.metodos_pago} valor={metodo} onCambio={setMetodo} disabled={envio.enviando}
-                        onMixto={() => setFilasMedio(filasIniciales(mostrador.metodos_pago))} />
-          )}
-          {enEfectivo > 0 && <EfectivoRapido aCobrar={enEfectivo} recibido={recibido} onRecibido={setRecibido} />}
-          {problemaPago && <p className="gd-pista">{problemaPago}</p>}
-          {envio.error && <MensajeError>{envio.error}</MensajeError>}
-        </div>
+        <PanelPago metodos={mostrador.metodos_pago} total={total} pago={pago} disabled={envio.enviando}
+          detalle={`${c?.nombre ?? ''} · ${renovar ? `Renovar ${opciones?.membresia?.plan_nombre ?? 'plan'}` : plan?.nombre ?? ''}${venceNueva ? ` · hasta el ${fecha(venceNueva)}` : ''}`} />
+        {envio.error && <MensajeError>{envio.error}</MensajeError>}
       </Modal>
     </section>
   );

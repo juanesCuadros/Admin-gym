@@ -198,6 +198,8 @@ pub struct NuevoCobroMembresia {
     pub metodo: Option<String>,
     pub pagos: Option<Vec<NuevoMedio>>,
     pub valor_recibido: Option<i64>,
+    #[serde(default)]
+    pub nota: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -264,13 +266,14 @@ pub fn cobrar(conn: &Connection, ahora: DateTime<Utc>, usuario: &UsuarioSesion, 
     let motivo = validar_descuento(&g, tiene_permiso(conn, usuario, "editar")?, lista, cobrado, c.motivo_descuento.as_deref())?;
     let Cobro { tipo_medio, metodo, pagos, valor_recibido, cambio } =
         resolver_cobro(c.metodo.as_deref(), c.pagos.as_deref(), cobrado, c.valor_recibido)?;
+    let nota = super::validar_nota(c.nota.as_deref())?;
 
     let ts = a_texto(ahora);
     let medios_json: Vec<_> = pagos.iter().map(|p| json!({ "metodo": p.metodo, "tipo_medio": p.tipo_medio, "monto": p.monto })).collect();
     let mut payload = json!({
         "turno_id": turno.id, "membresia_id": membresia_id, "deportista_id": c.deportista_id, "dias": dias,
         "precio_lista": lista, "precio_cobrado": cobrado, "motivo_descuento": motivo,
-        "tipo_medio": tipo_medio, "metodo": metodo, "pagos": medios_json, "valor_recibido": valor_recibido,
+        "tipo_medio": tipo_medio, "metodo": metodo, "pagos": medios_json, "valor_recibido": valor_recibido, "nota": nota,
     });
     let tipo_op = if tipo == "venta" {
         payload["plan_id"] = json!(plan_id);
@@ -288,11 +291,11 @@ pub fn cobrar(conn: &Connection, ahora: DateTime<Utc>, usuario: &UsuarioSesion, 
     tx.execute(
         "INSERT INTO caja_pagos_membresia (id, tipo, turno_id, membresia_id, deportista_id, deportista_nombre, plan_id, plan_nombre, dias,
            fecha_inicio, fecha_vencimiento_anterior, fecha_vencimiento_nueva, precio_lista, precio_cobrado, motivo_descuento,
-           tipo_medio, metodo, valor_recibido, cambio, staff_id, ocurrida_en, fecha_negocio)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+           tipo_medio, metodo, valor_recibido, cambio, staff_id, ocurrida_en, fecha_negocio, nota)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
         params![
             id, tipo, turno.id, membresia_id, c.deportista_id, op.cliente.nombre, plan_id, plan_nombre, dias, inicio, anterior, nueva,
-            lista, cobrado, motivo, tipo_medio, metodo, valor_recibido, cambio, usuario.id, ts, hoy.to_string(),
+            lista, cobrado, motivo, tipo_medio, metodo, valor_recibido, cambio, usuario.id, ts, hoy.to_string(), nota,
         ],
     )?;
     for p in &pagos {

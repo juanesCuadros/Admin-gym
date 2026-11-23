@@ -138,6 +138,7 @@ fn un_dia_de_caja_sin_red_queda_igual_en_el_servidor() {
                 metodo: if pagos.is_some() { None } else { Some(metodo.into()) },
                 pagos,
                 valor_recibido: recibido,
+                nota: None,
             };
             registrar_venta(&conn, reloj.ahora(), &yo, &v).expect("vender sin red")
         };
@@ -167,7 +168,7 @@ fn un_dia_de_caja_sin_red_queda_igual_en_el_servidor() {
         reloj.avanzar(Duration::minutes(5));
         let renovacion = cobrar(&conn, reloj.ahora(), &yo, &NuevoCobroMembresia {
             deportista_id: socio.clone(), accion: "renovar".into(), plan_id: None, precio_cobrado: None, motivo_descuento: None,
-            metodo: Some("Efectivo".into()), pagos: None, valor_recibido: Some(100_000),
+            metodo: Some("Efectivo".into()), pagos: None, valor_recibido: Some(100_000), nota: None,
         })
         .expect("renovar sin red");
         assert_eq!((renovacion.precio_cobrado, renovacion.cambio), (70_000, Some(30_000)));
@@ -176,7 +177,7 @@ fn un_dia_de_caja_sin_red_queda_igual_en_el_servidor() {
         cobrar(&conn, reloj.ahora(), &yo, &NuevoCobroMembresia {
             deportista_id: socio_nuevo.clone(), accion: "vender".into(), plan_id: Some(plan), precio_cobrado: None, motivo_descuento: None,
             metodo: None, pagos: Some(vec![NuevoMedio { metodo: "Efectivo".into(), monto: 30_000 }, NuevoMedio { metodo: "Nequi".into(), monto: 50_000 }]),
-            valor_recibido: Some(30_000),
+            valor_recibido: Some(30_000), nota: Some("paga el resto con Nequi".into()),
         })
         .expect("vender plan sin red");
         reloj.avanzar(Duration::minutes(1));

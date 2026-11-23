@@ -1206,3 +1206,70 @@ button.gd-sync:hover {
 .gd-opciones-puerta button { text-align: left; padding: 0 14px; }
 .gd-puerta-campos { display: grid; grid-template-columns: 1fr 140px; gap: 12px; }
 .gd-acciones { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+/* Registrar medidas: todo cabe en el ancho del modal */
+.gd-medir-arriba { grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)) !important; }
+.gd-cuerpo-medidas { grid-template-columns: minmax(0, 1fr) clamp(140px, 22%, 190px) minmax(0, 1fr) !important; }
+.gd-medir-arriba > *, .gd-cuerpo-columna, .gd-casilla, .gd-casilla > div { min-width: 0; }
+.gd-casilla input { width: 100%; }
+.gd-sexo { gap: 4px !important; }
+.gd-sexo button { padding: 0 4px; font-size: .9rem; min-width: 0; }
+.modal-body:has(.gd-cuerpo-medidas) { overflow-x: hidden; }
+.gd-silueta-relleno { fill: var(--primary-light, rgba(37,99,235,.12)); stroke: none; }
+.gd-silueta-borde { fill: none; stroke: var(--primary); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+/* Medidas: resultados calculados */
+.gd-medir-arriba { grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)) !important; }
+.gd-silueta { height: 280px !important; }
+.gd-medida i { font-style: normal; color: var(--text-muted); font-size: .72rem; }
+.gd-resultados { margin-top: 12px; padding: 12px; border-radius: 14px; background: var(--bg-surface-elevated, #f8fafc); }
+.gd-resultados-titulo { display: flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary); margin-bottom: 8px; }
+.gd-resultados-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.gd-resultado { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; background: var(--bg-surface); border-left: 4px solid var(--border-color); min-width: 0; }
+.gd-resultado span { font-size: .78rem; color: var(--text-secondary); font-weight: 600; }
+.gd-resultado strong { font-size: 1.35rem; color: var(--text-primary); }
+.gd-resultado small { font-size: .78rem; color: var(--text-muted); font-weight: 500; }
+.gd-resultado em { font-style: normal; font-size: .78rem; font-weight: 600; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gd-tono-bien { border-left-color: #16a34a; } .gd-tono-bien em { color: #15803d; }
+.gd-tono-ojo { border-left-color: #f59e0b; } .gd-tono-ojo em { color: #b45309; }
+.gd-tono-alto { border-left-color: #dc2626; } .gd-tono-alto em { color: #b91c1c; }
+/* Ficha: solo lo de hoy */
+.gd-ficha-huella { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: .82rem; color: var(--text-secondary); }
+.gd-hoy { display: flex; flex-wrap: wrap; gap: 8px; }
+.gd-hoy-item { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; font-size: .88rem; background: var(--bg-surface-elevated, #f1f5f9); border: 1px solid var(--border-color); }
+.gd-hoy-item strong { font-variant-numeric: tabular-nums; }
+.gd-hoy-item.si { border-color: #86efac; background: #f0fdf4; }
+.gd-hoy-item.alerta { border-color: #fcd34d; background: #fffbeb; }
+.gd-hoy-item.no { border-color: #fca5a5; background: #fef2f2; }
+.gd-hoy-item.cobro { border-color: #bfdbfe; background: #eff6ff; }
+/* Ventas fija: la pantalla no se desplaza; solo los productos y el carrito. Pagar siempre abajo. */
+.gd-modulo:has(> .gd-mostrador) { height: calc(100vh - 168px); min-height: 460px; display: flex; flex-direction: column; }
+.gd-mostrador { flex: 1; min-height: 0; margin-top: 0 !important; align-items: stretch !important; }
+.gd-mostrador-catalogo, .gd-mostrador-cuenta { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.gd-mostrador-cuenta { position: static !important; }
+.gd-mostrador-catalogo > *, .gd-mostrador-cuenta > * { flex: none; }
+.gd-productos { flex: 1 1 auto !important; min-height: 0; overflow-y: auto; align-content: start; padding: 2px 4px 2px 0; }
+.gd-lineas { flex: 1 1 auto !important; min-height: 0; overflow-y: auto; max-height: none !important; }
+.gd-mostrador-cuenta > .gd-vacio { flex: 1 1 auto; display: grid; place-items: center; text-align: center; }
+.gd-mostrador-cuenta .gd-boton-pagar { margin-top: 10px; }
+
+/* Panel de pago: todos los medios con su valor */
+.gd-pago-medios { display: flex; flex-direction: column; gap: 8px; }
+.gd-pago-medio { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 10px; align-items: center; padding: 6px; border: 1.5px solid var(--border-color); border-radius: 12px; background: var(--bg-surface); transition: border-color .12s, background .12s; }
+.gd-pago-medio.activo { border-color: var(--primary); background: var(--primary-light, rgba(37,99,235,.06)); }
+.gd-pago-medio > button { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 12px; border: 0; border-radius: 10px; background: transparent; font: 600 1rem var(--font-sans); color: var(--text-primary); cursor: pointer; text-align: left; }
+.gd-pago-medio > button:hover:not(:disabled) { background: var(--bg-surface-elevated, #f1f5f9); }
+.gd-pago-medio > button svg { color: var(--primary); flex: none; }
+.gd-pago-valor { display: flex; align-items: center; gap: 4px; height: 48px; padding: 0 12px; border: 1.5px solid var(--border-color); border-radius: 10px; background: var(--bg-surface); }
+.gd-pago-valor:focus-within { border-color: var(--primary); }
+.gd-pago-valor span { color: var(--text-muted); font-weight: 600; }
+.gd-pago-valor input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; text-align: right; font: 700 1.2rem var(--font-sans); color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.gd-pago-resumen { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.gd-pago-resumen > div { display: flex; flex-direction: column; padding: 12px 14px; border-radius: 12px; background: var(--bg-surface-elevated, #f8fafc); }
+.gd-pago-resumen span { font-size: .82rem; color: var(--text-secondary); font-weight: 600; }
+.gd-pago-resumen strong { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.gd-pago-resumen .cambio { background: #f0fdf4; } .gd-pago-resumen .cambio strong { color: #15803d; }
+.gd-pago-resumen .falta { background: #fef2f2; } .gd-pago-resumen .falta strong { color: #b91c1c; }
+.gd-pago-nota { display: flex; flex-direction: column; gap: 6px; font-size: .85rem; font-weight: 600; color: var(--text-secondary); }
+.gd-pago-nota span { display: flex; align-items: center; gap: 6px; }
+.gd-pago-nota textarea { resize: none; padding: 10px 12px; border: 1.5px solid var(--border-color); border-radius: 10px; font: 400 .95rem var(--font-sans); color: var(--text-primary); background: var(--bg-surface); }
+.gd-pago-nota textarea:focus { outline: 0; border-color: var(--primary); }
+.gd-pago-agregar-nota { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--primary); font: 600 .9rem var(--font-sans); cursor: pointer; padding: 4px 0; }

@@ -129,8 +129,8 @@ async def registrar_cliente(data: clientes.RegistrarClienteRequest, estacion: Es
 
 
 @sync_router.get(
-    "/clientes/{deportista_id}/mediciones", response_model=List[MedicionCorporalResponse],
-    summary="Historial de mediciones de un cliente, desde la estación. Exige conexión",
+    "/clientes/{deportista_id}/mediciones", response_model=clientes.MedicionesEstacionResponse,
+    summary="Perfil (sexo, estatura, edad) e historial de mediciones de un cliente, desde la estación. Exige conexión",
 )
 async def mediciones_cliente(
     deportista_id: Annotated[UUID, Path()], estacion: EstacionOperativa, session: Sesion, staff_id: UUID = Query(...),

@@ -56,6 +56,7 @@ class _PayloadCobro(BaseModel):
     metodo: str = Field(..., min_length=2, max_length=50)
     pagos: List[_Medio] = Field(default_factory=list, max_length=5)
     valor_recibido: Optional[int] = Field(None, ge=0, le=MAX_MONTO)
+    nota: Optional[str] = Field(None, max_length=300)
 
 
 class _PayloadRenovar(_PayloadCobro):
@@ -123,16 +124,17 @@ async def _insertar_pago(ctx: Contexto, datos: _PayloadCobro, turno_id: UUID, me
         text("""
             INSERT INTO platform.pagos_membresia (
                 id, gimnasio_id, turno_id, membresia_id, monto, metodo, tipo_medio, dias_agregados, idempotency_key,
-                registrado_por, created_at, precio_lista, precio_cobrado, descuento_pct, motivo_descuento, es_venta, recibido_en
+                registrado_por, created_at, precio_lista, precio_cobrado, descuento_pct, motivo_descuento, es_venta, recibido_en, nota
             ) VALUES (
                 :id, :g, :t, :m, :monto, :metodo, :tipo_medio, :dias, :clave,
-                :staff, :momento, :lista, :cobrado, :pct, :motivo, :es_venta, now()
+                :staff, :momento, :lista, :cobrado, :pct, :motivo, :es_venta, now(), :nota
             )
         """),
         {"id": ctx.op.id, "g": gym_id, "t": turno_id, "m": membresia_id, "monto": Decimal(datos.precio_cobrado),
          "metodo": datos.metodo.strip(), "tipo_medio": datos.tipo_medio, "dias": dias, "clave": ctx.op.idempotency_key,
          "staff": ctx.staff["id"], "momento": momento, "lista": Decimal(datos.precio_lista), "cobrado": Decimal(datos.precio_cobrado),
-         "pct": _pct(datos.precio_lista, datos.precio_cobrado), "motivo": motivo, "es_venta": es_venta},
+         "pct": _pct(datos.precio_lista, datos.precio_cobrado), "motivo": motivo, "es_venta": es_venta,
+         "nota": (datos.nota or "").strip() or None},
     )
     for m in datos.pagos:
         await ctx.session.execute(
