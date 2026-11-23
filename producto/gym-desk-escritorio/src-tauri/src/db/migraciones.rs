@@ -12,6 +12,7 @@ const MIGRACIONES: &[(u32, &str, &str)] = &[
     (3, "ingreso", include_str!("migraciones/0003_ingreso.sql")),
     (4, "caja", include_str!("migraciones/0004_caja.sql")),
     (5, "membresias", include_str!("migraciones/0005_membresias.sql")),
+    (6, "fotos", include_str!("migraciones/0006_fotos.sql")),
 ];
 
 pub fn aplicar(conn: &mut Connection, ahora: &str) -> Resultado<u32> {

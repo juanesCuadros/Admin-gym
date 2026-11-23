@@ -28,6 +28,28 @@ export interface ClienteEvaluado {
   abre: boolean;
   resultado: ResultadoAcceso;
   mensaje: string;
+  /** Foto tomada en esta estación (data URL), si la hay. */
+  foto: string | null;
+}
+
+/** Datos para registrar un cliente: los mismos que pide la web (Ley 1581, menor con acudiente). */
+export interface NuevoCliente {
+  tipo_documento: 'CC' | 'TI' | 'CE' | 'PAS' | 'PPT' | 'RC';
+  documento: string;
+  nombre: string;
+  telefono?: string;
+  correo?: string;
+  sexo?: 'M' | 'F' | 'otro';
+  fecha_nacimiento?: string;
+  consentimiento_1581: true;
+  acudiente?: {
+    nombre: string;
+    tipo_documento: 'CC' | 'TI' | 'CE' | 'PAS' | 'PPT' | 'RC';
+    documento: string;
+    telefono: string;
+    parentesco: string;
+    autoriza: boolean;
+  };
 }
 
 export interface ResultadoIngreso {

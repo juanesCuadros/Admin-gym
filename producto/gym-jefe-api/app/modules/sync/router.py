@@ -11,7 +11,7 @@ from app.modules.sync.activacion import ActivacionService
 from app.modules.sync.dependencias import Estacion, EstacionOperativa
 from app.modules.sync.estaciones import EstacionesService
 from app.modules.sync.pull import LIMITE_MAXIMO, LIMITE_POR_DEFECTO, PullService
-from app.modules.sync import caja, ingresos, membresias
+from app.modules.sync import caja, clientes, ingresos, membresias
 from app.modules.sync.push import MANEJADORES, PushService
 from app.modules.sync.revisiones import ListadoRevisionesResponse, RevisarRequest, RevisionDto, RevisionesService
 from app.modules.sync.schemas import (
@@ -115,6 +115,14 @@ async def pull(
 )
 async def turno_abierto(estacion: EstacionOperativa, session: Sesion):
     return await caja.turno_abierto(session, estacion)
+
+
+@sync_router.post(
+    "/clientes", response_model=clientes.ClienteRegistradoDto, status_code=status.HTTP_201_CREATED,
+    summary="Registrar un cliente desde la estación, con foto opcional. Exige conexión (E-41)",
+)
+async def registrar_cliente(data: clientes.RegistrarClienteRequest, estacion: EstacionOperativa, session: Sesion):
+    return await clientes.registrar(session, estacion, data)
 
 
 @sync_router.post(
