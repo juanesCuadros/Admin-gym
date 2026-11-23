@@ -6,6 +6,7 @@ pub mod caja;
 pub mod comandos;
 pub mod db;
 pub mod error;
+pub mod huella;
 pub mod reloj;
 pub mod sesion;
 pub mod sync;
@@ -63,6 +64,12 @@ pub fn run() {
             comandos::caja_productos,
             comandos::caja_registrar_venta,
             comandos::registrar_cliente,
+            comandos::huella_estado,
+            comandos::huella_configurar,
+            comandos::huella_capturar,
+            comandos::huella_registrar,
+            comandos::huella_dedos,
+            comandos::ingreso_por_huella,
             comandos::puede_registrar_clientes,
             comandos::caja_opciones_membresia,
             comandos::caja_cobrar_membresia,

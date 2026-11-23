@@ -912,3 +912,7 @@ button.gd-sync:hover {
 .gd-camara-acciones { display: flex; flex-direction: column; gap: 8px; }
 .gd-ingreso-foto { width: 96px; height: 96px; object-fit: cover; border-radius: 14px; flex-shrink: 0; }
 .gd-enlace { background: none; border: 0; padding: 0; color: var(--primary); text-decoration: underline; cursor: pointer; font: inherit; }
+
+.gd-huella-pasos { display: flex; gap: 10px; margin: 14px 0 8px; }
+.gd-huella-pasos span { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--border); color: var(--text-secondary, #888); }
+.gd-huella-pasos span.hecho { border-color: var(--success); color: var(--success); }

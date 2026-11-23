@@ -304,5 +304,5 @@ fn al_actualizar_a_esta_version_la_estacion_vuelve_a_descargar_todo() {
     let (_dir, conn) = base_temporal();
     let cursor: Option<String> = conn.query_row("SELECT cursor FROM sync_estado WHERE id = 1", [], |f| f.get(0)).unwrap();
     assert_eq!(cursor, None);
-    assert_eq!(contar(&conn, "_migraciones"), 6);
+    assert_eq!(contar(&conn, "_migraciones"), 7);
 }

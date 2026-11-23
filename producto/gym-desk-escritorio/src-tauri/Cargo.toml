@@ -14,6 +14,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 argon2 = "0.5"
+base64 = "0.22"
+# El kit del lector de huella (DigitalPersona) se carga al usarlo: la app abre aunque no esté instalado.
+libloading = "0.8"
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
 rand = "0.8"

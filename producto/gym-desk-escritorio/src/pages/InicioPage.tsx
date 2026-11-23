@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Dumbbell, KeyRound, Lock, LogOut, ScanLine, Wallet } from 'lucide-react';
+import { ArrowLeft, Dumbbell, KeyRound, Lock, LogOut, ScanLine, Settings, Wallet } from 'lucide-react';
+import { ConfigLector, useHuella } from './Huella';
 import { Button } from '@web/components/ui/Button';
 import { Input } from '@web/components/ui/Input';
 import { useToast } from '@web/contexts/ToastContext';
@@ -31,7 +32,8 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
   const [passwordActual, setPasswordActual] = useState('');
   const [pin, setPin] = useState('');
   const [pinRepetido, setPinRepetido] = useState('');
-  const [vista, setVista] = useState<'ingreso' | 'caja' | 'pendientes' | 'pin'>('ingreso');
+  const [vista, setVista] = useState<'ingreso' | 'caja' | 'pendientes' | 'pin' | 'equipo'>('ingreso');
+  const [huella, recargarHuella] = useHuella();
   // Al cerrar pendientes o el PIN se vuelve a la pantalla de trabajo en la que estaba.
   const [trabajo, setTrabajo] = useState<'ingreso' | 'caja'>('ingreso');
   // Cliente que pasa de Control de ingreso a Caja con "Renovar membresía".
@@ -77,6 +79,9 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
           <Button variant="ghost" size="sm" leftIcon={<KeyRound size={15} />} onClick={() => setVista(vista === 'pin' ? trabajo : 'pin')}>
             Mi PIN
           </Button>
+          <Button variant="ghost" size="sm" leftIcon={<Settings size={15} />} onClick={() => { recargarHuella(); setVista(vista === 'equipo' ? trabajo : 'equipo'); }}>
+            Equipo
+          </Button>
           <Button variant="outline" size="sm" leftIcon={<Lock size={15} />} disabled={accion.enviando} onClick={() => void accion.enviar(bloquear)}>
             Bloquear
           </Button>
@@ -114,6 +119,15 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
 
         {vista === 'caja' && estacion && (
           <CajaPanel enLinea={estacion.en_linea} clienteParaCobrar={clienteParaCobrar} onClienteUsado={() => setClienteParaCobrar(null)} />
+        )}
+
+        {vista === 'equipo' && (
+          <>
+            <Button variant="ghost" size="sm" leftIcon={<ArrowLeft size={15} />} onClick={() => setVista(trabajo)} style={{ marginBottom: 8 }}>
+              Volver
+            </Button>
+            {huella ? <ConfigLector huella={huella} onCambio={recargarHuella} /> : <div className="skeleton" style={{ height: 160, maxWidth: 520 }} />}
+          </>
         )}
 
         <section className="gd-tarjeta" style={{ maxWidth: 440, display: vista === 'pin' ? undefined : 'none' }}>

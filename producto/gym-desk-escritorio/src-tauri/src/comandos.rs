@@ -420,6 +420,126 @@ pub fn registrar_cliente(
     Ok(r)
 }
 
+// ---------------------------------------------------------------------------
+// Huella (fase 4). Capturar bloquea hasta que llega el dedo: corre fuera del hilo de la ventana.
+// ---------------------------------------------------------------------------
+#[derive(Serialize)]
+pub struct EstadoHuella {
+    pub lector: String,
+    pub lectores: Vec<(String, String)>,
+    pub puede_configurar: bool,
+    pub puede_registrar: bool,
+    pub muestras_registro: usize,
+    pub dedos: Vec<String>,
+}
+
+#[tauri::command]
+pub fn huella_estado(estado: State<'_, EstadoApp>) -> Resultado<EstadoHuella> {
+    estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        Ok(EstadoHuella {
+            lector: crate::huella::lector_configurado(conn)?,
+            lectores: crate::huella::LECTORES.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect(),
+            puede_configurar: usuario.rol == "jefe",
+            puede_registrar: crate::sync::clientes::puede_registrar(conn, &usuario)?,
+            muestras_registro: crate::huella::MUESTRAS_REGISTRO,
+            dedos: crate::huella::DEDOS.iter().map(|d| d.to_string()).collect(),
+        })
+    })
+}
+
+#[tauri::command]
+pub fn huella_configurar(estado: State<'_, EstadoApp>, lector: String) -> Resultado<()> {
+    estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        crate::huella::configurar(conn, ahora, &usuario, &lector)
+    })?;
+    estado.despertar();
+    Ok(())
+}
+
+fn lector_de_sesion(estado: &EstadoApp) -> Resultado<String> {
+    estado.con_base(|conn, sesion, ahora| {
+        sesion.exigir_activa(conn, ahora)?;
+        exigir_operable(conn, ahora)?;
+        crate::huella::lector_configurado(conn)
+    })
+}
+
+/// Una lectura para el registro de una huella. Devuelve la muestra en base64.
+#[tauri::command]
+pub async fn huella_capturar(estado: State<'_, EstadoApp>, simulada: Option<String>) -> Resultado<String> {
+    let nombre = lector_de_sesion(&estado)?;
+    let muestra = tauri::async_runtime::spawn_blocking(move || crate::huella::crear(&nombre)?.capturar(15_000, simulada.as_deref()))
+        .await
+        .map_err(|_| error_interno())??;
+    Ok(crate::huella::a_base64(&muestra))
+}
+
+/// Une las lecturas en una plantilla, la guarda en la estación y la encola para el servidor.
+#[tauri::command]
+pub async fn huella_registrar(
+    estado: State<'_, EstadoApp>,
+    deportista_id: String,
+    dedo: String,
+    muestras: Vec<String>,
+) -> Resultado<crate::huella::HuellaRegistrada> {
+    let nombre = lector_de_sesion(&estado)?;
+    let decodificadas = muestras.iter().map(|m| crate::huella::de_base64(m)).collect::<Resultado<Vec<_>>>()?;
+    let (formato, plantilla) = tauri::async_runtime::spawn_blocking(move || {
+        let lector = crate::huella::crear(&nombre)?;
+        Ok::<_, ErrorApp>((lector.formato(), lector.plantilla(&decodificadas)?))
+    })
+    .await
+    .map_err(|_| error_interno())??;
+    let r = estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        crate::huella::guardar(conn, ahora, &usuario, &deportista_id, &dedo, formato, &plantilla)
+    })?;
+    estado.despertar();
+    Ok(r)
+}
+
+#[tauri::command]
+pub fn huella_dedos(estado: State<'_, EstadoApp>, deportista_id: String) -> Resultado<Vec<String>> {
+    estado.con_base(|conn, sesion, ahora| {
+        sesion.exigir_activa(conn, ahora)?;
+        crate::huella::dedos_de(conn, &deportista_id)
+    })
+}
+
+/// Ingreso con huella: lee el dedo, lo busca entre las huellas de la estación y registra el ingreso.
+#[tauri::command]
+pub async fn ingreso_por_huella(estado: State<'_, EstadoApp>, simulada: Option<String>) -> Resultado<ResultadoIngreso> {
+    let nombre = lector_de_sesion(&estado)?;
+    let base = estado.base()?.clone();
+    let encontrado = tauri::async_runtime::spawn_blocking(move || {
+        let lector = crate::huella::crear(&nombre)?;
+        let muestra = lector.capturar(15_000, simulada.as_deref())?;
+        // La base se toma solo para leer las plantillas, no mientras se espera el dedo.
+        let guardadas = {
+            let conn = base.lock().map_err(|_| error_interno())?;
+            crate::huella::plantillas(&conn, lector.formato())?
+        };
+        let solo: Vec<Vec<u8>> = guardadas.iter().map(|(_, p)| p.clone()).collect();
+        Ok::<_, ErrorApp>(lector.identificar(&muestra, &solo)?.map(|i| guardadas[i].0.clone()))
+    })
+    .await
+    .map_err(|_| error_interno())??;
+    let Some(deportista_id) = encontrado else {
+        return Err(ErrorApp::nuevo("HUELLA_NO_RECONOCIDA", "No se reconoce la huella. Búscalo por documento o registra su huella."));
+    };
+    let resultado = estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        exigir_operable(conn, ahora)?;
+        registro::registrar_ingreso(conn, ahora, &usuario, Objetivo::Id(&deportista_id), "huella")
+    })?;
+    if !resultado.relectura_ignorada {
+        estado.despertar();
+    }
+    Ok(resultado)
+}
+
 /// ¿La persona con sesión puede registrar clientes? (permiso de crear deportistas)
 #[tauri::command]
 pub fn puede_registrar_clientes(estado: State<'_, EstadoApp>) -> Resultado<bool> {

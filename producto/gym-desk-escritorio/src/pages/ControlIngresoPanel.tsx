@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CalendarPlus, CheckCircle2, CloudUpload, Gift, ScanLine, ShieldAlert, UserPlus, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarPlus, CheckCircle2, CloudUpload, Fingerprint, Gift, ScanLine, ShieldAlert, UserPlus, XCircle } from 'lucide-react';
+import { huellaService } from '../api/huella.service';
+import { IngresoHuellaModal, RegistrarHuellaModal, useHuella } from './Huella';
 import { NuevoClienteModal } from './NuevoClienteModal';
 import { Badge } from '@web/components/ui/Badge';
 import { Button } from '@web/components/ui/Button';
@@ -117,6 +119,10 @@ export const ControlIngresoPanel: React.FC<{
   const [nuevoAbierto, setNuevoAbierto] = useState(false);
   const [documentoNuevo, setDocumentoNuevo] = useState('');
   const [registrado, setRegistrado] = useState<ClienteEvaluado | null>(null);
+  const [huella] = useHuella();
+  const [huellaSimulada, setHuellaSimulada] = useState(false);
+  const [clienteHuella, setClienteHuella] = useState<{ id: string; nombre: string } | null>(null);
+  const conLector = !!huella && huella.lector !== 'ninguno';
   const campo = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -206,6 +212,7 @@ export const ControlIngresoPanel: React.FC<{
   };
 
   const registrarCliente = (id: string) => void ejecutar(() => ingresoService.porCliente(id), fallo);
+  const ingresarConHuella = (simulada?: string) => void ejecutar(() => huellaService.ingresar(simulada), fallo);
 
   const alEnviar = (e: React.FormEvent) => {
     e.preventDefault();
@@ -308,6 +315,18 @@ export const ControlIngresoPanel: React.FC<{
             >
               Cortesía
             </Button>
+            {conLector && (
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                leftIcon={<Fingerprint size={18} />}
+                disabled={ocupado}
+                onClick={() => (huella?.lector === 'simulado' ? setHuellaSimulada(true) : ingresarConHuella())}
+              >
+                {ocupado && huella?.lector !== 'simulado' ? 'Pon el dedo…' : 'Huella'}
+              </Button>
+            )}
             {puedeRegistrar && (
               <Button type="button" variant="outline" size="lg" leftIcon={<UserPlus size={18} />} disabled={ocupado} onClick={() => abrirNuevo(texto)}>
                 Nuevo cliente
@@ -322,6 +341,11 @@ export const ControlIngresoPanel: React.FC<{
             <span style={{ flex: 1 }}>
               <strong>{registrado.nombre}</strong> quedó registrado. Para que pueda entrar, véndele un plan o un pase de día.
             </span>
+            {conLector && huella?.puede_registrar && (
+              <Button size="sm" variant="outline" leftIcon={<Fingerprint size={15} />} onClick={() => setClienteHuella({ id: registrado.id, nombre: registrado.nombre })}>
+                Registrar huella
+              </Button>
+            )}
             {onCobrar && (
               <Button size="sm" leftIcon={<CalendarPlus size={15} />} onClick={() => { onCobrar(registrado.id); setRegistrado(null); }}>
                 Venderle un plan
@@ -365,6 +389,16 @@ export const ControlIngresoPanel: React.FC<{
             onClick={() => onCobrar(resultado.cliente!.id)}
           >
             {resultado.cliente.estado === 'sin_membresia' || resultado.cliente.estado === 'cancelado' ? 'Venderle un plan' : 'Renovar membresía'}
+          </Button>
+        )}
+        {resultado?.cliente && conLector && huella?.puede_registrar && (
+          <Button
+            variant="outline"
+            leftIcon={<Fingerprint size={16} />}
+            style={{ marginTop: 12, marginLeft: 8 }}
+            onClick={() => setClienteHuella({ id: resultado.cliente!.id, nombre: resultado.cliente!.nombre })}
+          >
+            Registrar huella
           </Button>
         )}
         {!resultado && !error && sugerencias.length === 0 && (
@@ -469,6 +503,18 @@ export const ControlIngresoPanel: React.FC<{
           disabled={ocupado}
         />
       </Modal>
+
+      {huella && (
+        <>
+          <IngresoHuellaModal
+            abierto={huellaSimulada}
+            huella={huella}
+            onCerrar={() => { setHuellaSimulada(false); enfocar(); }}
+            onLeer={(s) => { setHuellaSimulada(false); ingresarConHuella(s); }}
+          />
+          <RegistrarHuellaModal abierto={clienteHuella !== null} cliente={clienteHuella} huella={huella} onCerrar={() => { setClienteHuella(null); enfocar(); }} />
+        </>
+      )}
 
       <NuevoClienteModal
         abierto={nuevoAbierto}

@@ -1,5 +1,6 @@
 """Escritorio: registrar un cliente desde la estación, con foto opcional (E-41). Exige conexión."""
 import base64
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -59,3 +60,21 @@ async def test_foto_mala_no_deja_cliente_a_medias_y_hace_falta_permiso(cliente: 
     # Sin consentimiento, igual que en la web.
     r = await cliente.post(CLIENTES, json={"staff_id": str(jefe["id"]), "cliente": {**datos, "consentimiento_1581": False}}, headers=he)
     assert r.status_code == 422
+
+
+async def test_la_huella_registrada_en_la_estacion_queda_cifrada_en_el_servidor(cliente: AsyncClient, fabrica: Fabrica):
+    from tests.test_e9_sync_caja import enviar, op
+
+    gym, jefe, hj, estacion, he = await estacion_activa(cliente, fabrica)
+    dep = await u.deportista(gym.id)
+    plantilla = base64.b64encode(b"SIM:pedro-indice").decode()
+    h = op("huella_enrolar", jefe["id"], {"deportista_id": dep, "dedo": "indice_derecho", "formato": "simulado", "template_base64": plantilla})
+    otra = op("huella_enrolar", jefe["id"], {"deportista_id": str(uuid4()), "dedo": "indice_derecho",
+                                             "formato": "simulado", "template_base64": plantilla})
+    res = await enviar(cliente, he, h, otra)
+    assert res[0]["resultado"] == "aplicada", res
+    assert (res[1]["resultado"], res[1]["codigo"]) == ("invalida", "DEPORTISTA_NO_ENCONTRADO")
+    fila = (await sql(gym.id, "SELECT dedo, template_cifrado FROM platform.huellas WHERE deportista_id = :d", {"d": dep}))[0]
+    assert fila["dedo"] == "indice_derecho"
+    assert b"pedro" not in bytes(fila["template_cifrado"])  # cifrada, nunca en claro
+    assert "ENROLAR_HUELLA" in [a["accion"] for a in await u.acciones_auditoria(gym.id)]
