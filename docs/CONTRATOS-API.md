@@ -64,6 +64,18 @@ Las renovaciones guardan en `dias_agregados` los días que sumaron. Anular el co
 vigencia propia.
 El header de idempotencia en todo el GW es `X-Idempotency-Key`.
 
+### 1.6 Idempotencia en turnos, egresos y anulaciones (B3, 22-nov, migración 080)
+Aceptan `X-Idempotency-Key` (8 a 128 caracteres, único por gimnasio): `POST /caja/turnos/abrir`, `/caja/turnos/cerrar`,
+`/caja/turnos/{id}/cerrar-ajeno`, `/caja/turnos/{id}/cierre-forzado`, `/caja/egresos`, `/caja/ventas/{id}/anular` y
+`/caja/pagos-membresia/{id}/anular`. La web lo manda siempre; en estos endpoints es opcional para no romper clientes
+anteriores, y sin él se comportan como antes.
+
+| Caso | Respuesta |
+|---|---|
+| Reintento con la misma clave (también simultáneo) | El resultado original, con el mismo código: el turno abierto o cerrado, el egreso, o la anulación. No se repite la operación, ni su devolución, ni su auditoría |
+| La clave ya cerró o anuló **otro** turno, venta o pago | `409 CLAVE_IDEMPOTENCIA_EN_USO`, sin cambios |
+| Clave nueva sobre un turno ya abierto o una venta ya anulada | Los errores de siempre (`TURNO_YA_ABIERTO`, `VENTA_YA_ANULADA`…) |
+
 ### 1.7 Turno de una estación visto desde la web (decisión A1, 22-nov, migración 072)
 Un turno abierto en una estación de GymDesk es de esa estación. Mientras siga abierto:
 

@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
 from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy import text
@@ -37,13 +37,12 @@ from app.modules.caja.schemas import (
 logger = logging.getLogger(__name__)
 
 
-def _clave_idempotencia_en_uso() -> HTTPException:
+def _clave_idempotencia_en_uso(
+    mensaje: str = "Esta venta ya se está registrando o ya se registró. Recarga para ver el resultado.",
+) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
-        detail={
-            "codigo": "CLAVE_IDEMPOTENCIA_EN_USO",
-            "mensaje": "Esta venta ya se está registrando o ya se registró. Recarga para ver el resultado.",
-        },
+        detail={"codigo": "CLAVE_IDEMPOTENCIA_EN_USO", "mensaje": mensaje},
     )
 
 
@@ -62,6 +61,25 @@ def _caja_en_estacion(fila) -> HTTPException:
             },
         },
     )
+
+
+def _limpiar_clave(idempotency_key: Optional[str]) -> Optional[str]:
+    """X-Idempotency-Key es opcional en turnos, egresos y anulaciones: sin clave, la operación no se deduplica."""
+    if idempotency_key is None:
+        return None
+    return idempotency_key.strip() or None
+
+
+CLAVE_DE_OTRA_OPERACION = "Esta clave de envío ya se usó en otra operación. Recarga e inténtalo de nuevo."
+
+SELECT_TURNO_CON_NOMBRES = """
+    SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre AS staff_nombre, t.base_inicial,
+           t.abierto_en, t.cerrado_en, t.estado, t.cierre_forzado, t.efectivo_contado, t.diferencia,
+           t.cerrado_por, c.nombre AS cerrado_por_nombre
+    FROM platform.turnos_caja t
+    JOIN platform.staff s ON s.id = t.staff_id
+    LEFT JOIN platform.staff c ON c.id = t.cerrado_por
+"""
 
 
 class CajaService:
@@ -107,11 +125,24 @@ class CajaService:
         gym_id: UUID,
         staff_id: UUID,
         staff_nombre: str,
-        data: AbrirTurnoRequest
+        data: AbrirTurnoRequest,
+        idempotency_key: Optional[str] = None,
     ) -> TurnoResumenDto:
+        # 0. Idempotencia: el reintento con la misma clave devuelve el turno que ya se abrió.
+        clave = _limpiar_clave(idempotency_key)
+        if clave:
+            existente = await cls._turno_por_clave(session, gym_id, "idempotency_key_apertura", clave, staff_id)
+            if existente:
+                return existente
+
         # 1. Validar si ya hay un turno abierto en el gimnasio (GW-RF-08, Contrato 1.1).
         # Con red hay uno solo, también contando los de las estaciones (P-13, decisión A1).
         await cls.bloquear_apertura(session, gym_id)
+        # Un envío simultáneo con la misma clave esperó el bloqueo: el primero ya abrió el turno.
+        if clave:
+            existente = await cls._turno_por_clave(session, gym_id, "idempotency_key_apertura", clave, staff_id)
+            if existente:
+                return existente
         check_query = text("""
             SELECT t.id, t.staff_id, s.nombre as staff_nombre, t.abierto_en, e.nombre AS estacion_nombre
             FROM platform.turnos_caja t
@@ -149,20 +180,26 @@ class CajaService:
             async with session.begin_nested():
                 insert_query = text("""
                     INSERT INTO platform.turnos_caja (
-                        gimnasio_id, staff_id, base_inicial, estado, abierto_en
+                        gimnasio_id, staff_id, base_inicial, estado, abierto_en, idempotency_key_apertura
                     ) VALUES (
-                        :gym_id, :staff_id, :base_inicial, 'abierto', now()
+                        :gym_id, :staff_id, :base_inicial, 'abierto', now(), :clave
                     ) RETURNING id, abierto_en
                 """)
                 res_insert = await session.execute(insert_query, {
                     "gym_id": gym_id,
                     "staff_id": staff_id,
-                    "base_inicial": data.base_inicial
+                    "base_inicial": data.base_inicial,
+                    "clave": clave,
                 })
                 row = res_insert.mappings().one()
                 turno_id = row["id"]
                 abierto_en = row["abierto_en"]
         except IntegrityError:
+            # Doble envío simultáneo: el primero ya abrió el turno con esta clave.
+            if clave:
+                existente = await cls._turno_por_clave(session, gym_id, "idempotency_key_apertura", clave, staff_id)
+                if existente:
+                    return existente
             res_carrera = await session.execute(check_query, {"gym_id": gym_id})
             t_carrera = res_carrera.mappings().first()
             if t_carrera and t_carrera["staff_id"] != staff_id:
@@ -383,8 +420,15 @@ class CajaService:
         gym_id: UUID,
         staff_id: UUID,
         actor_nombre: str,
-        data: CerrarTurnoRequest
+        data: CerrarTurnoRequest,
+        idempotency_key: Optional[str] = None,
     ) -> TurnoResumenDto:
+        clave = _limpiar_clave(idempotency_key)
+        if clave:
+            existente = await cls._turno_por_clave(session, gym_id, "idempotency_key_cierre", clave, staff_id)
+            if existente:
+                return existente
+
         # 1. Bloqueo pesimista del turno abierto propio
         query = text("""
             SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre as staff_nombre, t.base_inicial,
@@ -399,6 +443,11 @@ class CajaService:
         turno = res.mappings().first()
 
         if not turno:
+            # Doble envío simultáneo: el primero ya lo cerró con esta clave.
+            if clave:
+                existente = await cls._turno_por_clave(session, gym_id, "idempotency_key_cierre", clave, staff_id)
+                if existente:
+                    return existente
             raise await cls._sin_turno_web(session, gym_id, HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"codigo": "NO_HAY_TURNO_ABIERTO", "mensaje": "No tiene un turno de caja abierto para cerrar"}
@@ -414,7 +463,7 @@ class CajaService:
             UPDATE platform.turnos_caja
             SET estado = 'cerrado', cerrado_en = :now_dt,
                 efectivo_contado = :contado, diferencia = :diff,
-                cerrado_por = :staff_id
+                cerrado_por = :staff_id, idempotency_key_cierre = :clave
             WHERE id = :turno_id
         """)
         await session.execute(update_query, {
@@ -422,7 +471,8 @@ class CajaService:
             "now_dt": now_dt,
             "contado": data.efectivo_contado,
             "diff": diferencia,
-            "staff_id": staff_id
+            "staff_id": staff_id,
+            "clave": clave,
         })
 
         # 4. Auditoría
@@ -458,12 +508,17 @@ class CajaService:
         turno_id: UUID,
         actor_id: UUID,
         actor_nombre: str,
-        data: CerrarTurnoAjenoRequest
+        data: CerrarTurnoAjenoRequest,
+        idempotency_key: Optional[str] = None,
     ) -> TurnoResumenDto:
         """
         Cierra un turno ajeno abierto fijando el conteo de efectivo y atribuyendo el descuadre
         al staff que abrió el turno (GW-RF-08, Contrato 1.1).
         """
+        clave = _limpiar_clave(idempotency_key)
+        existente = await cls._cierre_repetido(session, gym_id, turno_id, clave, actor_id)
+        if existente:
+            return existente
         # 1. Bloqueo pesimista del turno ajeno
         query = text("""
             SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre as staff_nombre, t.base_inicial,
@@ -484,6 +539,9 @@ class CajaService:
                 detail={"codigo": "TURNO_NO_ENCONTRADO", "mensaje": "El turno de caja especificado no existe"}
             )
         if turno["estado"] != "abierto":
+            existente = await cls._cierre_repetido(session, gym_id, turno_id, clave, actor_id)
+            if existente:
+                return existente
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"codigo": "TURNO_YA_CERRADO", "mensaje": "El turno de caja ya se encuentra cerrado"}
@@ -508,7 +566,7 @@ class CajaService:
             UPDATE platform.turnos_caja
             SET estado = 'cerrado', cerrado_en = :now_dt,
                 efectivo_contado = :contado, diferencia = :diff,
-                cerrado_por = :actor_id, nota_cierre = :nota
+                cerrado_por = :actor_id, nota_cierre = :nota, idempotency_key_cierre = :clave
             WHERE id = :turno_id
         """)
         await session.execute(update_query, {
@@ -517,7 +575,8 @@ class CajaService:
             "contado": data.conteo_efectivo,
             "diff": diferencia,
             "actor_id": actor_id,
-            "nota": data.nota
+            "nota": data.nota,
+            "clave": clave,
         })
 
         # 4. Auditoría append-only
@@ -559,13 +618,18 @@ class CajaService:
         actor_id: UUID,
         actor_nombre: str,
         motivo: str,
-        efectivo_contado: Optional[Decimal] = None
+        efectivo_contado: Optional[Decimal] = None,
+        idempotency_key: Optional[str] = None,
     ) -> TurnoResumenDto:
         """
         Método reutilizable para forzar el cierre de turno.
         Puede ser invocado por el endpoint HTTP del Jefe o directamente por el Módulo 9 (Personal)
         al desactivar a un recepcionista con turno pendiente (RF-39).
         """
+        clave = _limpiar_clave(idempotency_key)
+        existente = await cls._cierre_repetido(session, gym_id, turno_id, clave, actor_id)
+        if existente:
+            return existente
         # 1. Bloqueo pesimista del turno
         query = text("""
             SELECT t.id, t.gimnasio_id, t.staff_id, s.nombre as staff_nombre, t.base_inicial,
@@ -584,6 +648,9 @@ class CajaService:
                 detail={"codigo": "TURNO_NO_ENCONTRADO", "mensaje": "El turno de caja especificado no existe"}
             )
         if turno["estado"] != "abierto":
+            existente = await cls._cierre_repetido(session, gym_id, turno_id, clave, actor_id)
+            if existente:
+                return existente
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"codigo": "TURNO_YA_CERRADO", "mensaje": "El turno ya se encuentra cerrado"}
@@ -597,14 +664,15 @@ class CajaService:
         update_query = text("""
             UPDATE platform.turnos_caja
             SET estado = 'cerrado', cerrado_en = :now_dt, cierre_forzado = true,
-                efectivo_contado = :contado, diferencia = :diff
+                efectivo_contado = :contado, diferencia = :diff, idempotency_key_cierre = :clave
             WHERE id = :turno_id
         """)
         await session.execute(update_query, {
             "turno_id": turno_id,
             "now_dt": now_dt,
             "contado": efectivo_contado,
-            "diff": diferencia
+            "diff": diferencia,
+            "clave": clave,
         })
 
         # 3. Auditoría append-only
@@ -1014,8 +1082,14 @@ class CajaService:
         venta_id: UUID,
         staff_id: UUID,
         staff_nombre: str,
-        data: AnularVentaRequest
+        data: AnularVentaRequest,
+        idempotency_key: Optional[str] = None,
     ) -> None:
+        # 0. Idempotencia: el reintento de la misma anulación no devuelve el dinero dos veces.
+        clave = _limpiar_clave(idempotency_key)
+        if await cls._anulacion_repetida(session, gym_id, "ventas", venta_id, clave):
+            return
+
         # 1. Exigir turno abierto del cajero que efectúa la devolución (RF-12: el efectivo sale del turno actual)
         turno_query = text("""
             SELECT id FROM platform.turnos_caja
@@ -1048,6 +1122,9 @@ class CajaService:
                 detail={"codigo": "VENTA_NO_ENCONTRADA", "mensaje": "Venta no encontrada"}
             )
         if venta["anulada"]:
+            # Doble envío simultáneo: el primero ya la anuló con esta clave.
+            if await cls._anulacion_repetida(session, gym_id, "ventas", venta_id, clave):
+                return
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"codigo": "VENTA_YA_ANULADA", "mensaje": "La venta ya se encuentra anulada"}
@@ -1127,13 +1204,14 @@ class CajaService:
         await session.execute(text("""
             UPDATE platform.ventas
             SET anulada = true, motivo_anulacion = :motivo,
-                anulada_por = :staff_id, anulada_en = :now_dt
+                anulada_por = :staff_id, anulada_en = :now_dt, idempotency_key_anulacion = :clave
             WHERE id = :venta_id
         """), {
             "venta_id": venta_id,
             "motivo": data.motivo.strip(),
             "staff_id": staff_id,
-            "now_dt": now_dt
+            "now_dt": now_dt,
+            "clave": clave,
         })
 
         # 7. Auditoría inmutable con hash-chain
@@ -1636,8 +1714,13 @@ class CajaService:
         pago_id: UUID,
         staff_id: UUID,
         staff_nombre: str,
-        data: AnularPagoMembresiaRequest
+        data: AnularPagoMembresiaRequest,
+        idempotency_key: Optional[str] = None,
     ) -> None:
+        clave = _limpiar_clave(idempotency_key)
+        if await cls._anulacion_repetida(session, gym_id, "pagos_membresia", pago_id, clave):
+            return
+
         # 1. Validar turno de caja abierto actual en el gimnasio (GW-RF-16 CA3)
         q_turno = text("""
             SELECT id FROM platform.turnos_caja
@@ -1668,6 +1751,8 @@ class CajaService:
                 detail={"codigo": "PAGO_NO_ENCONTRADO", "mensaje": "Pago de membresía no encontrado"}
             )
         if pago["anulado"]:
+            if await cls._anulacion_repetida(session, gym_id, "pagos_membresia", pago_id, clave):
+                return
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"codigo": "PAGO_YA_ANULADO", "mensaje": "El pago de membresía ya se encuentra anulado"}
@@ -1678,13 +1763,14 @@ class CajaService:
         await session.execute(text("""
             UPDATE platform.pagos_membresia
             SET anulado = true, motivo_anulacion = :motivo,
-                anulado_por = :staff_id, anulado_en = :now_dt
+                anulado_por = :staff_id, anulado_en = :now_dt, idempotency_key_anulacion = :clave
             WHERE id = :pago_id
         """), {
             "pago_id": pago_id,
             "motivo": data.motivo.strip(),
             "staff_id": staff_id,
-            "now_dt": now_dt
+            "now_dt": now_dt,
+            "clave": clave,
         })
 
         # 4. Registrar reverso contable en platform.devoluciones ligado al turno actual (GW-RF-16 CA3)
@@ -1755,8 +1841,16 @@ class CajaService:
         gym_id: UUID,
         staff_id: UUID,
         staff_nombre: str,
-        data: RegistrarEgresoRequest
+        data: RegistrarEgresoRequest,
+        idempotency_key: Optional[str] = None,
     ) -> EgresoResponseDto:
+        # 0. Idempotencia: el reintento devuelve el egreso ya registrado, aunque el turno se haya cerrado después.
+        clave = _limpiar_clave(idempotency_key)
+        if clave:
+            existente = await cls._egreso_por_clave(session, gym_id, clave)
+            if existente:
+                return existente
+
         # 1. Exigir turno abierto
         turno_query = text("""
             SELECT id FROM platform.turnos_caja
@@ -1773,22 +1867,36 @@ class CajaService:
             ))
         turno_id = turno["id"]
 
+        # El bloqueo del turno ordena los envíos simultáneos: el segundo ve el egreso del primero.
+        if clave:
+            existente = await cls._egreso_por_clave(session, gym_id, clave)
+            if existente:
+                return existente
+
         # 2. Insertar egreso (RF-14: puede dejar la caja en saldo negativo sin bloquear)
         insert_query = text("""
             INSERT INTO platform.egresos_caja (
-                gimnasio_id, turno_id, motivo, monto, registrado_por, created_at
+                gimnasio_id, turno_id, motivo, monto, registrado_por, created_at, idempotency_key
             ) VALUES (
-                :gym_id, :turno_id, :motivo, :monto, :staff_id, now()
+                :gym_id, :turno_id, :motivo, :monto, :staff_id, now(), :clave
             ) RETURNING id, created_at
         """)
-        res_eg = await session.execute(insert_query, {
-            "gym_id": gym_id,
-            "turno_id": turno_id,
-            "motivo": data.motivo.strip(),
-            "monto": data.monto,
-            "staff_id": staff_id
-        })
-        row_eg = res_eg.mappings().one()
+        try:
+            async with session.begin_nested():
+                res_eg = await session.execute(insert_query, {
+                    "gym_id": gym_id,
+                    "turno_id": turno_id,
+                    "motivo": data.motivo.strip(),
+                    "monto": data.monto,
+                    "staff_id": staff_id,
+                    "clave": clave,
+                })
+                row_eg = res_eg.mappings().one()
+        except IntegrityError:
+            existente = await cls._egreso_por_clave(session, gym_id, clave) if clave else None
+            if existente:
+                return existente
+            raise _clave_idempotencia_en_uso("Este egreso ya se está registrando. Recarga para ver el resultado.")
 
         # 3. Auditoría append-only
         await AuditService.registrar(
@@ -1909,6 +2017,87 @@ class CajaService:
     # =========================================================================
     # 6. HELPERS INTERNOS DE CÁLCULO E IDEMPOTENCIA
     # =========================================================================
+
+    @staticmethod
+    async def _egreso_por_clave(session: AsyncSession, gym_id: UUID, clave: str) -> Optional[EgresoResponseDto]:
+        fila = (
+            await session.execute(
+                text("""
+                    SELECT e.id, e.turno_id, e.monto, e.motivo, e.created_at, s.nombre AS registrado_por_nombre
+                    FROM platform.egresos_caja e
+                    LEFT JOIN platform.staff s ON s.id = e.registrado_por
+                    WHERE e.gimnasio_id = :gym_id AND e.idempotency_key = :clave
+                """),
+                {"gym_id": gym_id, "clave": clave},
+            )
+        ).mappings().first()
+        return EgresoResponseDto(**dict(fila)) if fila else None
+
+    @staticmethod
+    async def _anulacion_repetida(
+        session: AsyncSession,
+        gym_id: UUID,
+        tabla: Literal["ventas", "pagos_membresia"],
+        registro_id: UUID,
+        clave: Optional[str],
+    ) -> bool:
+        """True si esta clave ya anuló este mismo registro. Si anuló otro, la clave se reusó por error: 409."""
+        if not clave:
+            return False
+        if tabla not in ("ventas", "pagos_membresia"):
+            raise ValueError(tabla)
+        anulado_id = (
+            await session.execute(
+                text(f"SELECT id FROM platform.{tabla} WHERE gimnasio_id = :gym_id AND idempotency_key_anulacion = :clave"),
+                {"gym_id": gym_id, "clave": clave},
+            )
+        ).scalar()
+        if anulado_id is None:
+            return False
+        if anulado_id != registro_id:
+            raise _clave_idempotencia_en_uso(CLAVE_DE_OTRA_OPERACION)
+        return True
+
+    @classmethod
+    async def _turno_por_clave(
+        cls,
+        session: AsyncSession,
+        gym_id: UUID,
+        columna: Literal["idempotency_key_apertura", "idempotency_key_cierre"],
+        clave: str,
+        actor_id: UUID,
+    ) -> Optional[TurnoResumenDto]:
+        """Resumen del turno que ya se abrió o cerró con esta clave (reintento idempotente)."""
+        columnas = {"idempotency_key_apertura", "idempotency_key_cierre"}
+        if columna not in columnas:
+            raise ValueError(columna)
+        fila = (
+            await session.execute(
+                text(SELECT_TURNO_CON_NOMBRES + f" WHERE t.gimnasio_id = :gym_id AND t.{columna} = :clave"),
+                {"gym_id": gym_id, "clave": clave},
+            )
+        ).mappings().first()
+        if not fila:
+            return None
+        turno = dict(fila)
+        turno["es_propio"] = turno["staff_id"] == actor_id
+        if turno["cerrado_por"] is not None and turno["cerrado_por"] != turno["staff_id"]:
+            turno["descuadre_atribuido_a_nombre"] = turno["staff_nombre"]
+        return await cls._calcular_acumulados_turno(session, turno)
+
+    @classmethod
+    async def _cierre_repetido(
+        cls, session: AsyncSession, gym_id: UUID, turno_id: UUID, clave: Optional[str], actor_id: UUID
+    ) -> Optional[TurnoResumenDto]:
+        """El mismo turno ya se cerró con esta clave. Si la clave cerró otro turno, es un error del cliente."""
+        if not clave:
+            return None
+        existente = await cls._turno_por_clave(session, gym_id, "idempotency_key_cierre", clave, actor_id)
+        if existente is None:
+            return None
+        if existente.id != turno_id:
+            raise _clave_idempotencia_en_uso(CLAVE_DE_OTRA_OPERACION)
+        return existente
 
     @staticmethod
     async def _calcular_acumulados_turno(session: AsyncSession, turno: dict) -> TurnoResumenDto:

@@ -299,10 +299,10 @@ fn un_pase_anulado_y_un_congelamiento_borrado_se_reflejan_en_la_estacion() {
 
 #[test]
 fn al_actualizar_a_esta_version_la_estacion_vuelve_a_descargar_todo() {
-    // Las migraciones locales 0003 y 0004 borran el cursor: la versión anterior no traía congelamientos,
-    // pases ni el precio de los pases.
+    // Las migraciones locales 0003, 0004 y 0005 borran el cursor: la versión anterior no traía congelamientos,
+    // pases, el precio de los pases ni el precio vendido de cada membresía.
     let (_dir, conn) = base_temporal();
     let cursor: Option<String> = conn.query_row("SELECT cursor FROM sync_estado WHERE id = 1", [], |f| f.get(0)).unwrap();
     assert_eq!(cursor, None);
-    assert_eq!(contar(&conn, "_migraciones"), 4);
+    assert_eq!(contar(&conn, "_migraciones"), 5);
 }

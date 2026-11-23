@@ -33,6 +33,18 @@ from app.modules.caja.service import CajaService
 
 router = APIRouter(prefix="/caja", tags=["03. Caja y Turnos"])
 
+# Contrato 1.5 / ALCANCE C-03: el mismo header de ventas y pagos. Aquí es opcional para no romper clientes viejos;
+# la web lo manda siempre. Con la misma clave, el reintento devuelve el resultado original y no duplica nada.
+ClaveIdempotencia = Annotated[
+    Optional[str],
+    Header(
+        alias="X-Idempotency-Key",
+        description="UUID o string único por operación para que un doble envío no la repita",
+        min_length=8,
+        max_length=128,
+    ),
+]
+
 
 # =============================================================================
 # 1. GESTIÓN DE TURNOS DE CAJA (RF-08, RF-09, RF-10)
@@ -46,6 +58,8 @@ router = APIRouter(prefix="/caja", tags=["03. Caja y Turnos"])
 )
 async def abrir_turno(
     data: AbrirTurnoRequest,
+    x_idempotency_key: ClaveIdempotencia = None,
+    *,
     current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("caja", "crear"))],
     session: Annotated[AsyncSession, Depends(get_db_session)]
 ):
@@ -58,7 +72,8 @@ async def abrir_turno(
         gym_id=current_staff.gimnasio_id,
         staff_id=current_staff.id,
         staff_nombre=current_staff.nombre,
-        data=data
+        data=data,
+        idempotency_key=x_idempotency_key,
     )
 
 
@@ -140,6 +155,8 @@ async def obtener_turno_actual(
 )
 async def cerrar_turno(
     data: CerrarTurnoRequest,
+    x_idempotency_key: ClaveIdempotencia = None,
+    *,
     current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("caja", "crear"))],
     session: Annotated[AsyncSession, Depends(get_db_session)]
 ):
@@ -152,7 +169,8 @@ async def cerrar_turno(
         gym_id=current_staff.gimnasio_id,
         staff_id=current_staff.id,
         actor_nombre=current_staff.nombre,
-        data=data
+        data=data,
+        idempotency_key=x_idempotency_key,
     )
 
 
@@ -164,6 +182,8 @@ async def cerrar_turno(
 async def cerrar_turno_ajeno(
     turno_id: Annotated[UUID, Path(description="UUID del turno ajeno a cerrar")],
     data: CerrarTurnoAjenoRequest,
+    x_idempotency_key: ClaveIdempotencia = None,
+    *,
     current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("caja", "crear"))],
     session: Annotated[AsyncSession, Depends(get_db_session)]
 ):
@@ -177,7 +197,8 @@ async def cerrar_turno_ajeno(
         turno_id=turno_id,
         actor_id=current_staff.id,
         actor_nombre=current_staff.nombre,
-        data=data
+        data=data,
+        idempotency_key=x_idempotency_key,
     )
 
 
@@ -189,6 +210,8 @@ async def cerrar_turno_ajeno(
 async def cerrar_turno_forzado(
     turno_id: Annotated[UUID, Path(description="UUID del turno a forzar cierre")],
     data: CierreForzadoRequest,
+    x_idempotency_key: ClaveIdempotencia = None,
+    *,
     current_staff: Annotated[AuthenticatedStaff, Depends(require_role("jefe"))],
     session: Annotated[AsyncSession, Depends(get_db_session)]
 ):
@@ -203,7 +226,8 @@ async def cerrar_turno_forzado(
         actor_id=current_staff.id,
         actor_nombre=current_staff.nombre,
         motivo=data.motivo,
-        efectivo_contado=data.efectivo_contado
+        efectivo_contado=data.efectivo_contado,
+        idempotency_key=x_idempotency_key,
     )
 
 
@@ -291,6 +315,8 @@ async def registrar_venta(
 async def anular_venta(
     venta_id: Annotated[UUID, Path(description="UUID de la venta a anular")],
     data: AnularVentaRequest,
+    x_idempotency_key: ClaveIdempotencia = None,
+    *,
     current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("caja", "eliminar"))],
     session: Annotated[AsyncSession, Depends(get_db_session)]
 ):
@@ -307,7 +333,8 @@ async def anular_venta(
         venta_id=venta_id,
         staff_id=current_staff.id,
         staff_nombre=current_staff.nombre,
-        data=data
+        data=data,
+        idempotency_key=x_idempotency_key,
     )
     return {"mensaje": "Venta anulada y devolución registrada exitosamente", "venta_id": str(venta_id)}
 
@@ -361,6 +388,8 @@ async def registrar_pago_membresia(
 async def anular_pago_membresia(
     pago_id: Annotated[UUID, Path(description="UUID del pago a anular")],
     data: AnularPagoMembresiaRequest,
+    x_idempotency_key: ClaveIdempotencia = None,
+    *,
     current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("caja", "eliminar"))],
     session: Annotated[AsyncSession, Depends(get_db_session)]
 ):
@@ -376,7 +405,8 @@ async def anular_pago_membresia(
         pago_id=pago_id,
         staff_id=current_staff.id,
         staff_nombre=current_staff.nombre,
-        data=data
+        data=data,
+        idempotency_key=x_idempotency_key,
     )
     return {"mensaje": "Pago de membresía anulado y vigencia revertida", "pago_id": str(pago_id)}
 
@@ -393,6 +423,8 @@ async def anular_pago_membresia(
 )
 async def registrar_egreso(
     data: RegistrarEgresoRequest,
+    x_idempotency_key: ClaveIdempotencia = None,
+    *,
     current_staff: Annotated[AuthenticatedStaff, Depends(require_permission("caja", "crear"))],
     session: Annotated[AsyncSession, Depends(get_db_session)]
 ):
@@ -407,5 +439,6 @@ async def registrar_egreso(
         gym_id=current_staff.gimnasio_id,
         staff_id=current_staff.id,
         staff_nombre=current_staff.nombre,
-        data=data
+        data=data,
+        idempotency_key=x_idempotency_key,
     )

@@ -81,7 +81,8 @@ async def test_la_descarga_inicial_trae_lo_del_gimnasio_y_nada_de_otro(cliente: 
     assert cambios["productos"][0] == {**cambios["productos"][0], "nombre": "Agua", "precio": 3000, "stock": 24}
     assert cambios["membresias"][0].pop("created_at").endswith("+00:00")
     assert cambios["membresias"] == [
-        {"id": str(mem_id), "deportista_id": dep, "plan_id": plan, "fecha_inicio": "2026-11-01", "fecha_vencimiento": "2026-12-01", "cancelada": False}
+        {"id": str(mem_id), "deportista_id": dep, "plan_id": plan, "fecha_inicio": "2026-11-01", "fecha_vencimiento": "2026-12-01", "cancelada": False,
+         "plan_precio_vendido": None}
     ]
     assert eliminados == []
 
