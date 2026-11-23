@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, KeyRound, MonitorSmartphone, Plus, ShieldOff } from 'lucide-react';
+import { Copy, Download, KeyRound, MonitorSmartphone, Plus, ShieldOff } from 'lucide-react';
 import { estacionesService } from '../../api/estaciones.service';
 import { revisionesService } from '../../api/revisiones.service';
 import { toApiError } from '../../api/client';
@@ -172,6 +172,23 @@ export const EstacionesPage: React.FC = () => {
       {pestana === 'revisar' && <RevisionesEstacionesPanel onPendientes={setPendientes} />}
 
       <div style={{ display: pestana === 'equipos' ? undefined : 'none' }}>
+      <Card style={{ marginBottom: 16 }}>
+        <div className="descarga-escritorio">
+          <div className="descarga-escritorio-icono"><Download size={22} /></div>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <strong>GymDesk Escritorio para Windows</strong>
+            <ol>
+              <li>Descarga el instalador en el computador de recepción e instálalo. Windows o el navegador pueden avisar que es un
+                archivo poco común: elige <em>Conservar</em> y después <em>Más información → Ejecutar de todas formas</em>.</li>
+              <li>Crea aquí una estación para ese computador y copia su código (vence en 24 horas).</li>
+              <li>Abre GymDesk, escribe el subdominio <strong>{tenant.subdominio || 'de tu gimnasio'}</strong> y el código.</li>
+            </ol>
+          </div>
+          <a className="btn btn-primary" href="/descargas/GymDesk-setup.exe" download="GymDesk-setup.exe">
+            <Download size={16} /> Descargar para Windows
+          </a>
+        </div>
+      </Card>
       {errorAccion && (
         <MensajeFijo tono="error" style={{ marginBottom: 16 }}>
           {errorAccion}
