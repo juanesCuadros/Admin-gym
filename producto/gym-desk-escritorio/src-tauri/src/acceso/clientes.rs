@@ -33,6 +33,18 @@ pub fn listar(conn: &Connection, texto: &str, filtro: &str, hoy: NaiveDate, limi
         }
     }
     candidatos.sort();
+    // Sin filtro de estado solo se evalúa la página que se va a mostrar: evaluar a todos es lento con
+    // miles de clientes. Los conteos por estado se calculan solo al filtrar.
+    if filtro.is_empty() || filtro == "todos" {
+        let total = candidatos.len();
+        let mut items = Vec::new();
+        for (_, id) in candidatos.into_iter().skip(desde).take(limite.clamp(1, 200)) {
+            if let Some(c) = evaluar_cliente(conn, &id, hoy)? {
+                items.push(c);
+            }
+        }
+        return Ok(PaginaClientes { items, total, por_estado: vec![("todos".into(), total)] });
+    }
     let mut conteo: std::collections::BTreeMap<String, usize> = Default::default();
     let mut filtrados = Vec::new();
     for (_, id) in candidatos {
@@ -77,6 +89,8 @@ pub struct FichaCliente {
     pub cobros: Vec<CobroFicha>,
     pub huellas: Vec<String>,
     pub membresia_desde: Option<String>,
+    /// Grupo sanguíneo, condiciones médicas y contacto de emergencia (JSON), si los registraron.
+    pub salud: Option<serde_json::Value>,
 }
 
 pub fn ficha(conn: &Connection, deportista_id: &str, hoy: NaiveDate) -> Resultado<FichaCliente> {
@@ -113,7 +127,9 @@ pub fn ficha(conn: &Connection, deportista_id: &str, hoy: NaiveDate) -> Resultad
             |f| f.get(0),
         )
         .ok();
-    Ok(FichaCliente { cliente, ingresos, cobros, huellas: crate::huella::dedos_de(conn, deportista_id)?, membresia_desde })
+    let salud: Option<String> = conn.query_row("SELECT salud FROM deportistas WHERE id = ?1", [deportista_id], |f| f.get(0)).unwrap_or(None);
+    let salud = salud.and_then(|s| serde_json::from_str(&s).ok());
+    Ok(FichaCliente { cliente, ingresos, cobros, huellas: crate::huella::dedos_de(conn, deportista_id)?, membresia_desde, salud })
 }
 
 #[cfg(test)]
@@ -147,6 +163,9 @@ mod pruebas {
         assert_eq!(listar(&conn, "carla", "", hoy, 50, 0).unwrap().total, 1);
         assert_eq!(listar(&conn, "100", "", hoy, 50, 0).unwrap().total, 2);
         assert_eq!(listar(&conn, "", "activo", hoy, 50, 0).unwrap().total, 1);
+        // Sin filtro, pagina sin evaluar a todos.
+        let p = listar(&conn, "", "", hoy, 2, 1).unwrap();
+        assert_eq!((p.total, p.items.iter().map(|c| c.id.as_str()).collect::<Vec<_>>()), (3, vec!["b", "c"]));
 
         let f = ficha(&conn, "a", hoy).unwrap();
         assert_eq!((f.cliente.nombre.as_str(), f.membresia_desde.as_deref()), ("Ana Ruiz", Some("2026-10-01")));

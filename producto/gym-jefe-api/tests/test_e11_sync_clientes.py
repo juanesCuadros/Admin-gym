@@ -33,10 +33,13 @@ async def test_registrar_con_foto_y_sin_foto(cliente: AsyncClient, fabrica: Fabr
     assert "SUBIR_FOTO_DEPORTISTA" in acciones
 
     # Sin foto también.
-    otro = {**datos, "documento": "10203041", "nombre": "Lucía Mesa"}
+    otro = {**datos, "documento": "10203041", "nombre": "Lucía Mesa",
+            "salud": {"grupo_sanguineo": "O+", "condiciones": " Asma leve ", "contacto_emergencia_nombre": "Rosa Mesa", "contacto_emergencia_telefono": "3001234567"}}
     r = await cliente.post(CLIENTES, json={"staff_id": str(jefe["id"]), "cliente": otro}, headers=he)
     assert r.status_code == 201 and r.json()["con_foto"] is False
     assert (await cliente.get(f"{API}/deportistas/{r.json()['id']}/foto", headers=hj)).status_code == 404
+    ficha = (await cliente.get(f"{API}/deportistas/{r.json()['id']}", headers=hj)).json()
+    assert ficha["deportista"]["salud"] == {"grupo_sanguineo": "O+", "condiciones": "Asma leve", "contacto_emergencia_nombre": "Rosa Mesa", "contacto_emergencia_telefono": "3001234567"}
 
     # Documento repetido: las mismas reglas de la web.
     r = await cliente.post(CLIENTES, json={"staff_id": str(jefe["id"]), "cliente": datos}, headers=he)

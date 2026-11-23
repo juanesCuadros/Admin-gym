@@ -19,6 +19,7 @@ import {
   DetallesLimitePlanClientes,
   EditarDeportistaRequest,
   NOMBRE_TIPO_DOCUMENTO,
+  SaludDto,
   TIPOS_DOCUMENTO,
   TipoDocumento,
 } from '../../types/deportistas.types';
@@ -44,7 +45,10 @@ interface Valores {
     parentesco: string;
     autoriza: boolean;
   };
+  salud: { grupo_sanguineo: string; condiciones: string; contacto_emergencia_nombre: string; contacto_emergencia_telefono: string };
 }
+
+const SALUD_VACIA = { grupo_sanguineo: '', condiciones: '', contacto_emergencia_nombre: '', contacto_emergencia_telefono: '' };
 
 const VACIO: Valores = {
   tipo_documento: '',
@@ -57,6 +61,7 @@ const VACIO: Valores = {
   altura_cm: '',
   consentimiento_1581: false,
   acudiente: { nombre: '', tipo_documento: '', documento: '', telefono: '', parentesco: '', autoriza: false },
+  salud: SALUD_VACIA,
 };
 
 function desdeDeportista(d: DeportistaResponse): Valores {
@@ -79,7 +84,25 @@ function desdeDeportista(d: DeportistaResponse): Valores {
       parentesco: d.acudiente?.parentesco ?? '',
       autoriza: d.acudiente?.autoriza ?? false,
     },
+    salud: {
+      grupo_sanguineo: d.salud?.grupo_sanguineo ?? '',
+      condiciones: d.salud?.condiciones ?? '',
+      contacto_emergencia_nombre: d.salud?.contacto_emergencia_nombre ?? '',
+      contacto_emergencia_telefono: d.salud?.contacto_emergencia_telefono ?? '',
+    },
   };
+}
+
+/** Lo que se manda de salud: `undefined` si todo está vacío (no se toca lo guardado al crear). */
+function saludDto(s: Valores['salud'], editando: boolean): SaludDto | undefined {
+  const limpio: SaludDto = {
+    grupo_sanguineo: (s.grupo_sanguineo || null) as SaludDto['grupo_sanguineo'],
+    condiciones: s.condiciones.trim() || null,
+    contacto_emergencia_nombre: s.contacto_emergencia_nombre.trim() || null,
+    contacto_emergencia_telefono: s.contacto_emergencia_telefono.trim() || null,
+  };
+  // Al editar se manda siempre, para poder borrar lo que había.
+  return editando || Object.values(limpio).some(Boolean) ? limpio : undefined;
 }
 
 /** Edad cumplida a hoy en Bogotá. `null` si no hay fecha válida. */
@@ -262,6 +285,7 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
           fecha_nacimiento: v.fecha_nacimiento || undefined,
           altura_cm: v.altura_cm.trim() ? Number(v.altura_cm) : undefined,
           acudiente: acudienteDto(),
+          salud: saludDto(v.salud, true),
         };
         res = await deportistasService.actualizar(inicial.id, data);
       } else {
@@ -277,6 +301,7 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
           consentimiento_1581: v.consentimiento_1581,
           consentimiento_version: VERSION_CONSENTIMIENTO,
           acudiente: acudienteDto(),
+          salud: saludDto(v.salud, false),
         };
         res = await deportistasService.crear(data);
       }
@@ -456,6 +481,27 @@ export const FormularioDeportista: React.FC<FormularioDeportistaProps> = ({
                   error={errorDe('telefono')}
                 />
               </div>
+            </div>
+          </section>
+
+          {/* Salud y contacto de emergencia (opcional, dato sensible) */}
+          <section className="form-section">
+            <div className="form-section-head">
+              <div>
+                <div className="form-section-title">Salud y emergencia</div>
+                <div className="form-section-desc">Opcional. Las condiciones médicas son un dato sensible: regístralas solo si el cliente quiere darlas.</div>
+              </div>
+            </div>
+            <div className="form-grid">
+              <Input label="Contacto de emergencia" placeholder="Nombre" maxLength={150} value={v.salud.contacto_emergencia_nombre}
+                     onChange={(e) => setV((p) => ({ ...p, salud: { ...p.salud, contacto_emergencia_nombre: e.target.value } }))} />
+              <Input label="Celular del contacto" maxLength={25} value={v.salud.contacto_emergencia_telefono}
+                     onChange={(e) => setV((p) => ({ ...p, salud: { ...p.salud, contacto_emergencia_telefono: e.target.value } }))} />
+              <Select label="Grupo sanguíneo" value={v.salud.grupo_sanguineo}
+                      onChange={(e) => setV((p) => ({ ...p, salud: { ...p.salud, grupo_sanguineo: e.target.value } }))}
+                      options={[{ value: '', label: 'Sin indicar' }, ...['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'].map((g) => ({ value: g, label: g }))]} />
+              <Input label="Condiciones médicas" placeholder="Alergias, enfermedades, medicamentos, lesiones" maxLength={500} value={v.salud.condiciones}
+                     onChange={(e) => setV((p) => ({ ...p, salud: { ...p.salud, condiciones: e.target.value } }))} />
             </div>
           </section>
 

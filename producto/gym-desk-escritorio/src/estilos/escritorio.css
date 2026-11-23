@@ -917,41 +917,22 @@ button.gd-sync:hover {
 .gd-huella-pasos span { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--border); color: var(--text-secondary, #888); }
 .gd-huella-pasos span.hecho { border-color: var(--success); color: var(--success); }
 
-/* ===================================================================== */
-/* Armazón de recepción: menú lateral con módulos y atajos (estilo punto de venta) */
-/* ===================================================================== */
-.gd-shell { flex: 1; display: grid; grid-template-columns: 264px 1fr; min-height: 0; height: 100%; background: var(--bg-app); }
-.gd-lateral { display: flex; flex-direction: column; background: #0f172a; color: #e2e8f0; padding: 16px 12px; gap: 12px; min-height: 0; }
-.gd-lateral-marca { display: flex; align-items: center; gap: 10px; padding: 4px 6px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); }
-.gd-lateral-marca div { display: flex; flex-direction: column; min-width: 0; }
-.gd-lateral-marca strong { font-size: 1.02rem; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gd-lateral-marca span:not(.gd-marca-icono) { font-size: 0.78rem; color: #94a3b8; }
-.gd-lateral-modulos { display: flex; flex-direction: column; gap: 6px; flex: 1; overflow-y: auto; }
-.gd-lateral-modulos button { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; border-radius: 12px; padding: 12px; background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background .15s; }
-.gd-lateral-modulos button:hover { background: rgba(255,255,255,0.06); }
-.gd-lateral-modulos button.activo { background: var(--primary); color: #fff; box-shadow: 0 6px 18px rgba(37,99,235,.35); }
-.gd-lateral-icono { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: rgba(255,255,255,0.08); flex-shrink: 0; }
-.gd-lateral-modulos button.activo .gd-lateral-icono { background: rgba(255,255,255,0.2); }
-.gd-lateral-texto { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.gd-lateral-texto span { font-weight: 600; font-size: 0.98rem; }
-.gd-lateral-texto small { font-size: 0.74rem; opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gd-lateral kbd, .gd-cabecera kbd { font: 600 0.7rem var(--font-sans); padding: 2px 6px; border-radius: 6px; border: 1px solid rgba(148,163,184,.5); opacity: .85; }
-.gd-lateral-pie { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px; }
-.gd-lateral-pie .gd-sync { background: rgba(255,255,255,0.06); color: #e2e8f0; border-color: transparent; width: 100%; justify-content: flex-start; flex-wrap: wrap; }
-.gd-lateral-usuario { display: flex; flex-direction: column; padding: 0 6px; }
-.gd-lateral-usuario strong { color: #fff; font-size: 0.92rem; }
-.gd-lateral-usuario span { color: #94a3b8; font-size: 0.78rem; }
-.gd-lateral-botones { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.gd-lateral-botones button { height: 38px; border-radius: 10px; border: 0; background: rgba(255,255,255,0.06); color: #cbd5e1; cursor: pointer; display: grid; place-items: center; }
-.gd-lateral-botones button:hover { background: rgba(255,255,255,0.14); color: #fff; }
-.gd-principal { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.gd-cabecera { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 28px; background: var(--bg-surface, #fff); border-bottom: 1px solid var(--border); }
-.gd-cabecera h1 { margin: 0; font-size: 1.45rem; letter-spacing: -0.01em; }
-.gd-cabecera p { margin: 2px 0 0; color: var(--text-secondary, #64748b); font-size: 0.9rem; }
-.gd-cabecera-acciones { display: flex; gap: 8px; align-items: center; }
-.gd-cuerpo { flex: 1; overflow-y: auto; padding: 20px 28px 32px; }
-.gd-modulo { display: flex; flex-direction: column; gap: 14px; max-width: 1280px; }
-
+/* =====================================================================
+   Armazón de recepción: el mismo menú lateral de la web (app-sidebar, nav-modulo),
+   con atajos de teclado F1 a F5 a la derecha de cada módulo.
+   ===================================================================== */
+.gd-app-escritorio { flex: 1; min-height: 0; height: 100%; }
+.gd-app-escritorio .app-sidebar { height: 100%; position: relative; }
+.gd-app-escritorio .app-content-wrapper { min-height: 0; overflow-y: auto; }
+.gd-app-escritorio .page-container { max-width: none; padding: 24px 32px 40px; }
+.gd-app-escritorio .nav-modulo { min-height: 44px; font-size: 0.98rem; }
+.gd-app-escritorio .nav-modulo.activo::after { display: none; }
+.gd-kbd { margin-left: auto; font: 500 0.7rem var(--font-sans); color: var(--text-muted); border: 1px solid var(--border-color); border-radius: 6px; padding: 1px 6px; background: var(--bg-surface); }
+.nav-modulo.activo .gd-kbd { color: var(--primary); border-color: var(--primary); }
+.gd-app-escritorio .sidebar-footer .gd-sync { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+.gd-app-escritorio .page-header { margin-bottom: 20px; }
+.gd-app-escritorio .page-header kbd { font: 500 0.7rem var(--font-sans); border: 1px solid currentColor; border-radius: 5px; padding: 0 5px; opacity: .7; margin-left: 4px; }
+.gd-modulo { display: flex; flex-direction: column; gap: 14px; }
 /* Clientes */
 .gd-filtros { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .gd-buscador { flex: 1; min-width: 280px; display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 48px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface, #fff); color: var(--text-secondary, #64748b); }
@@ -987,3 +968,149 @@ button.gd-sync:hover {
 .gd-lista-nombre { font-weight: 600; }
 .gd-lista-detalle { grid-column: 1; font-size: 0.8rem; color: var(--text-secondary, #64748b); }
 .gd-lista-cobrar button > :last-child { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+/* Ajustes visuales (22-nov, noche) */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.gd-titulo { display: flex; align-items: center; gap: 4px; }
+.gd-ingreso { grid-template-columns: minmax(0, 1fr) 360px; }
+.gd-ingreso-fila { flex-wrap: wrap; }
+.gd-ingreso-fila .gd-ingreso-campo { flex: 1 1 360px; font-size: 1.3rem; min-height: 56px; border-radius: 12px; }
+.gd-ingreso-espera { border: 1px solid var(--border-color); border-style: solid; background: var(--bg-surface); min-height: 340px; justify-content: center; gap: 10px; text-align: center; box-shadow: var(--shadow-xs); }
+.gd-ingreso-espera strong { font-size: 1.15rem; color: var(--text-primary); }
+.gd-ingreso-espera p { margin: 0; max-width: 420px; }
+.gd-ingreso-espera-icono { width: 72px; height: 72px; border-radius: 20px; display: grid; place-items: center; background: var(--primary-light, rgba(37,99,235,.1)); color: var(--primary); }
+.gd-ingreso-resultado { min-height: 200px; }
+.gd-ingreso-foto { width: 120px; height: 120px; }
+/* =====================================================================
+   Ventas estilo punto de venta (referencia Bold/Square): catálogo en tarjetas,
+   cuenta fija a la derecha y cobro con botones grandes.
+   ===================================================================== */
+.gd-mostrador { grid-template-columns: minmax(0, 1fr) 400px; gap: 20px; align-items: start; padding: 0; background: transparent; border: 0; box-shadow: none; }
+.gd-mostrador-catalogo { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 16px; padding: 18px; }
+.gd-mostrador-cuenta { position: sticky; top: 0; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 16px; padding: 18px; box-shadow: var(--shadow-sm); }
+.gd-mostrador-pases { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.gd-mostrador-pases button { min-height: 64px; justify-content: flex-start; font-size: 0.98rem; border-radius: 12px; }
+.gd-productos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; max-height: none; margin-top: 12px; }
+.gd-productos > li.gd-vacio { grid-column: 1 / -1; }
+.gd-productos button { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; height: 100%; min-height: 96px; padding: 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-surface); text-align: left; transition: border-color .12s, box-shadow .12s, transform .06s; }
+.gd-productos button:hover:not(:disabled) { border-color: var(--primary); box-shadow: 0 4px 14px rgba(37,99,235,.12); background: var(--bg-surface); }
+.gd-productos button:active:not(:disabled) { transform: scale(.98); }
+.gd-productos button > span:first-child { font-weight: 600; line-height: 1.25; }
+.gd-productos-precio { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); text-align: left; margin-top: auto; }
+.gd-productos-stock { text-align: left; }
+.gd-productos button:disabled { opacity: .5; }
+.gd-linea-fila { grid-template-columns: 1fr 64px 96px 32px; }
+.gd-total { padding: 14px 0 6px; border-top: 1px dashed var(--border-color); margin-top: 12px; }
+.gd-total strong { font-size: 1.9rem; letter-spacing: -0.02em; }
+.gd-medio { grid-template-columns: 1fr; }
+.gd-medios { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.gd-medios button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 64px; border: 1.5px solid var(--border-color); border-radius: 12px; background: var(--bg-surface); cursor: pointer; font-weight: 600; color: var(--text-secondary); }
+.gd-medios button.activo { border-color: var(--primary); background: var(--primary-light, rgba(37,99,235,.08)); color: var(--primary); }
+.gd-mostrador-cuenta > button:last-of-type, .gd-panel > button[style*="width: 100%"] { min-height: 56px; font-size: 1.1rem; border-radius: 12px; }
+.gd-cambio { font-size: 1.1rem; }
+/* Membresías: cliente con foto, planes en tarjetas */
+.gd-memb-cliente { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 14px; background: var(--bg-surface-elevated, #f8fafc); border: 1px solid var(--border-color); margin-bottom: 14px; }
+.gd-memb-cliente img, .gd-memb-iniciales { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.gd-memb-iniciales { display: grid; place-items: center; background: #e2e8f0; color: #334155; font-weight: 700; font-size: 1.2rem; }
+.gd-memb-cliente strong { display: block; font-size: 1.1rem; }
+.gd-memb-cliente > div > span { display: block; color: var(--text-secondary); font-size: 0.88rem; }
+.gd-planes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 6px; }
+.gd-planes button { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px; min-height: 104px; border: 1.5px solid var(--border-color); border-radius: 14px; background: var(--bg-surface); cursor: pointer; text-align: left; }
+.gd-planes button:hover { border-color: var(--primary); }
+.gd-planes button.activo { border-color: var(--primary); background: var(--primary-light, rgba(37,99,235,.08)); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+.gd-plan-nombre { font-weight: 600; }
+.gd-plan-precio { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; }
+.gd-plan-detalle { font-size: 0.8rem; color: var(--text-secondary); }
+.gd-dos-columnas { grid-template-columns: minmax(300px, 360px) 1fr; }
+.gd-lista-cobrar { padding: 14px; }
+.gd-panel > button[style*="width: 100%"] { min-height: 56px; font-size: 1.1rem; border-radius: 12px; }
+
+/* Clientes: tabla más aireada, filas altas */
+.gd-tabla-clientes th { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); padding: 12px 16px; background: var(--bg-surface-elevated, #f8fafc); }
+.gd-tabla-clientes td { padding: 12px 16px; vertical-align: middle; }
+.gd-tabla-clientes td strong { font-weight: 600; }
+.gd-buscador:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+.gd-ficha-cabecera { padding: 16px; border-radius: 14px; background: var(--bg-surface-elevated, #f8fafc); border: 1px solid var(--border-color); }
+.gd-ficha h4 { text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.74rem; color: var(--text-muted); }
+
+/* Caja: cifras como tarjetas KPI */
+.gd-caja { display: flex; flex-direction: column; gap: 14px; }
+.gd-caja-cifras { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 14px 0 0; }
+.gd-caja-cifras > div { padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border-color); background: var(--bg-surface); }
+.gd-caja-cifras dt { font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 4px; }
+.gd-caja-cifras dd { margin: 0; font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gd-caja-cifras .gd-caja-esperado { background: var(--primary); border-color: var(--primary); }
+.gd-caja-cifras .gd-caja-esperado dt, .gd-caja-cifras .gd-caja-esperado dd { color: #fff; }
+.gd-pestanas-caja { display: inline-flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--bg-surface-elevated, #eef2f7); align-self: flex-start; }
+.gd-pestanas-caja button { border: 0; background: transparent; padding: 8px 16px; border-radius: 9px; cursor: pointer; font-weight: 500; color: var(--text-secondary); }
+.gd-pestanas-caja button.activa { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+@media (max-width: 1200px) { .gd-caja-cifras { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* El menú de la web se esconde por debajo de 1024 px (allá es para celular). En el escritorio va siempre
+   visible; en ventanas angostas se compacta a solo íconos. */
+.gd-app-escritorio .app-sidebar { position: relative !important; transform: none !important; width: 248px; flex-shrink: 0; box-shadow: none; }
+.gd-app-escritorio { display: flex; }
+@media (max-width: 1100px) {
+  .gd-app-escritorio .app-sidebar { width: 72px; }
+  .gd-app-escritorio .sidebar-brand-text, .gd-app-escritorio .nav-grupo, .gd-app-escritorio .nav-modulo > span,
+  .gd-app-escritorio .gd-kbd, .gd-app-escritorio .sidebar-cuenta-texto, .gd-app-escritorio .sidebar-footer .gd-sync-detalle { display: none; }
+  .gd-app-escritorio .nav-modulo { justify-content: center; padding: 10px; }
+  .gd-app-escritorio .sidebar-brand { justify-content: center; padding: 0; }
+  .gd-app-escritorio .sidebar-cuenta { flex-direction: column; gap: 6px; padding: 10px 0; }
+  .gd-app-escritorio .sidebar-footer { padding: 8px; }
+  .gd-app-escritorio .page-container { padding: 18px 20px 32px; }
+  .gd-ingreso { grid-template-columns: 1fr; }
+  .gd-mostrador { grid-template-columns: 1fr; }
+  .gd-dos-columnas { grid-template-columns: 1fr; }
+}
+.gd-panel.gd-mostrador, .gd-mostrador { max-width: none; width: 100%; grid-template-columns: minmax(0, 1fr) 420px; }
+.gd-medios span, .gd-chips button, .gd-franja-caja span { text-transform: none; }
+.gd-medios span::first-letter { text-transform: uppercase; }
+.gd-medios button svg { width: 22px; height: 22px; }
+.gd-modulo > .gd-panel, .gd-modulo > section { max-width: none; }
+.gd-medios span { display: block; }
+
+.gd-panel .gd-buscador, .gd-buscador { background: var(--bg-surface); border: 1.5px solid var(--border-color); border-radius: 12px; }
+.gd-lista-cobrar h3 { margin-top: 0; }
+
+/* Correcciones de usabilidad (Membresías y Ventas) */
+.gd-memb-cliente > div > span { display: block; color: var(--text-secondary); font-size: 0.88rem; }
+.gd-memb-cliente span.gd-memb-iniciales { display: grid; place-items: center; color: #334155; font-size: 1.2rem; }
+.gd-medios { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+.gd-efectivo { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.gd-efectivo-cabecera { display: flex; justify-content: space-between; font-weight: 600; font-size: 0.92rem; }
+.gd-efectivo-cobrar { font-weight: 400; color: var(--text-secondary); }
+.gd-efectivo-botones { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.gd-efectivo-botones button, .gd-efectivo-botones input { min-height: 52px; border-radius: 12px; border: 1.5px solid var(--border-color); background: var(--bg-surface); font: 600 1rem var(--font-sans); color: var(--text-primary); }
+.gd-efectivo-botones button { cursor: pointer; }
+.gd-efectivo-botones button.activo { border-color: var(--success); background: rgba(22,163,74,.08); color: var(--success); }
+.gd-efectivo-botones input { padding: 0 12px; text-align: center; }
+.gd-efectivo-botones input:focus { outline: none; border-color: var(--primary); }
+.gd-efectivo-cambio { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 16px; border-radius: 12px; background: rgba(22,163,74,.1); color: var(--success); }
+.gd-efectivo-cambio strong { font-size: 1.8rem; letter-spacing: -0.02em; }
+.gd-efectivo-cambio.falta { background: rgba(220,38,38,.08); color: var(--danger); }
+.gd-planes { grid-template-columns: repeat(auto-fill, minmax(220px, 280px)); }
+.gd-salud { margin: 12px 0; border: 1px solid var(--border-color); border-radius: 12px; padding: 10px 14px; }
+.gd-salud summary { cursor: pointer; font-weight: 600; }
+.gd-ficha-salud { display: grid; gap: 8px; margin: 0; }
+.gd-ficha-salud > div { display: flex; gap: 12px; }
+.gd-ficha-salud dt { min-width: 170px; color: var(--text-secondary); }
+.gd-ficha-salud dd { margin: 0; font-weight: 600; }
+.gd-ficha-condicion dd { color: var(--danger); }
+
+/* Recibo: vista previa en pantalla y lo único que se imprime (térmica de 80 mm o carta) */
+.gd-recibo-ok { display: flex; align-items: center; gap: 8px; color: var(--success); font-weight: 600; margin-bottom: 12px; }
+.gd-recibo { font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; color: #111; background: #fff; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 14px 16px; }
+.gd-recibo-centro { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; }
+.gd-recibo-gym { font-size: 16px; }
+.gd-recibo-fila { display: flex; justify-content: space-between; gap: 10px; }
+.gd-recibo-fila span:last-child { white-space: nowrap; }
+.gd-recibo-total { font-weight: 700; font-size: 15px; margin: 2px 0; }
+.gd-recibo-sep { border-top: 1px dashed #64748b; margin: 8px 0; }
+.gd-recibo-pie { font-size: 12px; }
+#gd-recibo-imprimir { display: none; }
+@media print {
+  @page { margin: 4mm; }
+  body * { visibility: hidden !important; }
+  #gd-recibo-imprimir, #gd-recibo-imprimir * { visibility: visible !important; }
+  #gd-recibo-imprimir { display: block !important; position: absolute; left: 0; top: 0; width: 72mm; }
+  #gd-recibo-imprimir .gd-recibo { border: 0; padding: 0; font-size: 12px; }
+}

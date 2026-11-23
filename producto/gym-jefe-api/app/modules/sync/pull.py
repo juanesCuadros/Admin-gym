@@ -46,7 +46,7 @@ _TABLAS: List[tuple] = [
     ("permisos", "permisos_rol", "uuid", "id, rol, submodulo, puede_crear, puede_leer, puede_editar, puede_eliminar"),
     ("planes", "planes", "uuid", "id, nombre, round(precio)::bigint AS precio, duracion_dias, tipo, cupo_personas, activo"),
     ("productos", "productos", "uuid", "id, nombre, round(precio)::bigint AS precio, stock, activo"),
-    ("deportistas", "deportistas", "uuid", "id, tipo_documento, documento, nombre, activo, (deleted_at IS NOT NULL) AS eliminado"),
+    ("deportistas", "deportistas", "uuid", "id, tipo_documento, documento, nombre, activo, (deleted_at IS NOT NULL) AS eliminado, salud"),
     ("membresias", "membresias", "uuid", "id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada, created_at, "
                                          "round(plan_precio_vendido)::bigint AS plan_precio_vendido"),
     ("eliminados", "sync_eliminados", "bigint", "id, tabla, registro_id"),

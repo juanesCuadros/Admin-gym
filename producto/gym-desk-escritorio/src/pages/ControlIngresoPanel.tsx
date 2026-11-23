@@ -282,7 +282,7 @@ export const ControlIngresoPanel: React.FC<{
         )}
 
         <form onSubmit={alEnviar} className="gd-ingreso-form" noValidate>
-          <label htmlFor="gd-ingreso-campo" className="gd-ingreso-etiqueta">
+          <label htmlFor="gd-ingreso-campo" className="sr-only">
             Documento o nombre del cliente
           </label>
           <div className="gd-ingreso-fila">
@@ -292,7 +292,7 @@ export const ControlIngresoPanel: React.FC<{
               className="gd-ingreso-campo"
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
-              placeholder="Escribe o pasa el carné por el lector"
+              placeholder="Documento, carné o nombre"
               autoComplete="off"
               spellCheck={false}
               autoFocus
@@ -403,8 +403,9 @@ export const ControlIngresoPanel: React.FC<{
         )}
         {!resultado && !error && sugerencias.length === 0 && (
           <div className="gd-ingreso-espera">
-            <ScanLine size={40} />
-            <p>Listo para el siguiente ingreso</p>
+            <span className="gd-ingreso-espera-icono"><ScanLine size={34} /></span>
+            <strong>Listo para el siguiente ingreso</strong>
+            <p>Pasa el carné por el lector, escribe el documento o busca por nombre y presiona Enter.</p>
           </div>
         )}
       </section>

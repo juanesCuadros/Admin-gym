@@ -15,6 +15,7 @@
         "title": "GymDesk",
         "width": 1280,
         "height": 800,
+        "maximized": true,
         "minWidth": 1024,
         "minHeight": 700,
         "center": true

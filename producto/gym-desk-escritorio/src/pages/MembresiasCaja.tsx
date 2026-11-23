@@ -2,13 +2,15 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CalendarPlus, Plus, UserRound, X } from 'lucide-react';
 import { Button } from '@web/components/ui/Button';
 import { EstadoDeportistaBadge } from '@web/components/ui/EstadoDeportistaBadge';
-import { Input, Select } from '@web/components/ui/Input';
+import { Input } from '@web/components/ui/Input';
 import { ConfirmDialog } from '@web/components/ui/Modal';
 import { efectivoDeFilas, filasIniciales, mediosDeFilas, PagoDividido, repartoCompleto, type FilaMedio } from '@web/components/ui/PagoDividido';
 import { formatCOP, formatDocumento, formatFecha } from '@web/utils/formato';
 import { cajaService } from '../api/caja.service';
 import { ingresoService } from '../api/ingreso.service';
 import { aErrorGymDesk } from '../api/tauri';
+import { EfectivoRapido } from '../components/EfectivoRapido';
+import { MediosPago } from '../components/MediosPago';
 import { MensajeError } from '../components/Piezas';
 import { useEnvio } from '../hooks/useEnvio';
 import type { CobroMembresiaRegistrado, DatosMostrador, OpcionesMembresia } from '../types/caja.types';
@@ -131,14 +133,13 @@ export const MembresiasCaja: React.FC<{
   const c = opciones?.cliente;
   return (
     <section className="gd-panel" style={{ marginTop: 16 }}>
-      <h3 className="gd-titulo" style={{ fontSize: '1rem' }}>
-        <CalendarPlus size={17} style={{ verticalAlign: -3, marginRight: 8 }} />
-        Membresías: renovar o vender un plan
-      </h3>
 
       {!c ? (
         <>
-          <Input id="caja-memb-cliente" label="Cliente" placeholder="Nombre o documento" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+          <div className="gd-buscador">
+            <UserRound size={18} />
+            <input id="caja-memb-cliente" placeholder="Busca al cliente por nombre o documento, o elígelo de la lista" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+          </div>
           {sugerencias.length > 0 && (
             <ul className="gd-ingreso-sugerencias">
               {sugerencias.map((s) => (
@@ -152,26 +153,22 @@ export const MembresiasCaja: React.FC<{
             </ul>
           )}
           {errorCarga && <MensajeError>{errorCarga}</MensajeError>}
-          <p className="gd-pista">Para un cliente nuevo, regístralo primero en la web y sincroniza.</p>
+          <p className="gd-pista">¿Cliente nuevo? Regístralo con Nuevo cliente (F6) y luego véndele el plan aquí.</p>
         </>
       ) : (
         <>
-          <div className="gd-cliente-elegido">
-            <UserRound size={16} />
-            <span>
-              <strong>{c.nombre}</strong> · {formatDocumento(c.tipo_documento, c.documento)}
-            </span>
+          <div className="gd-memb-cliente">
+            {c.foto ? <img src={c.foto} alt="" /> : <span className="gd-memb-iniciales">{c.nombre.split(' ').slice(0, 2).map((p) => p[0]).join('').toUpperCase()}</span>}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <strong>{c.nombre}</strong>
+              <span>{formatDocumento(c.tipo_documento, c.documento)}</span>
+              {opciones.membresia && <span>{opciones.membresia.plan_nombre} · vence el {fecha(opciones.membresia.fecha_vencimiento)}</span>}
+            </div>
             <EstadoDeportistaBadge estado={c.estado} />
             <button type="button" className="icon-btn ghost" aria-label="Cambiar cliente" onClick={() => { setOpciones(null); limpiarCobro(); }}>
-              <X size={15} />
+              <X size={16} />
             </button>
           </div>
-
-          {opciones.membresia && (
-            <p className="gd-subtitulo" style={{ margin: '8px 0' }}>
-              {opciones.membresia.plan_nombre} · vence el {fecha(opciones.membresia.fecha_vencimiento)}
-            </p>
-          )}
 
           {opciones.aviso ? (
             <div className="gd-aviso" role="status">
@@ -179,24 +176,27 @@ export const MembresiasCaja: React.FC<{
               <span>{opciones.aviso}</span>
             </div>
           ) : renovar ? (
-            <div className="gd-total" style={{ marginTop: 4 }}>
-              <span>
-                Renovar {renovar.dias} días · queda hasta el <strong>{fecha(renovar.fecha_vencimiento_nueva)}</strong>
-              </span>
-              <strong>{formatCOP(renovar.precio_lista)}</strong>
+            <div className="gd-planes">
+              <button type="button" className="activo">
+                <span className="gd-plan-nombre">Renovar {opciones.membresia?.plan_nombre ?? 'plan'}</span>
+                <span className="gd-plan-precio">{formatCOP(renovar.precio_lista)}</span>
+                <span className="gd-plan-detalle">{renovar.dias} días · queda hasta el {fecha(renovar.fecha_vencimiento_nueva)}</span>
+              </button>
             </div>
           ) : (
-            <Select
-              label="Plan a vender"
-              value={planId ?? ''}
-              onChange={(e) => setPlanId(e.target.value)}
-              options={opciones.planes.map((p) => ({ value: p.id, label: `${p.nombre} · ${formatCOP(p.precio)} · ${p.duracion_dias} días` }))}
-            />
+            <div className="gd-planes" role="radiogroup" aria-label="Plan a vender">
+              {opciones.planes.map((p) => (
+                <button key={p.id} type="button" role="radio" aria-checked={planId === p.id} className={planId === p.id ? 'activo' : ''} onClick={() => setPlanId(p.id)}>
+                  <span className="gd-plan-nombre">{p.nombre}</span>
+                  <span className="gd-plan-precio">{formatCOP(p.precio)}</span>
+                  <span className="gd-plan-detalle">{p.duracion_dias} días · hasta el {fecha(p.fecha_vencimiento)}</span>
+                </button>
+              ))}
+            </div>
           )}
 
           {puedeCobrar && (
             <>
-              {!renovar && venceNueva && <p className="gd-pista">Vence el {fecha(venceNueva)}.</p>}
               {mostrador.puede_descontar && (
                 <details className="gd-descuento">
                   <summary>Descuento (hasta {mostrador.tope_descuento_pct} %)</summary>
@@ -211,17 +211,10 @@ export const MembresiasCaja: React.FC<{
                   <Button variant="ghost" size="sm" onClick={() => setFilasMedio(null)}>Pagar con un solo medio</Button>
                 </>
               ) : (
-                <div className="gd-medio">
-                  <Select label="Medio de pago" value={metodo} onChange={(e) => setMetodo(e.target.value)} options={mostrador.metodos_pago.map((m) => ({ value: m, label: m }))} />
-                  <Button variant="ghost" size="sm" leftIcon={<Plus size={14} />} onClick={() => setFilasMedio(filasIniciales(mostrador.metodos_pago))}>
-                    Pago mixto
-                  </Button>
-                </div>
+                <MediosPago metodos={mostrador.metodos_pago} valor={metodo} onCambio={setMetodo} disabled={envio.enviando}
+                            onMixto={() => setFilasMedio(filasIniciales(mostrador.metodos_pago))} />
               )}
-              {enEfectivo > 0 && (
-                <Input id="caja-memb-recibido" label={`Efectivo recibido (a cobrar en efectivo: ${formatCOP(enEfectivo)})`} moneda value={recibido} onChange={(e) => setRecibido(e.target.value)} />
-              )}
-              {cambio !== null && cambio >= 0 && <p className="gd-cambio">Cambio: <strong>{formatCOP(cambio)}</strong></p>}
+              {enEfectivo > 0 && <EfectivoRapido aCobrar={enEfectivo} recibido={recibido} onRecibido={setRecibido} />}
               {envio.error && <MensajeError>{envio.error}</MensajeError>}
               {problema && <p className="gd-pista">{problema}</p>}
               <Button style={{ width: '100%', marginTop: 8 }} isLoading={envio.enviando} disabled={problema !== null} onClick={() => setConfirmando(true)}>

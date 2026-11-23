@@ -23,6 +23,14 @@ export interface AcudienteDto {
   autoriza: boolean;
 }
 
+/** Salud y contacto de emergencia (opcional). Las condiciones médicas son dato sensible (Ley 1581). */
+export interface SaludDto {
+  grupo_sanguineo?: 'O+' | 'O-' | 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | null;
+  condiciones?: string | null;
+  contacto_emergencia_nombre?: string | null;
+  contacto_emergencia_telefono?: string | null;
+}
+
 export interface CrearDeportistaRequest {
   /** Contrato 2.3: obligatorio al crear. */
   tipo_documento: TipoDocumento;
@@ -37,6 +45,7 @@ export interface CrearDeportistaRequest {
   /** Versión del texto de consentimiento aceptado (el backend asume "1.0"). */
   consentimiento_version?: string;
   acudiente?: AcudienteDto;
+  salud?: SaludDto;
 }
 
 export interface EditarDeportistaRequest {
@@ -50,6 +59,7 @@ export interface EditarDeportistaRequest {
   fecha_nacimiento?: string;
   altura_cm?: number;
   acudiente?: AcudienteDto;
+  salud?: SaludDto;
 }
 
 /** `409 LIMITE_PLAN_CLIENTES` (contrato 2.3). */
@@ -99,6 +109,7 @@ export interface DeportistaResponse {
   consentimiento_version?: string | null;
   consentimiento_registrado_por_nombre?: string | null;
   acudiente?: AcudienteDto | null;
+  salud?: SaludDto | null;
   acudiente_nombre?: string | null;
   activo: boolean;
   /** Contrato 2.1: viene en la ficha (`GET /deportistas/{id}`); `null` en las respuestas de crear y editar. */

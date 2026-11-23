@@ -8,14 +8,17 @@ import {
   LogOut,
   ScanLine,
   Settings,
+  Tv,
   ShoppingCart,
   UserPlus,
   Users,
   Wallet,
 } from 'lucide-react';
+import { Avatar } from '@web/components/ui/Avatar';
 import { Button } from '@web/components/ui/Button';
 import { Input } from '@web/components/ui/Input';
 import { useToast } from '@web/contexts/ToastContext';
+import { aErrorGymDesk, invocar } from '../api/tauri';
 import { IndicadorSync } from '../components/IndicadorSync';
 import { CampoPin, MensajeError } from '../components/Piezas';
 import { useSesion } from '../contexts/SesionContext';
@@ -38,11 +41,11 @@ type Modulo = 'ingreso' | 'clientes' | 'membresias' | 'ventas' | 'caja';
 type Vista = Modulo | 'pendientes' | 'pin' | 'equipo';
 
 const MODULOS: { id: Modulo; etiqueta: string; tecla: string; icono: React.ReactNode; descripcion: string }[] = [
-  { id: 'ingreso', etiqueta: 'Ingreso', tecla: 'F1', icono: <ScanLine size={24} />, descripcion: 'Documento, carné o huella' },
-  { id: 'clientes', etiqueta: 'Clientes', tecla: 'F2', icono: <Users size={24} />, descripcion: 'Buscar, registrar y ver la ficha' },
-  { id: 'membresias', etiqueta: 'Membresías', tecla: 'F3', icono: <CalendarPlus size={24} />, descripcion: 'Renovar o vender un plan' },
-  { id: 'ventas', etiqueta: 'Ventas', tecla: 'F4', icono: <ShoppingCart size={24} />, descripcion: 'Productos y pases' },
-  { id: 'caja', etiqueta: 'Caja', tecla: 'F5', icono: <Wallet size={24} />, descripcion: 'Turno, egresos y cierre' },
+  { id: 'ingreso', etiqueta: 'Ingreso', tecla: 'F1', icono: <ScanLine size={18} />, descripcion: 'Documento, carné o huella' },
+  { id: 'clientes', etiqueta: 'Clientes', tecla: 'F2', icono: <Users size={18} />, descripcion: 'Buscar, registrar y ver la ficha' },
+  { id: 'membresias', etiqueta: 'Membresías', tecla: 'F3', icono: <CalendarPlus size={18} />, descripcion: 'Renovar o vender un plan' },
+  { id: 'ventas', etiqueta: 'Ventas', tecla: 'F4', icono: <ShoppingCart size={18} />, descripcion: 'Productos y pases' },
+  { id: 'caja', etiqueta: 'Caja', tecla: 'F5', icono: <Wallet size={18} />, descripcion: 'Turno, egresos y cierre' },
 ];
 const TECLAS: Record<string, Modulo> = { F1: 'ingreso', F2: 'clientes', F3: 'membresias', F4: 'ventas', F5: 'caja' };
 
@@ -115,51 +118,69 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
   const titulo = actual?.etiqueta ?? (vista === 'pin' ? 'Mi PIN' : vista === 'equipo' ? 'Equipo' : 'Pendientes de sincronizar');
 
   return (
-    <div className="gd-shell">
-      <aside className="gd-lateral" aria-label="Módulos">
-        <div className="gd-lateral-marca">
-          <span className="gd-marca-icono"><Dumbbell size={18} /></span>
-          <div>
-            <strong>{estacion?.gimnasio_nombre ?? 'GymDesk'}</strong>
-            <span>{estacion?.estacion_nombre ?? 'Recepción'}</span>
+    <div className="app-layout gd-app-escritorio">
+      <aside className="app-sidebar" aria-label="Navegación principal">
+        <div className="sidebar-brand">
+          <div className="sidebar-brand-logo"><Dumbbell size={19} /></div>
+          <div className="sidebar-brand-text">
+            <span className="sidebar-brand-name" title={estacion?.gimnasio_nombre ?? ''}>{estacion?.gimnasio_nombre ?? 'GymDesk'}</span>
+            <span className="sidebar-brand-sub">{estacion?.estacion_nombre ?? 'Recepción'}</span>
           </div>
         </div>
-        <nav className="gd-lateral-modulos">
-          {MODULOS.map((m) => (
-            <button key={m.id} className={modulo === m.id && vista === m.id ? 'activo' : ''} aria-current={vista === m.id ? 'page' : undefined} onClick={() => irA(m.id)}>
-              <span className="gd-lateral-icono">{m.icono}</span>
-              <span className="gd-lateral-texto">
-                <span>{m.etiqueta}</span>
-                <small>{m.descripcion}</small>
-              </span>
-              <kbd>{m.tecla}</kbd>
-            </button>
-          ))}
+        <nav className="sidebar-nav">
+          <div className="nav-seccion">
+            <div className="nav-grupo">Recepción</div>
+            <div className="nav-lista">
+              {MODULOS.map((m) => (
+                <button key={m.id} type="button" className={`nav-modulo ${vista === m.id ? 'activo' : ''}`}
+                        aria-current={vista === m.id ? 'page' : undefined} onClick={() => irA(m.id)} title={m.descripcion}>
+                  {m.icono}
+                  <span>{m.etiqueta}</span>
+                  <kbd className="gd-kbd">{m.tecla}</kbd>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="nav-seccion">
+            <div className="nav-grupo">Estación</div>
+            <div className="nav-lista">
+              <button type="button" className={`nav-modulo ${vista === 'equipo' ? 'activo' : ''}`} onClick={() => { recargarHuella(); setVista('equipo'); }}>
+                <Settings size={18} /><span>Equipo y huella</span>
+              </button>
+              <button type="button" className={`nav-modulo ${vista === 'pin' ? 'activo' : ''}`} onClick={() => setVista('pin')}>
+                <KeyRound size={18} /><span>Mi PIN</span>
+              </button>
+              <button type="button" className="nav-modulo" disabled={accion.enviando} onClick={() => void accion.enviar(bloquear)}>
+                <Lock size={18} /><span>Bloquear</span>
+              </button>
+            </div>
+          </div>
         </nav>
-        <div className="gd-lateral-pie">
+        <div className="sidebar-footer">
           {estacion && <IndicadorSync estacion={estacion} onAbrirPendientes={() => setVista(vista === 'pendientes' ? modulo : 'pendientes')} />}
-          <div className="gd-lateral-usuario">
-            <strong>{usuario.nombre}</strong>
-            <span>{NOMBRE_ROL[usuario.rol]}</span>
+        </div>
+        <div className="sidebar-cuenta">
+          <Avatar name={usuario.nombre} />
+          <div className="sidebar-cuenta-texto">
+            <span className="sidebar-cuenta-nombre" title={usuario.nombre}>{usuario.nombre}</span>
+            <span className="sidebar-cuenta-rol">{NOMBRE_ROL[usuario.rol]}</span>
           </div>
-          <div className="gd-lateral-botones">
-            <button title="Equipo y lector de huella" onClick={() => { recargarHuella(); setVista(vista === 'equipo' ? modulo : 'equipo'); }}><Settings size={17} /></button>
-            <button title="Mi PIN" onClick={() => setVista(vista === 'pin' ? modulo : 'pin')}><KeyRound size={17} /></button>
-            <button title="Bloquear la estación" disabled={accion.enviando} onClick={() => void accion.enviar(bloquear)}><Lock size={17} /></button>
-            <button title="Cerrar sesión" disabled={accion.enviando} onClick={() => void accion.enviar(cerrar)}><LogOut size={17} /></button>
-          </div>
+          <button type="button" className="icon-btn ghost" title="Cerrar sesión" aria-label="Cerrar sesión" disabled={accion.enviando} onClick={() => void accion.enviar(cerrar)}>
+            <LogOut size={17} />
+          </button>
         </div>
       </aside>
 
-      <div className="gd-principal">
-        <header className="gd-cabecera">
+      <div className="app-content-wrapper">
+        <div className="page-container">
+        <div className="page-header">
           <div>
-            <h1>{titulo}</h1>
-            {actual && <p>{actual.descripcion}</p>}
+            <h1 className="page-title">{titulo}</h1>
+            {actual && <p className="page-subtitle">{actual.descripcion}</p>}
           </div>
-          <div className="gd-cabecera-acciones">
+          <div style={{ display: 'flex', gap: 8 }}>
             {vista === 'clientes' && (
-              <Button variant="outline" leftIcon={<UserPlus size={16} />} onClick={() => { irA('clientes'); setAtajoNuevo((n) => n + 1); }}>
+              <Button leftIcon={<UserPlus size={16} />} onClick={() => { irA('clientes'); setAtajoNuevo((n) => n + 1); }}>
                 Nuevo cliente <kbd>F6</kbd>
               </Button>
             )}
@@ -167,9 +188,9 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
               <Button variant="ghost" leftIcon={<ArrowLeft size={16} />} onClick={() => setVista(modulo)}>Volver</Button>
             )}
           </div>
-        </header>
+        </div>
 
-        <main className="gd-cuerpo">
+        <main>
           {accion.error && <MensajeError>{accion.error}</MensajeError>}
           {vista === 'pendientes' && estacion && <PendientesPanel estacion={estacion} onCerrar={() => setVista(modulo)} />}
           {vista === 'ingreso' && estacion && <ControlIngresoPanel estacion={estacion} onCobrar={cobrar} />}
@@ -177,7 +198,27 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
           {vista === 'membresias' && estacion && <MembresiasPage estacion={estacion} clienteInicial={clienteMembresia} onClienteUsado={limpiarMembresia} />}
           {vista === 'ventas' && estacion && <VentasPage estacion={estacion} clienteInicial={clienteVenta} onClienteUsado={limpiarVenta} />}
           {vista === 'caja' && estacion && <CajaPanel enLinea={estacion.en_linea} />}
-          {vista === 'equipo' && (huella ? <ConfigLector huella={huella} onCambio={recargarHuella} /> : <div className="skeleton" style={{ height: 160, maxWidth: 520 }} />)}
+          {vista === 'equipo' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
+              {huella ? <ConfigLector huella={huella} onCambio={recargarHuella} /> : <div className="skeleton" style={{ height: 160, width: 520 }} />}
+              <section className="gd-tarjeta" style={{ maxWidth: 520 }}>
+                <h2 className="gd-titulo" style={{ fontSize: '1.15rem' }}><Tv size={18} style={{ marginRight: 8 }} /> Pantalla de bienvenida (TV)</h2>
+                <p className="gd-subtitulo">
+                  Conecta el TV a este computador por HDMI y en Windows elige “Extender” (tecla Windows + P). La bienvenida se abre en el TV en
+                  pantalla completa y muestra a cada persona que entra, al instante y también sin internet. Doble clic en el TV para salir de
+                  pantalla completa.
+                </p>
+                <Button leftIcon={<Tv size={16} />} onClick={() => {
+                  void invocar<string>('abrir_pantalla_bienvenida').then((r) => {
+                    if (r === 'sin_segundo_monitor') showToast('warning', 'No se encontró el TV', 'Se abrió como ventana normal. Conecta el TV por HDMI, elige “Extender” y vuelve a abrirla.');
+                    else showToast('success', 'Pantalla de bienvenida abierta', r === 'ya_abierta' ? 'Ya estaba abierta.' : 'Se abrió en el TV.');
+                  }).catch((e) => showToast('error', 'No se abrió', aErrorGymDesk(e).mensaje));
+                }}>
+                  Abrir pantalla de bienvenida
+                </Button>
+              </section>
+            </div>
+          )}
 
           <section className="gd-tarjeta" style={{ maxWidth: 440, display: vista === 'pin' ? undefined : 'none' }}>
             <h2 className="gd-titulo" style={{ fontSize: '1.15rem' }}>
@@ -199,6 +240,7 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
             </form>
           </section>
         </main>
+        </div>
       </div>
     </div>
   );

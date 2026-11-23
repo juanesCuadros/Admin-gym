@@ -44,6 +44,15 @@ export interface FichaCliente {
   cobros: { ocurrido_en: string; concepto: string; monto: number; metodo: string }[];
   huellas: string[];
   membresia_desde: string | null;
+  salud: Salud | null;
+}
+
+/** Opcional. Las condiciones médicas son dato sensible (Ley 1581). */
+export interface Salud {
+  grupo_sanguineo?: 'O+' | 'O-' | 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | null;
+  condiciones?: string | null;
+  contacto_emergencia_nombre?: string | null;
+  contacto_emergencia_telefono?: string | null;
 }
 
 /** Datos para registrar un cliente: los mismos que pide la web (Ley 1581, menor con acudiente). */
@@ -56,6 +65,7 @@ export interface NuevoCliente {
   sexo?: 'M' | 'F' | 'otro';
   fecha_nacimiento?: string;
   consentimiento_1581: true;
+  salud?: Salud;
   acudiente?: {
     nombre: string;
     tipo_documento: 'CC' | 'TI' | 'CE' | 'PAS' | 'PPT' | 'RC';

@@ -6,7 +6,7 @@ import { Modal } from '@web/components/ui/Modal';
 import { ingresoService } from '../api/ingreso.service';
 import { MensajeError } from '../components/Piezas';
 import { useEnvio } from '../hooks/useEnvio';
-import type { ClienteEvaluado, NuevoCliente } from '../types/ingreso.types';
+import type { ClienteEvaluado, NuevoCliente, Salud } from '../types/ingreso.types';
 
 type TipoDoc = NuevoCliente['tipo_documento'];
 const TIPOS: { value: TipoDoc; label: string }[] = [
@@ -119,6 +119,8 @@ export const NuevoClienteModal: React.FC<{
   const [acudiente, setAcudiente] = useState({ nombre: '', tipo_documento: 'CC' as TipoDoc, documento: '', telefono: '', parentesco: '', autoriza: false });
   const [consentimiento, setConsentimiento] = useState(false);
   const [foto, setFoto] = useState<string | null>(null);
+  const saludVacia = { grupo_sanguineo: '', condiciones: '', contacto_emergencia_nombre: '', contacto_emergencia_telefono: '' };
+  const [salud, setSalud] = useState(saludVacia);
   const envio = useEnvio();
 
   useEffect(() => {
@@ -133,6 +135,7 @@ export const NuevoClienteModal: React.FC<{
     setAcudiente({ nombre: '', tipo_documento: 'CC', documento: '', telefono: '', parentesco: '', autoriza: false });
     setConsentimiento(false);
     setFoto(null);
+    setSalud({ grupo_sanguineo: '', condiciones: '', contacto_emergencia_nombre: '', contacto_emergencia_telefono: '' });
   }, [abierto, documentoInicial]);
 
   const anos = nacimiento ? edad(nacimiento) : null;
@@ -164,6 +167,14 @@ export const NuevoClienteModal: React.FC<{
       ...(correo.trim() ? { correo: correo.trim() } : {}),
       ...(sexo ? { sexo } : {}),
       ...(nacimiento ? { fecha_nacimiento: nacimiento } : {}),
+      ...(Object.values(salud).some((v) => v.trim())
+        ? { salud: {
+            grupo_sanguineo: (salud.grupo_sanguineo || null) as Salud['grupo_sanguineo'],
+            condiciones: salud.condiciones.trim() || null,
+            contacto_emergencia_nombre: salud.contacto_emergencia_nombre.trim() || null,
+            contacto_emergencia_telefono: salud.contacto_emergencia_telefono.trim() || null,
+          } }
+        : {}),
       ...(menor ? { acudiente: { ...acudiente, nombre: acudiente.nombre.trim(), documento: acudiente.documento.trim(), telefono: acudiente.telefono.trim(), parentesco: acudiente.parentesco.trim() } } : {}),
     };
     void envio.enviar(async () => {
@@ -227,6 +238,23 @@ export const NuevoClienteModal: React.FC<{
           </label>
         </fieldset>
       )}
+
+      <details className="gd-salud" open={!!(salud.grupo_sanguineo || salud.condiciones || salud.contacto_emergencia_nombre)}>
+        <summary>Salud y contacto de emergencia (opcional)</summary>
+        <div className="gd-form-dos">
+          <Input label="Contacto de emergencia" placeholder="Nombre" value={salud.contacto_emergencia_nombre} maxLength={150}
+                 onChange={(e) => setSalud({ ...salud, contacto_emergencia_nombre: e.target.value })} />
+          <Input label="Celular del contacto" value={salud.contacto_emergencia_telefono} maxLength={25}
+                 onChange={(e) => setSalud({ ...salud, contacto_emergencia_telefono: e.target.value })} />
+        </div>
+        <div className="gd-form-dos">
+          <Select label="Grupo sanguíneo" value={salud.grupo_sanguineo} onChange={(e) => setSalud({ ...salud, grupo_sanguineo: e.target.value })}
+                  options={[{ value: '', label: 'Sin indicar' }, ...['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'].map((g) => ({ value: g, label: g }))]} />
+          <Input label="Condiciones médicas" placeholder="Alergias, enfermedades, medicamentos, lesiones" value={salud.condiciones} maxLength={500}
+                 onChange={(e) => setSalud({ ...salud, condiciones: e.target.value })} />
+        </div>
+        <p className="gd-pista">Las condiciones médicas son un dato sensible: regístralas solo si el cliente quiere darlas.</p>
+      </details>
 
       <CamaraFoto foto={foto} onFoto={setFoto} disabled={envio.enviando} />
 

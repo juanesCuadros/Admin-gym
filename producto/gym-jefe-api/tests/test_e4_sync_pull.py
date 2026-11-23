@@ -73,7 +73,8 @@ async def test_la_descarga_inicial_trae_lo_del_gimnasio_y_nada_de_otro(cliente: 
     assert cambios["gimnasio"][0]["dias_gracia_mora"] == 3
     assert [s["id"] for s in cambios["staff"]] == [str(jefe["id"])]
     assert cambios["deportistas"] == [
-        {"id": dep, "tipo_documento": "CC", "documento": cambios["deportistas"][0]["documento"], "nombre": "Ana Ruiz", "activo": True, "eliminado": False}
+        {"id": dep, "tipo_documento": "CC", "documento": cambios["deportistas"][0]["documento"], "nombre": "Ana Ruiz", "activo": True, "eliminado": False,
+         "salud": None}
     ]
     assert cambios["planes"] == [
         {"id": plan, "nombre": "Mensual", "precio": 80000, "duracion_dias": 30, "tipo": "individual", "cupo_personas": 1, "activo": True}

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
 use serde::Serialize;
-use tauri::State;
+use tauri::{Emitter, Manager, State};
 
 use crate::acceso::registro::{self, ClienteEvaluado, Objetivo, ResultadoIngreso, ResumenIngresos};
 use crate::caja;
@@ -310,7 +310,7 @@ pub fn buscar_clientes(estado: State<'_, EstadoApp>, texto: String) -> Resultado
 /// Registra un intento de ingreso con los datos locales, con red o sin ella, y lo deja en la cola.
 /// Recibe el id del cliente (elegido de la búsqueda) o su documento (escrito o leído por el lector).
 #[tauri::command]
-pub fn registrar_ingreso(estado: State<'_, EstadoApp>, deportista_id: Option<String>, documento: Option<String>) -> Resultado<ResultadoIngreso> {
+pub fn registrar_ingreso(app: tauri::AppHandle, estado: State<'_, EstadoApp>, deportista_id: Option<String>, documento: Option<String>) -> Resultado<ResultadoIngreso> {
     let resultado = estado.con_base(|conn, sesion, ahora| {
         let usuario = sesion.exigir_activa(conn, ahora)?;
         exigir_operable(conn, ahora)?;
@@ -323,6 +323,8 @@ pub fn registrar_ingreso(estado: State<'_, EstadoApp>, deportista_id: Option<Str
     })?;
     if !resultado.relectura_ignorada {
         estado.despertar();
+        // La pantalla de bienvenida (TV) lo muestra al instante, sin pasar por el servidor.
+        let _ = app.emit("ingreso-registrado", &resultado);
     }
     Ok(resultado)
 }
@@ -418,6 +420,36 @@ pub fn registrar_cliente(
     let r = crate::sync::clientes::registrar(estado.base()?, &estado.sesion, estado.transporte.as_ref(), estado.reloj.as_ref(), &cliente, foto.as_deref())?;
     estado.despertar();
     Ok(r)
+}
+
+/// Abre la pantalla de bienvenida en el segundo monitor (el TV por HDMI), en pantalla completa.
+/// Sin segundo monitor la abre como ventana normal, para probarla. Si ya está abierta, la trae al frente.
+/// Debe ser `async`: en Windows, crear una ventana desde un comando síncrono bloquea toda la app (wry#583).
+#[tauri::command]
+pub async fn abrir_pantalla_bienvenida(app: tauri::AppHandle) -> Resultado<String> {
+    if let Some(v) = app.get_webview_window("bienvenida") {
+        let _ = v.set_focus();
+        return Ok("ya_abierta".into());
+    }
+    let principal = app.primary_monitor().ok().flatten().map(|m| *m.position());
+    let tv = app.available_monitors().unwrap_or_default().into_iter().find(|m| Some(*m.position()) != principal);
+    let mut b = tauri::WebviewWindowBuilder::new(&app, "bienvenida", tauri::WebviewUrl::App("index.html".into()))
+        .title("GymDesk · Bienvenida")
+        .inner_size(1280.0, 720.0);
+    if let Some(m) = &tv {
+        let p = m.position();
+        let escala = m.scale_factor();
+        b = b.position(p.x as f64 / escala + 40.0, p.y as f64 / escala + 40.0);
+    }
+    let ventana = b
+        .build()
+        .map_err(|e| ErrorApp::nuevo("PANTALLA_NO_ABRIO", &format!("No se pudo abrir la pantalla de bienvenida: {e}")))?;
+    if tv.is_some() {
+        let _ = ventana.set_fullscreen(true);
+        Ok("en_tv".into())
+    } else {
+        Ok("sin_segundo_monitor".into())
+    }
 }
 
 /// Módulo Clientes: lista con búsqueda y filtro por estado.
@@ -533,7 +565,7 @@ pub fn huella_dedos(estado: State<'_, EstadoApp>, deportista_id: String) -> Resu
 
 /// Ingreso con huella: lee el dedo, lo busca entre las huellas de la estación y registra el ingreso.
 #[tauri::command]
-pub async fn ingreso_por_huella(estado: State<'_, EstadoApp>, simulada: Option<String>) -> Resultado<ResultadoIngreso> {
+pub async fn ingreso_por_huella(app: tauri::AppHandle, estado: State<'_, EstadoApp>, simulada: Option<String>) -> Resultado<ResultadoIngreso> {
     let nombre = lector_de_sesion(&estado)?;
     let base = estado.base()?.clone();
     let encontrado = tauri::async_runtime::spawn_blocking(move || {
@@ -559,6 +591,7 @@ pub async fn ingreso_por_huella(estado: State<'_, EstadoApp>, simulada: Option<S
     })?;
     if !resultado.relectura_ignorada {
         estado.despertar();
+        let _ = app.emit("ingreso-registrado", &resultado);
     }
     Ok(resultado)
 }

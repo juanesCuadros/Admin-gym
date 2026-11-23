@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permisos mínimos de la ventana principal: solo los comandos propios de GymDesk.",
-  "windows": ["main"],
+  "description": "Permisos mínimos: la ventana principal y la pantalla de bienvenida (TV), solo con los comandos propios de GymDesk.",
+  "windows": ["main", "bienvenida"],
   "permissions": ["core:default"]
 }

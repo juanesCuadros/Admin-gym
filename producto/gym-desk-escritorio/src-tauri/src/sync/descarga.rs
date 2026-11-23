@@ -157,10 +157,10 @@ pub fn aplicar_pagina(conn: &Connection, ahora: DateTime<Utc>, r: &Value) -> Res
     }
     for d in filas(r, "deportistas") {
         tx.execute(
-            "INSERT OR REPLACE INTO deportistas (id, tipo_documento, documento, nombre, activo, eliminado) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR REPLACE INTO deportistas (id, tipo_documento, documento, nombre, activo, eliminado, salud) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 obligatorio(d, "id")?, texto(d, "tipo_documento"), obligatorio(d, "documento")?, obligatorio(d, "nombre")?,
-                booleano(d, "activo"), booleano(d, "eliminado"),
+                booleano(d, "activo"), booleano(d, "eliminado"), d.get("salud").filter(|s| !s.is_null()).map(|s| s.to_string()),
             ],
         )?;
         total += 1;

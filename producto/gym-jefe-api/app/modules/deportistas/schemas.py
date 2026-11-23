@@ -28,6 +28,22 @@ class AcudienteDto(BaseModel):
     autoriza: bool = Field(..., description="Autorización explícita del acudiente para tratamiento de datos y actividades")
 
 
+class SaludDto(BaseModel):
+    """Datos de salud y de emergencia. Todos opcionales; las condiciones médicas son dato sensible (Ley 1581)."""
+    grupo_sanguineo: Optional[Literal["O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-"]] = None
+    condiciones: Optional[str] = Field(None, max_length=500, description="Alergias, enfermedades, medicamentos o lesiones")
+    contacto_emergencia_nombre: Optional[str] = Field(None, max_length=150)
+    contacto_emergencia_telefono: Optional[str] = Field(None, max_length=25)
+
+    @field_validator("condiciones", "contacto_emergencia_nombre", "contacto_emergencia_telefono")
+    @classmethod
+    def limpiar(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        s = v.strip()
+        return s or None
+
+
 class CrearDeportistaRequest(BaseModel):
     tipo_documento: TipoDocumento = Field("CC", description="Tipo de documento de identidad")
     documento: str = Field(..., min_length=3, max_length=30, description="Cédula o documento único en el gimnasio")
@@ -41,6 +57,7 @@ class CrearDeportistaRequest(BaseModel):
     consentimiento_version: str = Field("1.0", description="Versión del texto de consentimiento aceptado")
     acudiente: Optional[AcudienteDto] = Field(None, description="Datos completos del acudiente (obligatorio si menor de 18 años)")
     acudiente_nombre: Optional[str] = Field(None, max_length=150, description="Nombre del acudiente (retrocompatibilidad)")
+    salud: Optional[SaludDto] = Field(None, description="Grupo sanguíneo, condiciones médicas y contacto de emergencia (opcional)")
 
     @field_validator("documento", "nombre")
     @classmethod
@@ -98,6 +115,7 @@ class EditarDeportistaRequest(BaseModel):
     altura_cm: Optional[Decimal] = Field(None, gt=0, max_digits=5, decimal_places=2)
     acudiente: Optional[AcudienteDto] = None
     acudiente_nombre: Optional[str] = Field(None, max_length=150)
+    salud: Optional[SaludDto] = None
 
     @field_validator("documento", "nombre", "telefono", "acudiente_nombre")
     @classmethod
@@ -151,6 +169,7 @@ class DeportistaResponse(BaseModel):
     consentimiento_registrado_por_nombre: Optional[str] = None
     acudiente: Optional[AcudienteDto] = None
     acudiente_nombre: Optional[str] = None
+    salud: Optional[SaludDto] = None
     activo: bool
     estado: Optional[str] = None
     version: int

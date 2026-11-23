@@ -108,19 +108,19 @@ class DeportistasService:
                 gimnasio_id, tipo_documento, documento, nombre, correo, telefono,
                 sexo, fecha_nacimiento, altura_cm,
                 consentimiento_1581, consentimiento_fecha, consentimiento_version,
-                consentimiento_registrado_por, acudiente, acudiente_nombre,
+                consentimiento_registrado_por, acudiente, acudiente_nombre, salud,
                 activo, version, created_at, updated_at
             ) VALUES (
                 :gym_id, :tipo_documento, :documento, :nombre, :correo, :telefono,
                 :sexo, :fecha_nacimiento, :altura_cm,
                 :consentimiento_1581, :consentimiento_fecha, :consentimiento_version,
-                :consentimiento_registrado_por, CAST(:acudiente AS jsonb), :acudiente_nombre,
+                :consentimiento_registrado_por, CAST(:acudiente AS jsonb), :acudiente_nombre, CAST(:salud AS jsonb),
                 true, 1, :now_utc, :now_utc
             )
             RETURNING id, gimnasio_id, tipo_documento, documento, nombre, correo, telefono,
                       sexo, fecha_nacimiento, altura_cm,
                       consentimiento_1581, consentimiento_fecha, consentimiento_version,
-                      consentimiento_registrado_por, acudiente, acudiente_nombre, activo, version,
+                      consentimiento_registrado_por, acudiente, acudiente_nombre, salud, activo, version,
                       created_at, updated_at;
         """)
 
@@ -142,6 +142,7 @@ class DeportistasService:
             "consentimiento_registrado_por": staff_id,
             "acudiente": acudiente_json,
             "acudiente_nombre": acudiente_nom,
+            "salud": req.salud.model_dump_json() if req.salud else None,
             "now_utc": now_utc,
         }
 
@@ -416,7 +417,7 @@ class DeportistasService:
                    d.sexo, d.fecha_nacimiento, d.altura_cm,
                    d.consentimiento_1581, d.consentimiento_fecha, d.consentimiento_version,
                    d.consentimiento_registrado_por, sc.nombre as consentimiento_registrado_por_nombre,
-                   d.acudiente, d.acudiente_nombre, d.activo, d.version, d.created_at, d.updated_at
+                   d.acudiente, d.acudiente_nombre, d.salud, d.activo, d.version, d.created_at, d.updated_at
             FROM platform.deportistas d
             LEFT JOIN platform.staff sc ON sc.id = d.consentimiento_registrado_por
             WHERE d.id = :id AND d.gimnasio_id = :gym_id AND d.deleted_at IS NULL;
@@ -636,6 +637,7 @@ class DeportistasService:
                 altura_cm = CASE WHEN :altura_provided THEN :altura_cm ELSE altura_cm END,
                 acudiente = CASE WHEN :acudiente_provided THEN CAST(:acudiente AS jsonb) ELSE acudiente END,
                 acudiente_nombre = CASE WHEN :acudiente_nom_provided THEN :acudiente_nombre ELSE acudiente_nombre END,
+                salud = CASE WHEN :salud_provided THEN CAST(:salud AS jsonb) ELSE salud END,
                 version = version + 1,
                 updated_at = :now_utc
             WHERE id = :id
@@ -645,7 +647,7 @@ class DeportistasService:
             RETURNING id, gimnasio_id, tipo_documento, documento, nombre, correo, telefono,
                       sexo, fecha_nacimiento, altura_cm,
                       consentimiento_1581, consentimiento_fecha, consentimiento_version,
-                      consentimiento_registrado_por, acudiente, acudiente_nombre, activo, version, created_at, updated_at;
+                      consentimiento_registrado_por, acudiente, acudiente_nombre, salud, activo, version, created_at, updated_at;
         """)
 
         params = {
@@ -670,6 +672,8 @@ class DeportistasService:
             "acudiente": acudiente_json,
             "acudiente_nom_provided": acudiente_nom is not None,
             "acudiente_nombre": acudiente_nom,
+            "salud_provided": req.salud is not None,
+            "salud": req.salud.model_dump_json() if req.salud else None,
         }
 
         try:
@@ -1388,6 +1392,7 @@ class DeportistasService:
                 correo = NULL,
                 telefono = NULL,
                 acudiente_nombre = NULL,
+                salud = NULL,
                 sexo = NULL,
                 fecha_nacimiento = NULL,
                 altura_cm = NULL,

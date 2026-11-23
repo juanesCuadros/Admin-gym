@@ -4,6 +4,8 @@ import { EstadoDeportistaBadge } from '@web/components/ui/EstadoDeportistaBadge'
 import { formatCOP, formatDocumento, formatFecha } from '@web/utils/formato';
 import { ingresoService } from '../api/ingreso.service';
 import { MensajeError } from '../components/Piezas';
+import { ReciboModal, reciboDeMembresia, reciboDeVenta, type DatosRecibo } from '../components/Recibo';
+import { useSesion } from '../contexts/SesionContext';
 import type { EstadoEstacion } from '../types/estacion.types';
 import type { ClienteEvaluado } from '../types/ingreso.types';
 import { CajaCerradaAviso, Mostrador, useCaja } from './CajaPanel';
@@ -37,6 +39,8 @@ export const MembresiasPage: React.FC<{
   const { estado, errorCarga, cargar } = useCaja();
   const [porCobrar, setPorCobrar] = useState<ClienteEvaluado[]>([]);
   const [elegido, setElegido] = useState<string | null>(clienteInicial);
+  const [recibo, setRecibo] = useState<DatosRecibo | null>(null);
+  const { estacion: est, sesion } = useSesion();
 
   const cargarLista = useCallback(async () => {
     try {
@@ -92,10 +96,12 @@ export const MembresiasPage: React.FC<{
               showToast('success', c.tipo === 'renovacion' ? 'Membresía renovada' : 'Plan vendido',
                 `${c.deportista_nombre} · ${c.plan_nombre} hasta el ${fecha(c.fecha_vencimiento_nueva)}${c.cambio ? ` · cambio ${formatCOP(c.cambio)}` : ''}`);
               setElegido(null);
+              setRecibo(reciboDeMembresia(c));
               void cargar();
               void cargarLista();
             }}
           />
+          <ReciboModal recibo={recibo} gimnasio={est?.gimnasio_nombre ?? 'GymDesk'} atendio={sesion?.usuario?.nombre ?? ''} onCerrar={() => setRecibo(null)} />
         </div>
       </div>
     </div>
@@ -111,6 +117,8 @@ export const VentasPage: React.FC<{ estacion: EstadoEstacion; clienteInicial: st
   const { showToast } = useToast();
   const { estado, errorCarga, cargar } = useCaja();
   const [cliente, setCliente] = useState<ClienteEvaluado | null>(null);
+  const [recibo, setRecibo] = useState<DatosRecibo | null>(null);
+  const { estacion: est, sesion } = useSesion();
   useEffect(() => {
     if (!clienteInicial) return;
     ingresoService.ficha(clienteInicial).then((f) => setCliente(f.cliente)).catch(() => setCliente(null));
@@ -130,9 +138,11 @@ export const VentasPage: React.FC<{ estacion: EstadoEstacion; clienteInicial: st
         onVendida={(v) => {
           showToast('success', 'Venta registrada', v.cambio ? `Total ${formatCOP(v.total)} · cambio ${formatCOP(v.cambio)}` : `Total ${formatCOP(v.total)}`);
           setCliente(null);
+          setRecibo(reciboDeVenta(v));
           void cargar();
         }}
       />
+      <ReciboModal recibo={recibo} gimnasio={est?.gimnasio_nombre ?? 'GymDesk'} atendio={sesion?.usuario?.nombre ?? ''} onCerrar={() => setRecibo(null)} />
     </div>
   );
 };

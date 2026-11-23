@@ -42,6 +42,7 @@ pub fn guardar_registrado(
     usuario: &UsuarioSesion,
     respuesta: &Value,
     foto_data_url: Option<&str>,
+    salud: Option<&Value>,
 ) -> Resultado<ClienteEvaluado> {
     let invalida =
         || ErrorApp::nuevo("RESPUESTA_INVALIDA", "El servidor respondió algo que esta versión de GymDesk no entiende. Actualiza la aplicación.");
@@ -50,8 +51,8 @@ pub fn guardar_registrado(
     let nombre = respuesta["nombre"].as_str().ok_or_else(invalida)?;
     let tx = conn.unchecked_transaction()?;
     tx.execute(
-        "INSERT OR REPLACE INTO deportistas (id, tipo_documento, documento, nombre, activo, eliminado) VALUES (?1, ?2, ?3, ?4, ?5, 0)",
-        params![id, respuesta["tipo_documento"].as_str(), documento, nombre, respuesta["activo"].as_bool().unwrap_or(true)],
+        "INSERT OR REPLACE INTO deportistas (id, tipo_documento, documento, nombre, activo, eliminado, salud) VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6)",
+        params![id, respuesta["tipo_documento"].as_str(), documento, nombre, respuesta["activo"].as_bool().unwrap_or(true), salud.filter(|s| !s.is_null()).map(|s| s.to_string())],
     )?;
     let con_foto = respuesta["con_foto"].as_bool().unwrap_or(false);
     if let (true, Some(foto)) = (con_foto, foto_data_url) {
@@ -119,7 +120,7 @@ pub fn registrar(
 
     // 3. Se guarda en la estación.
     let conn = base.lock().map_err(|_| interno())?;
-    guardar_registrado(&conn, reloj.ahora(), &usuario, &r, foto)
+    guardar_registrado(&conn, reloj.ahora(), &usuario, &r, foto, cliente.get("salud"))
 }
 
 /// Foto del cliente tomada en esta estación, como data URL.
@@ -148,7 +149,7 @@ mod pruebas {
         aplicar_pagina(&conn, ahora(), &pagina("c1", false, json!({ "gimnasio": [fila_gimnasio()] }))).unwrap();
         let foto = "data:image/jpeg;base64,/9j/4AAQ";
         let r = json!({ "id": "nuevo", "tipo_documento": "CC", "documento": "10203040", "nombre": "Pedro Gómez", "activo": true, "con_foto": true });
-        let c = guardar_registrado(&conn, ahora(), &usuario("recepcionista"), &r, Some(foto)).unwrap();
+        let c = guardar_registrado(&conn, ahora(), &usuario("recepcionista"), &r, Some(foto), None).unwrap();
         assert_eq!((c.nombre.as_str(), c.estado, c.abre), ("Pedro Gómez", "sin_membresia", false));
         assert_eq!(c.foto.as_deref(), Some(foto));
         assert_eq!(super::foto(&conn, "nuevo").unwrap().as_deref(), Some(foto));

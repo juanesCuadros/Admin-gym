@@ -120,7 +120,7 @@ export const ClientesPage: React.FC<{
         <div className="gd-chips" role="tablist" aria-label="Filtrar por estado">
           {FILTROS.map((f) => (
             <button key={f.id} role="tab" aria-selected={filtro === f.id} className={filtro === f.id ? 'activa' : ''} onClick={() => { setFiltro(f.id); setLimite(50); }}>
-              {f.etiqueta} <span>{cuenta(f.estados)}</span>
+              {f.etiqueta} {filtro === f.id && pagina && <span>{pagina.total}</span>}
             </button>
           ))}
         </div>
@@ -201,6 +201,19 @@ export const ClientesPage: React.FC<{
                 <div className={`gd-ficha-acceso ${c.abre ? 'si' : 'no'}`}>{c.abre ? 'Puede entrar hoy' : 'No puede entrar hoy'} · {c.mensaje}</div>
               </div>
             </div>
+
+            <h4>Salud y emergencia</h4>
+            {ficha.salud && Object.values(ficha.salud).some(Boolean) ? (
+              <dl className="gd-ficha-salud">
+                {ficha.salud.contacto_emergencia_nombre && (
+                  <div><dt>Contacto de emergencia</dt><dd>{ficha.salud.contacto_emergencia_nombre}{ficha.salud.contacto_emergencia_telefono ? ` · ${ficha.salud.contacto_emergencia_telefono}` : ''}</dd></div>
+                )}
+                {ficha.salud.grupo_sanguineo && <div><dt>Grupo sanguíneo</dt><dd>{ficha.salud.grupo_sanguineo}</dd></div>}
+                {ficha.salud.condiciones && <div className="gd-ficha-condicion"><dt>Condiciones médicas</dt><dd>{ficha.salud.condiciones}</dd></div>}
+              </dl>
+            ) : (
+              <p className="gd-subtitulo" style={{ marginTop: 0 }}>Sin datos registrados. Se agregan desde la web.</p>
+            )}
 
             <h4>Huellas</h4>
             <p className="gd-subtitulo" style={{ marginTop: 0 }}>

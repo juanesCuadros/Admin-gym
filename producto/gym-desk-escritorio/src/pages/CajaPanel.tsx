@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@web/components/ui/Badge';
 import { Button } from '@web/components/ui/Button';
-import { Input, Select, Textarea } from '@web/components/ui/Input';
+import { Input, Textarea } from '@web/components/ui/Input';
 import { ConfirmDialog, Modal } from '@web/components/ui/Modal';
 import { filasIniciales, mediosDeFilas, PagoDividido, repartoCompleto, efectivoDeFilas, type FilaMedio } from '@web/components/ui/PagoDividido';
 import { useToast } from '@web/contexts/ToastContext';
@@ -23,6 +23,8 @@ import { formatCOP, formatDocumento, formatHora } from '@web/utils/formato';
 import { cajaService } from '../api/caja.service';
 import { ingresoService } from '../api/ingreso.service';
 import { aErrorGymDesk } from '../api/tauri';
+import { EfectivoRapido } from '../components/EfectivoRapido';
+import { MediosPago } from '../components/MediosPago';
 import { MensajeError } from '../components/Piezas';
 import { useEnvio } from '../hooks/useEnvio';
 import type { EstadoCaja, MovimientoCaja, NuevoItem, ProductoVenta, ResumenTurno, TipoLinea, VentaRegistrada } from '../types/caja.types';
@@ -513,17 +515,10 @@ export const Mostrador: React.FC<{
             <Button variant="ghost" size="sm" onClick={() => setFilasMedio(null)}>Pagar con un solo medio</Button>
           </>
         ) : (
-          <div className="gd-medio">
-            <Select label="Medio de pago" value={metodo} onChange={(e) => setMetodo(e.target.value)} options={mostrador.metodos_pago.map((m) => ({ value: m, label: m }))} />
-            <Button variant="ghost" size="sm" leftIcon={<Plus size={14} />} onClick={() => setFilasMedio(filasIniciales(mostrador.metodos_pago))}>
-              Pago mixto
-            </Button>
-          </div>
+          <MediosPago metodos={mostrador.metodos_pago} valor={metodo} onCambio={setMetodo} disabled={envio.enviando}
+                      onMixto={() => setFilasMedio(filasIniciales(mostrador.metodos_pago))} />
         )}
-        {enEfectivo > 0 && (
-          <Input id="caja-recibido" label={`Efectivo recibido (a cobrar en efectivo: ${formatCOP(enEfectivo)})`} moneda value={recibido} onChange={(e) => setRecibido(e.target.value)} />
-        )}
-        {cambio !== null && cambio >= 0 && <p className="gd-cambio">Cambio: <strong>{formatCOP(cambio)}</strong></p>}
+        {enEfectivo > 0 && lineas.length > 0 && <EfectivoRapido aCobrar={enEfectivo} recibido={recibido} onRecibido={setRecibido} />}
         {envio.error && <MensajeError>{envio.error}</MensajeError>}
         {problema && lineas.length > 0 && <p className="gd-pista">{problema}</p>}
         <Button style={{ width: '100%', marginTop: 8 }} isLoading={envio.enviando} disabled={problema !== null} onClick={() => setConfirmando(true)}>
