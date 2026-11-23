@@ -23,6 +23,12 @@ export const gastosService = {
     return res.data;
   },
 
+  /** Anula con motivo. Si salió en efectivo, el dinero vuelve al turno abierto. La clave evita anular dos veces. */
+  async anular(gastoId: string, motivo: string, clave: string): Promise<Gasto> {
+    const res = await apiClient.post<Gasto>(`/gastos/${gastoId}/anular`, { motivo }, { headers: { 'X-Idempotency-Key': clave } });
+    return res.data;
+  },
+
   async beneficiarios(): Promise<BeneficiarioStaff[]> {
     const res = await apiClient.get<BeneficiarioStaff[]>('/gastos/beneficiarios');
     return res.data;
