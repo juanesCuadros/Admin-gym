@@ -408,6 +408,29 @@ pub fn caja_productos(estado: State<'_, EstadoApp>, texto: String) -> Resultado<
     })
 }
 
+/// Qué se le puede cobrar a un cliente: renovar su membresía o venderle un plan (fase 3B).
+#[tauri::command]
+pub fn caja_opciones_membresia(estado: State<'_, EstadoApp>, deportista_id: String) -> Resultado<caja::membresias::OpcionesMembresia> {
+    estado.con_base(|conn, sesion, ahora| {
+        sesion.exigir_activa(conn, ahora)?;
+        caja::membresias::opciones(conn, &deportista_id, fecha_negocio(ahora))
+    })
+}
+
+#[tauri::command]
+pub fn caja_cobrar_membresia(
+    estado: State<'_, EstadoApp>,
+    cobro: caja::membresias::NuevoCobroMembresia,
+) -> Resultado<caja::membresias::CobroMembresiaRegistrado> {
+    let registrado = estado.con_base(|conn, sesion, ahora| {
+        let usuario = sesion.exigir_activa(conn, ahora)?;
+        exigir_operable(conn, ahora)?;
+        caja::membresias::cobrar(conn, ahora, &usuario, &cobro)
+    })?;
+    estado.despertar();
+    Ok(registrado)
+}
+
 #[tauri::command]
 pub fn caja_registrar_venta(estado: State<'_, EstadoApp>, venta: caja::NuevaVenta) -> Resultado<caja::VentaRegistrada> {
     let registrada = estado.con_base(|conn, sesion, ahora| {

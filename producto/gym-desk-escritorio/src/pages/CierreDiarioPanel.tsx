@@ -60,8 +60,8 @@ export const CierreDiarioPanel: React.FC = () => {
             )}
             <dl className="gd-caja-cifras">
               <div><dt>Bases</dt><dd>{formatCOP(t.base_inicial)}</dd></div>
-              <div><dt>Efectivo cobrado</dt><dd>{formatCOP(t.ventas_efectivo)}</dd></div>
-              <div><dt>Otros medios</dt><dd>{formatCOP(t.ventas_otro)}</dd></div>
+              <div><dt>Efectivo cobrado</dt><dd>{formatCOP(t.ventas_efectivo + t.membresias_efectivo)}</dd></div>
+              <div><dt>Otros medios</dt><dd>{formatCOP(t.ventas_otro + t.membresias_otro)}</dd></div>
               <div><dt>Egresos</dt><dd>−{formatCOP(t.egresos_efectivo)}</dd></div>
               <div className="gd-caja-esperado"><dt>Efectivo esperado</dt><dd>{formatCOP(t.total_esperado_efectivo)}</dd></div>
             </dl>
@@ -74,6 +74,7 @@ export const CierreDiarioPanel: React.FC = () => {
                     <div key={`${p.metodo}-${p.tipo_medio}`}><dt>{p.metodo}</dt><dd>{formatCOP(p.monto)}</dd></div>
                   ))}
                   <div><dt>Ventas</dt><dd>{t.num_ventas}</dd></div>
+                  <div><dt>Membresías</dt><dd>{t.num_membresias}</dd></div>
                   <div><dt>Egresos</dt><dd>{t.num_egresos}</dd></div>
                 </dl>
               </div>

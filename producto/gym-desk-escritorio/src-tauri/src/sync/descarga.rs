@@ -167,12 +167,13 @@ pub fn aplicar_pagina(conn: &Connection, ahora: DateTime<Utc>, r: &Value) -> Res
     }
     for m in filas(r, "membresias") {
         tx.execute(
-            "INSERT OR REPLACE INTO membresias (id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT OR REPLACE INTO membresias (id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, cancelada, created_at,
+               plan_precio_vendido)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 obligatorio(m, "id")?, obligatorio(m, "deportista_id")?, obligatorio(m, "plan_id")?,
                 obligatorio(m, "fecha_inicio")?, obligatorio(m, "fecha_vencimiento")?, booleano(m, "cancelada"),
-                instante_normalizado(m, "created_at"),
+                instante_normalizado(m, "created_at"), m["plan_precio_vendido"].as_i64(),
             ],
         )?;
         total += 1;
@@ -192,6 +193,9 @@ pub fn aplicar_pagina(conn: &Connection, ahora: DateTime<Utc>, r: &Value) -> Res
         )?;
         total += 1;
     }
+    // Lo cobrado aquí que aún no llegó al servidor no se deshace con la descarga.
+    crate::caja::membresias::reaplicar_sin_subir(&tx)?;
+
     // Un pase de día solo sirve el día en que se pagó: los viejos ya no hacen falta.
     tx.execute("DELETE FROM pases_dia WHERE created_at < ?1", [a_texto(ahora - chrono::Duration::days(3))])?;
 

@@ -19,8 +19,11 @@ use crate::reloj::{a_texto, fecha_negocio};
 use crate::sesion::UsuarioSesion;
 use crate::sync::outbox;
 
+pub mod membresias;
 #[cfg(test)]
 mod pruebas;
+#[cfg(test)]
+mod pruebas_membresias;
 #[cfg(test)]
 mod prueba_dia_sin_red;
 
@@ -100,9 +103,13 @@ pub struct Totales {
     pub base_inicial: i64,
     pub ventas_efectivo: i64,
     pub ventas_otro: i64,
+    /// Ventas y renovaciones de membresía (fase 3B).
+    pub membresias_efectivo: i64,
+    pub membresias_otro: i64,
     pub egresos_efectivo: i64,
     pub total_esperado_efectivo: i64,
     pub num_ventas: i64,
+    pub num_membresias: i64,
     pub num_egresos: i64,
     pub por_metodo: Vec<PorMetodo>,
 }
@@ -153,29 +160,43 @@ fn exigir_turno_abierto(conn: &Connection) -> Resultado<TurnoLocal> {
 /// Totales de un turno, igual que los calcula el servidor.
 pub fn totales(conn: &Connection, turno_id: &str) -> Resultado<Totales> {
     let base: i64 = conn.query_row("SELECT base_inicial FROM caja_turnos WHERE id = ?1", [turno_id], |f| f.get(0))?;
-    let (num_ventas, num_egresos, egresos): (i64, i64, i64) = conn.query_row(
+    let (num_ventas, num_membresias, num_egresos, egresos): (i64, i64, i64, i64) = conn.query_row(
         "SELECT (SELECT count(*) FROM caja_ventas WHERE turno_id = ?1),
+                (SELECT count(*) FROM caja_pagos_membresia WHERE turno_id = ?1),
                 (SELECT count(*) FROM caja_egresos WHERE turno_id = ?1),
                 (SELECT coalesce(sum(monto), 0) FROM caja_egresos WHERE turno_id = ?1)",
         [turno_id],
-        |f| Ok((f.get(0)?, f.get(1)?, f.get(2)?)),
+        |f| Ok((f.get(0)?, f.get(1)?, f.get(2)?, f.get(3)?)),
     )?;
-    // Cada peso con su medio: la venta de un solo medio, o cada parte de un pago mixto.
+    // Cada peso con su medio: el cobro de un solo medio, o cada parte de un pago mixto.
+    // La primera columna dice de dónde viene: 'v' venta de mostrador, 'm' membresía.
     let mut por_metodo: BTreeMap<(String, String), i64> = BTreeMap::new();
+    let (mut ventas_efectivo, mut ventas_otro, mut membresias_efectivo, mut membresias_otro) = (0, 0, 0, 0);
     {
         let mut stmt = conn.prepare(
-            "SELECT metodo, tipo_medio, total FROM caja_ventas WHERE turno_id = ?1 AND tipo_medio <> 'mixto'
+            "SELECT 'v', metodo, tipo_medio, total FROM caja_ventas WHERE turno_id = ?1 AND tipo_medio <> 'mixto'
              UNION ALL
-             SELECT m.metodo, m.tipo_medio, m.monto FROM caja_venta_medios m JOIN caja_ventas v ON v.id = m.venta_id WHERE v.turno_id = ?1",
+             SELECT 'v', m.metodo, m.tipo_medio, m.monto FROM caja_venta_medios m JOIN caja_ventas v ON v.id = m.venta_id WHERE v.turno_id = ?1
+             UNION ALL
+             SELECT 'm', metodo, tipo_medio, precio_cobrado FROM caja_pagos_membresia WHERE turno_id = ?1 AND tipo_medio <> 'mixto'
+             UNION ALL
+             SELECT 'm', m.metodo, m.tipo_medio, m.monto FROM caja_pago_membresia_medios m JOIN caja_pagos_membresia p ON p.id = m.pago_id
+             WHERE p.turno_id = ?1",
         )?;
-        let filas = stmt.query_map([turno_id], |f| Ok((f.get::<_, String>(0)?, f.get::<_, String>(1)?, f.get::<_, i64>(2)?)))?;
+        let filas = stmt.query_map([turno_id], |f| {
+            Ok((f.get::<_, String>(0)?, f.get::<_, String>(1)?, f.get::<_, String>(2)?, f.get::<_, i64>(3)?))
+        })?;
         for fila in filas {
-            let (metodo, tipo, monto) = fila?;
+            let (origen, metodo, tipo, monto) = fila?;
+            match (origen.as_str(), tipo.as_str()) {
+                ("v", "efectivo") => ventas_efectivo += monto,
+                ("v", _) => ventas_otro += monto,
+                (_, "efectivo") => membresias_efectivo += monto,
+                _ => membresias_otro += monto,
+            }
             *por_metodo.entry((metodo, tipo)).or_default() += monto;
         }
     }
-    let ventas_efectivo = por_metodo.iter().filter(|((_, t), _)| t == "efectivo").map(|(_, m)| m).sum();
-    let ventas_otro = por_metodo.iter().filter(|((_, t), _)| t == "otro").map(|(_, m)| m).sum();
     let mut por_metodo: Vec<PorMetodo> =
         por_metodo.into_iter().map(|((metodo, tipo_medio), monto)| PorMetodo { metodo, tipo_medio, monto }).collect();
     por_metodo.sort_by(|a, b| b.monto.cmp(&a.monto).then(a.metodo.cmp(&b.metodo)));
@@ -183,9 +204,12 @@ pub fn totales(conn: &Connection, turno_id: &str) -> Resultado<Totales> {
         base_inicial: base,
         ventas_efectivo,
         ventas_otro,
+        membresias_efectivo,
+        membresias_otro,
         egresos_efectivo: egresos,
-        total_esperado_efectivo: base + ventas_efectivo - egresos,
+        total_esperado_efectivo: base + ventas_efectivo + membresias_efectivo - egresos,
         num_ventas,
+        num_membresias,
         num_egresos,
         por_metodo,
     })
@@ -461,6 +485,90 @@ fn descuento_centesimas(lista: i64, cobrado: i64) -> i64 {
     ((lista - cobrado) * 10_000 * 2 + lista) / (lista * 2)
 }
 
+/// Regla de descuento de la web (GW-RF-53) con lo descargado. Devuelve el motivo si hay descuento.
+fn validar_descuento(g: &Gimnasio, puede_descontar: bool, lista: i64, cobrado: i64, motivo: Option<&str>) -> Resultado<Option<String>> {
+    if cobrado >= lista {
+        return Ok(None);
+    }
+    if !g.permitir_descuentos {
+        return Err(error("DESCUENTOS_DESHABILITADOS", "Los descuentos están deshabilitados en este gimnasio."));
+    }
+    if !puede_descontar {
+        return Err(error("SIN_PERMISO_DESCUENTO", "No tienes permiso para dar descuentos en caja."));
+    }
+    let m = motivo.map(str::trim).unwrap_or("");
+    if m.chars().count() < MOTIVO_MINIMO {
+        return Err(error("MOTIVO_DESCUENTO_REQUERIDO", "Escribe el motivo del descuento (mínimo 4 letras)."));
+    }
+    if m.chars().count() > 255 {
+        return Err(error("MOTIVO_MUY_LARGO", "El motivo no puede pasar de 255 letras."));
+    }
+    if descuento_centesimas(lista, cobrado) > g.tope_descuento_pct * 100 {
+        return Err(ErrorApp::con_detalles(
+            "DESCUENTO_SUPERA_TOPE",
+            &format!("El descuento supera el tope del gimnasio ({} %).", g.tope_descuento_pct),
+            json!({ "tope_pct": g.tope_descuento_pct }),
+        ));
+    }
+    Ok(Some(m.to_string()))
+}
+
+/// Cómo se pagó un cobro: un medio, o el reparto de un pago mixto, y el cambio del efectivo.
+struct Cobro {
+    tipo_medio: String,
+    metodo: String,
+    pagos: Vec<PorMetodo>,
+    valor_recibido: Option<i64>,
+    cambio: Option<i64>,
+}
+
+fn resolver_cobro(metodo: Option<&str>, pagos: Option<&[NuevoMedio]>, total: i64, valor_recibido: Option<i64>) -> Resultado<Cobro> {
+    let (tipo_medio, metodo, pagos): (String, String, Vec<PorMetodo>) = match pagos.filter(|p| !p.is_empty()) {
+        Some(pagos) => {
+            if pagos.len() < 2 || pagos.len() > 5 {
+                return Err(error("MEDIOS_INVALIDOS", "Un pago mixto se reparte entre 2 y 5 medios."));
+            }
+            let mut lista = Vec::new();
+            for p in pagos {
+                if p.metodo.trim().chars().count() < 2 || p.monto <= 0 {
+                    return Err(error("MEDIOS_INVALIDOS", "Cada medio del pago mixto necesita su nombre y un valor mayor que cero."));
+                }
+                lista.push(PorMetodo { metodo: p.metodo.trim().to_string(), tipo_medio: tipo_medio_de(&p.metodo).into(), monto: p.monto });
+            }
+            let suma: i64 = lista.iter().map(|p| p.monto).sum();
+            if suma != total {
+                return Err(error("MEDIOS_NO_SUMAN_TOTAL", "Los medios de pago no suman el total a cobrar."));
+            }
+            ("mixto".into(), "mixto".into(), lista)
+        }
+        None => {
+            let metodo = metodo.map(str::trim).filter(|m| m.chars().count() >= 2).ok_or_else(|| {
+                error("METODO_REQUERIDO", "Elige el medio de pago.")
+            })?;
+            (tipo_medio_de(metodo).into(), metodo.to_string(), vec![])
+        }
+    };
+    let en_efectivo = if tipo_medio == "mixto" {
+        pagos.iter().filter(|p| p.tipo_medio == "efectivo").map(|p| p.monto).sum()
+    } else if tipo_medio == "efectivo" {
+        total
+    } else {
+        0
+    };
+    let valor_recibido = valor_recibido.filter(|_| en_efectivo > 0);
+    let cambio = match valor_recibido {
+        Some(v) if v < en_efectivo => {
+            return Err(error("PAGO_INSUFICIENTE", "El efectivo recibido es menor que lo que se cobra en efectivo."))
+        }
+        Some(v) => {
+            monto_valido(v, "el efectivo recibido")?;
+            Some(v - en_efectivo)
+        }
+        None => None,
+    };
+    Ok(Cobro { tipo_medio, metodo, pagos, valor_recibido, cambio })
+}
+
 pub fn registrar_venta(conn: &Connection, ahora: DateTime<Utc>, usuario: &UsuarioSesion, venta: &NuevaVenta) -> Resultado<VentaRegistrada> {
     exigir_permiso_caja(conn, usuario)?;
     let turno = exigir_turno_abierto(conn)?;
@@ -521,31 +629,7 @@ pub fn registrar_venta(conn: &Connection, ahora: DateTime<Utc>, usuario: &Usuari
         };
         let cobrado = it.precio_cobrado.unwrap_or(precio_lista);
         monto_valido(cobrado, "el precio cobrado")?;
-        let mut motivo = None;
-        if cobrado < precio_lista {
-            // Misma regla que la web (GW-RF-53), con lo descargado.
-            if !g.permitir_descuentos {
-                return Err(error("DESCUENTOS_DESHABILITADOS", "Los descuentos están deshabilitados en este gimnasio."));
-            }
-            if !puede_descontar {
-                return Err(error("SIN_PERMISO_DESCUENTO", "No tienes permiso para dar descuentos en caja."));
-            }
-            let m = it.motivo_descuento.as_deref().map(str::trim).unwrap_or("");
-            if m.chars().count() < MOTIVO_MINIMO {
-                return Err(error("MOTIVO_DESCUENTO_REQUERIDO", "Escribe el motivo del descuento (mínimo 4 letras)."));
-            }
-            if m.chars().count() > 255 {
-                return Err(error("MOTIVO_MUY_LARGO", "El motivo no puede pasar de 255 letras."));
-            }
-            if descuento_centesimas(precio_lista, cobrado) > g.tope_descuento_pct * 100 {
-                return Err(ErrorApp::con_detalles(
-                    "DESCUENTO_SUPERA_TOPE",
-                    &format!("El descuento supera el tope del gimnasio ({} %).", g.tope_descuento_pct),
-                    json!({ "tope_pct": g.tope_descuento_pct }),
-                ));
-            }
-            motivo = Some(m.to_string());
-        }
+        let motivo = validar_descuento(&g, puede_descontar, precio_lista, cobrado, it.motivo_descuento.as_deref())?;
         items.push(ItemVendido {
             tipo: it.tipo.clone(),
             producto_id,
@@ -570,50 +654,8 @@ pub fn registrar_venta(conn: &Connection, ahora: DateTime<Utc>, usuario: &Usuari
         return Err(error("MONTO_INVALIDO", "El total de la venta supera 100.000.000."));
     }
 
-    // Medios de pago
-    let (tipo_medio, metodo, pagos): (String, String, Vec<PorMetodo>) = match venta.pagos.as_ref().filter(|p| !p.is_empty()) {
-        Some(pagos) => {
-            if pagos.len() < 2 || pagos.len() > 5 {
-                return Err(error("MEDIOS_INVALIDOS", "Un pago mixto se reparte entre 2 y 5 medios."));
-            }
-            let mut lista = Vec::new();
-            for p in pagos {
-                if p.metodo.trim().chars().count() < 2 || p.monto <= 0 {
-                    return Err(error("MEDIOS_INVALIDOS", "Cada medio del pago mixto necesita su nombre y un valor mayor que cero."));
-                }
-                lista.push(PorMetodo { metodo: p.metodo.trim().to_string(), tipo_medio: tipo_medio_de(&p.metodo).into(), monto: p.monto });
-            }
-            let suma: i64 = lista.iter().map(|p| p.monto).sum();
-            if suma != total {
-                return Err(error("MEDIOS_NO_SUMAN_TOTAL", "Los medios de pago no suman el total a cobrar."));
-            }
-            ("mixto".into(), "mixto".into(), lista)
-        }
-        None => {
-            let metodo = venta.metodo.as_deref().map(str::trim).filter(|m| m.chars().count() >= 2).ok_or_else(|| {
-                error("METODO_REQUERIDO", "Elige el medio de pago.")
-            })?;
-            (tipo_medio_de(metodo).into(), metodo.to_string(), vec![])
-        }
-    };
-    let en_efectivo = if tipo_medio == "mixto" {
-        pagos.iter().filter(|p| p.tipo_medio == "efectivo").map(|p| p.monto).sum()
-    } else if tipo_medio == "efectivo" {
-        total
-    } else {
-        0
-    };
-    let valor_recibido = venta.valor_recibido.filter(|_| en_efectivo > 0);
-    let cambio = match valor_recibido {
-        Some(v) if v < en_efectivo => {
-            return Err(error("PAGO_INSUFICIENTE", "El efectivo recibido es menor que lo que se cobra en efectivo."))
-        }
-        Some(v) => {
-            monto_valido(v, "el efectivo recibido")?;
-            Some(v - en_efectivo)
-        }
-        None => None,
-    };
+    let Cobro { tipo_medio, metodo, pagos, valor_recibido, cambio } =
+        resolver_cobro(venta.metodo.as_deref(), venta.pagos.as_deref(), total, venta.valor_recibido)?;
 
     let ts = a_texto(ahora);
     let tx = conn.unchecked_transaction()?;
@@ -778,6 +820,14 @@ pub fn movimientos(conn: &Connection, turno_id: &str) -> Resultado<Vec<Movimient
          FROM caja_ventas v JOIN sync_outbox o ON o.id = v.id LEFT JOIN staff_local s ON s.id = v.staff_id
          WHERE v.turno_id = ?1
          UNION ALL
+         SELECT p.id, 'membresia', p.ocurrida_en,
+                CASE p.tipo WHEN 'venta' THEN 'Venta de plan ' ELSE 'Renovación ' END || p.plan_nombre || ' · ' || p.deportista_nombre,
+                CASE WHEN p.tipo_medio = 'mixto'
+                     THEN (SELECT group_concat(m.metodo, ' + ') FROM caja_pago_membresia_medios m WHERE m.pago_id = p.id) ELSE p.metodo END,
+                p.precio_cobrado, s.nombre, o.estado
+         FROM caja_pagos_membresia p JOIN sync_outbox o ON o.id = p.id LEFT JOIN staff_local s ON s.id = p.staff_id
+         WHERE p.turno_id = ?1
+         UNION ALL
          SELECT e.id, 'egreso', e.ocurrido_en, e.motivo, 'Efectivo', -e.monto, s.nombre, o.estado
          FROM caja_egresos e JOIN sync_outbox o ON o.id = e.id LEFT JOIN staff_local s ON s.id = e.staff_id
          WHERE e.turno_id = ?1
@@ -828,9 +878,12 @@ pub fn cierre_diario(conn: &Connection, fecha: NaiveDate) -> Resultado<CierreDia
         t.base_inicial += r.totales.base_inicial;
         t.ventas_efectivo += r.totales.ventas_efectivo;
         t.ventas_otro += r.totales.ventas_otro;
+        t.membresias_efectivo += r.totales.membresias_efectivo;
+        t.membresias_otro += r.totales.membresias_otro;
         t.egresos_efectivo += r.totales.egresos_efectivo;
         t.total_esperado_efectivo += r.totales.total_esperado_efectivo;
         t.num_ventas += r.totales.num_ventas;
+        t.num_membresias += r.totales.num_membresias;
         t.num_egresos += r.totales.num_egresos;
         for p in &r.totales.por_metodo {
             *por_metodo.entry((p.metodo.clone(), p.tipo_medio.clone())).or_default() += p.monto;
@@ -850,6 +903,7 @@ pub fn cierre_diario(conn: &Connection, fecha: NaiveDate) -> Resultado<CierreDia
             "SELECT count(*) FROM sync_outbox o
              WHERE o.estado IN {SIN_SUBIR} AND o.id IN (
                SELECT v.id FROM caja_ventas v JOIN caja_turnos t ON t.id = v.turno_id WHERE t.fecha_negocio = ?1
+               UNION ALL SELECT p.id FROM caja_pagos_membresia p JOIN caja_turnos t ON t.id = p.turno_id WHERE t.fecha_negocio = ?1
                UNION ALL SELECT e.id FROM caja_egresos e JOIN caja_turnos t ON t.id = e.turno_id WHERE t.fecha_negocio = ?1)"
         ),
         [fecha.to_string()],

@@ -19,7 +19,7 @@ import { Input, Select, Textarea } from '@web/components/ui/Input';
 import { ConfirmDialog, Modal } from '@web/components/ui/Modal';
 import { filasIniciales, mediosDeFilas, PagoDividido, repartoCompleto, efectivoDeFilas, type FilaMedio } from '@web/components/ui/PagoDividido';
 import { useToast } from '@web/contexts/ToastContext';
-import { formatCOP, formatDocumento, formatHora } from '@web/utils/formato';
+import { formatCOP, formatDocumento, formatFecha, formatHora } from '@web/utils/formato';
 import { cajaService } from '../api/caja.service';
 import { ingresoService } from '../api/ingreso.service';
 import { aErrorGymDesk } from '../api/tauri';
@@ -28,6 +28,7 @@ import { useEnvio } from '../hooks/useEnvio';
 import type { EstadoCaja, MovimientoCaja, NuevoItem, ProductoVenta, ResumenTurno, TipoLinea, VentaRegistrada } from '../types/caja.types';
 import type { ClienteEvaluado } from '../types/ingreso.types';
 import { CierreDiarioPanel } from './CierreDiarioPanel';
+import { MembresiasCaja } from './MembresiasCaja';
 
 const MOTIVO_MINIMO = 4;
 
@@ -62,8 +63,13 @@ const ENVIO: Record<string, { texto: string; tono: 'success' | 'warning' | 'dang
 const precioDe = (l: Linea) => l.precioLista ?? entero(l.precioEscrito) ?? 0;
 const cobradoDe = (l: Linea) => entero(l.precioCobrado) ?? precioDe(l);
 
-/** Caja de la estación: turno con arqueo, venta de mostrador y egresos. Funciona con red o sin ella. */
-export const CajaPanel: React.FC<{ enLinea: boolean }> = ({ enLinea }) => {
+/** Caja de la estación: turno con arqueo, membresías, venta de mostrador y egresos. Funciona con red o sin ella. */
+export const CajaPanel: React.FC<{
+  enLinea: boolean;
+  /** Cliente que llega desde Control de ingreso para renovarle o venderle un plan. */
+  clienteParaCobrar?: string | null;
+  onClienteUsado?: () => void;
+}> = ({ enLinea, clienteParaCobrar, onClienteUsado }) => {
   const { showToast } = useToast();
   const [estado, setEstado] = useState<EstadoCaja | null>(null);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
@@ -104,7 +110,14 @@ export const CajaPanel: React.FC<{ enLinea: boolean }> = ({ enLinea }) => {
       {vista === 'cierre' ? (
         <CierreDiarioPanel />
       ) : estado.turno ? (
-        <TurnoAbierto estado={estado} turno={estado.turno} movimientos={movimientos} onCambio={cargar} />
+        <TurnoAbierto
+          estado={estado}
+          turno={estado.turno}
+          movimientos={movimientos}
+          onCambio={cargar}
+          clienteInicial={clienteParaCobrar}
+          onClienteInicialUsado={onClienteUsado}
+        />
       ) : (
         <AbrirCaja puedeOperar={estado.mostrador.puede_operar} enLinea={enLinea} onAbierta={(sinConfirmar) => {
           showToast(
@@ -180,12 +193,14 @@ const AbrirCaja: React.FC<{ puedeOperar: boolean; enLinea: boolean; onAbierta: (
 // ---------------------------------------------------------------------------
 // Turno abierto
 // ---------------------------------------------------------------------------
-const TurnoAbierto: React.FC<{ estado: EstadoCaja; turno: ResumenTurno; movimientos: MovimientoCaja[]; onCambio: () => Promise<void> }> = ({
-  estado,
-  turno,
-  movimientos,
-  onCambio,
-}) => {
+const TurnoAbierto: React.FC<{
+  estado: EstadoCaja;
+  turno: ResumenTurno;
+  movimientos: MovimientoCaja[];
+  onCambio: () => Promise<void>;
+  clienteInicial?: string | null;
+  onClienteInicialUsado?: () => void;
+}> = ({ estado, turno, movimientos, onCambio, clienteInicial, onClienteInicialUsado }) => {
   const { showToast } = useToast();
   const t = turno.totales;
   const [egresoAbierto, setEgresoAbierto] = useState(false);
@@ -220,12 +235,26 @@ const TurnoAbierto: React.FC<{ estado: EstadoCaja; turno: ResumenTurno; movimien
         </div>
         <dl className="gd-caja-cifras">
           <div><dt>Base</dt><dd>{formatCOP(t.base_inicial)}</dd></div>
-          <div><dt>Efectivo cobrado</dt><dd>{formatCOP(t.ventas_efectivo)}</dd></div>
-          <div><dt>Otros medios</dt><dd>{formatCOP(t.ventas_otro)}</dd></div>
+          <div><dt>Efectivo cobrado</dt><dd>{formatCOP(t.ventas_efectivo + t.membresias_efectivo)}</dd></div>
+          <div><dt>Otros medios</dt><dd>{formatCOP(t.ventas_otro + t.membresias_otro)}</dd></div>
           <div><dt>Egresos</dt><dd>−{formatCOP(t.egresos_efectivo)}</dd></div>
           <div className="gd-caja-esperado"><dt>Efectivo esperado</dt><dd>{formatCOP(t.total_esperado_efectivo)}</dd></div>
         </dl>
       </section>
+
+      <MembresiasCaja
+        mostrador={estado.mostrador}
+        clienteInicial={clienteInicial}
+        onClienteInicialUsado={onClienteInicialUsado}
+        onCobrado={(c) => {
+          showToast(
+            'success',
+            c.tipo === 'renovacion' ? 'Membresía renovada' : 'Plan vendido',
+            `${c.deportista_nombre} · ${c.plan_nombre} hasta el ${formatFecha(`${c.fecha_vencimiento_nueva}T12:00:00-05:00`)}${c.cambio ? ` · cambio ${formatCOP(c.cambio)}` : ''}`
+          );
+          void onCambio();
+        }}
+      />
 
       <Mostrador mostrador={estado.mostrador} onVendida={(v) => {
         showToast('success', 'Venta registrada', v.cambio ? `Total ${formatCOP(v.total)} · cambio ${formatCOP(v.cambio)}` : `Total ${formatCOP(v.total)}`);
@@ -245,7 +274,7 @@ const TurnoAbierto: React.FC<{ estado: EstadoCaja; turno: ResumenTurno; movimien
               {movimientos.map((m) => (
                 <tr key={m.id}>
                   <td>{formatHora(m.ocurrido_en)}</td>
-                  <td>{m.tipo === 'venta' ? 'Venta' : 'Egreso'}</td>
+                  <td>{m.tipo === 'venta' ? 'Venta' : m.tipo === 'membresia' ? 'Membresía' : 'Egreso'}</td>
                   <td>{m.concepto}</td>
                   <td>{m.metodo}</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: m.monto < 0 ? 'var(--danger)' : undefined }}>

@@ -82,6 +82,9 @@ fn un_dia_de_caja_sin_red_queda_igual_en_el_servidor() {
     let agua = entorno("GYMDESK_PRUEBA_AGUA");
     let barra = entorno("GYMDESK_PRUEBA_BARRA");
     let salida = entorno("GYMDESK_PRUEBA_SALIDA");
+    let socio = entorno("GYMDESK_PRUEBA_SOCIO");
+    let socio_nuevo = entorno("GYMDESK_PRUEBA_SOCIO_NUEVO");
+    let doc_nuevo = entorno("GYMDESK_PRUEBA_DOC_NUEVO");
 
     let dir = tempfile::tempdir().unwrap();
     let inicio = Utc::now() - Duration::hours(12);
@@ -158,6 +161,27 @@ fn un_dia_de_caja_sin_red_queda_igual_en_el_servidor() {
         reloj.avanzar(Duration::minutes(1));
         let entra = registrar_ingreso(&conn, reloj.ahora(), &yo, Objetivo::Documento(&documento), "manual").unwrap();
         assert!(entra.abre, "el pase de día vendido en la estación deja entrar de inmediato");
+
+        // Fase 3B: renovar a un socio (al precio al que compró) y venderle un plan a otro, que entra de una vez.
+        use crate::caja::membresias::{cobrar, NuevoCobroMembresia};
+        reloj.avanzar(Duration::minutes(5));
+        let renovacion = cobrar(&conn, reloj.ahora(), &yo, &NuevoCobroMembresia {
+            deportista_id: socio.clone(), accion: "renovar".into(), plan_id: None, precio_cobrado: None, motivo_descuento: None,
+            metodo: Some("Efectivo".into()), pagos: None, valor_recibido: Some(100_000),
+        })
+        .expect("renovar sin red");
+        assert_eq!((renovacion.precio_cobrado, renovacion.cambio), (70_000, Some(30_000)));
+        reloj.avanzar(Duration::minutes(5));
+        let plan = crate::caja::membresias::opciones(&conn, &socio_nuevo, crate::reloj::fecha_negocio(reloj.ahora())).unwrap().planes[0].id.clone();
+        cobrar(&conn, reloj.ahora(), &yo, &NuevoCobroMembresia {
+            deportista_id: socio_nuevo.clone(), accion: "vender".into(), plan_id: Some(plan), precio_cobrado: None, motivo_descuento: None,
+            metodo: None, pagos: Some(vec![NuevoMedio { metodo: "Efectivo".into(), monto: 30_000 }, NuevoMedio { metodo: "Nequi".into(), monto: 50_000 }]),
+            valor_recibido: Some(30_000),
+        })
+        .expect("vender plan sin red");
+        reloj.avanzar(Duration::minutes(1));
+        let entra = registrar_ingreso(&conn, reloj.ahora(), &yo, Objetivo::Documento(&doc_nuevo), "manual").unwrap();
+        assert!(entra.abre, "el plan vendido en la estación deja entrar de inmediato");
 
         // La barra que en el servidor ya no hay.
         vender(vec![producto(&barra, 1)], "Efectivo", Some(5_000), None, None);
@@ -243,6 +267,11 @@ fn un_dia_de_caja_sin_red_queda_igual_en_el_servidor() {
         .map(|p| (p.id, json!(p.disponible)))
         .collect::<serde_json::Map<_, _>>()
         .into();
+    let vencimientos: Value = {
+        let mut stmt = conn.prepare("SELECT id, fecha_vencimiento FROM membresias WHERE deportista_id IN (?1, ?2)").unwrap();
+        let filas = stmt.query_map([&socio, &socio_nuevo], |f| Ok((f.get::<_, String>(0)?, f.get::<_, String>(1)?))).unwrap();
+        filas.map(|f| f.unwrap()).map(|(id, v)| (id, json!(v))).collect::<serde_json::Map<_, _>>().into()
+    };
     let informe = json!({
         "turno_estacion": turno.id,
         "turno_web": turno_web["id"],
@@ -255,6 +284,7 @@ fn un_dia_de_caja_sin_red_queda_igual_en_el_servidor() {
         "stock": stock,
         "disponible": disponibles,
         "en_cola_al_reconectar": pendientes,
+        "vencimientos": vencimientos,
         "auditoria_local_integra": crate::auditoria::primera_fila_alterada(&conn).unwrap().is_none(),
     });
     std::fs::write(&salida, serde_json::to_string_pretty(&informe).unwrap()).unwrap();

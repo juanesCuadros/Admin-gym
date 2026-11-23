@@ -1,6 +1,9 @@
 import type {
   CierreDiario,
+  CobroMembresiaRegistrado,
   EgresoRegistrado,
+  NuevoCobroMembresia,
+  OpcionesMembresia,
   EstadoCaja,
   MovimientoCaja,
   NuevaVenta,
@@ -20,6 +23,9 @@ export const cajaService = {
   productos: (texto: string) => invocar<ProductoVenta[]>('caja_productos', { texto }),
   vender: (venta: NuevaVenta) => invocar<VentaRegistrada>('caja_registrar_venta', { venta }),
   egreso: (monto: number, motivo: string) => invocar<EgresoRegistrado>('caja_registrar_egreso', { monto, motivo }),
+  /** Renovar la membresía del cliente o venderle un plan (fase 3B). */
+  opcionesMembresia: (deportistaId: string) => invocar<OpcionesMembresia>('caja_opciones_membresia', { deportistaId }),
+  cobrarMembresia: (cobro: NuevoCobroMembresia) => invocar<CobroMembresiaRegistrado>('caja_cobrar_membresia', { cobro }),
   movimientos: (turnoId?: string) => invocar<MovimientoCaja[]>('caja_movimientos', { turnoId: turnoId ?? null }),
   cierreDiario: (fecha?: string) => invocar<CierreDiario>('caja_cierre_diario', { fecha: fecha ?? null }),
 };

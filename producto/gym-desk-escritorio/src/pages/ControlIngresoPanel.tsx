@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, CloudUpload, Gift, ScanLine, ShieldAlert, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarPlus, CheckCircle2, CloudUpload, Gift, ScanLine, ShieldAlert, XCircle } from 'lucide-react';
 import { Badge } from '@web/components/ui/Badge';
 import { Button } from '@web/components/ui/Button';
 import { EstadoDeportistaBadge } from '@web/components/ui/EstadoDeportistaBadge';
@@ -97,7 +97,11 @@ const ETIQUETA_RESULTADO: Record<IngresoListado['resultado'], { texto: string; v
  * Control de ingreso. Decide con los datos guardados en este equipo, con red o sin ella, y cada
  * intento sube solo al servidor. El campo recibe lo que se escriba o lo que lea el lector de códigos.
  */
-export const ControlIngresoPanel: React.FC<{ estacion: EstadoEstacion }> = ({ estacion }) => {
+export const ControlIngresoPanel: React.FC<{
+  estacion: EstadoEstacion;
+  /** Lleva al cliente a Caja para renovarle o venderle un plan. */
+  onCobrar?: (deportistaId: string) => void;
+}> = ({ estacion, onCobrar }) => {
   const [texto, setTexto] = useState('');
   const [sugerencias, setSugerencias] = useState<ClienteEvaluado[]>([]);
   const [resultado, setResultado] = useState<ResultadoIngreso | null>(null);
@@ -312,6 +316,15 @@ export const ControlIngresoPanel: React.FC<{ estacion: EstadoEstacion }> = ({ es
 
         {error && <MensajeError>{error}</MensajeError>}
         {resultado && <ResultadoGrande resultado={resultado} />}
+        {resultado?.cliente && onCobrar && ['vencido', 'en_gracia', 'por_vencer', 'sin_membresia', 'cancelado'].includes(resultado.cliente.estado) && (
+          <Button
+            leftIcon={<CalendarPlus size={16} />}
+            style={{ marginTop: 12 }}
+            onClick={() => onCobrar(resultado.cliente!.id)}
+          >
+            {resultado.cliente.estado === 'sin_membresia' || resultado.cliente.estado === 'cancelado' ? 'Venderle un plan' : 'Renovar membresía'}
+          </Button>
+        )}
         {!resultado && !error && sugerencias.length === 0 && (
           <div className="gd-ingreso-espera">
             <ScanLine size={40} />

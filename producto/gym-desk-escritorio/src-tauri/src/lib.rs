@@ -62,6 +62,8 @@ pub fn run() {
             comandos::caja_cerrar_turno,
             comandos::caja_productos,
             comandos::caja_registrar_venta,
+            comandos::caja_opciones_membresia,
+            comandos::caja_cobrar_membresia,
             comandos::caja_registrar_egreso,
             comandos::caja_movimientos,
             comandos::caja_cierre_diario,

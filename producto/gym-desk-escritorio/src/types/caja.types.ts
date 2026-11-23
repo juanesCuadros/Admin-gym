@@ -29,9 +29,13 @@ export interface TotalesCaja {
   base_inicial: number;
   ventas_efectivo: number;
   ventas_otro: number;
+  /** Ventas y renovaciones de membresía. */
+  membresias_efectivo: number;
+  membresias_otro: number;
   egresos_efectivo: number;
   total_esperado_efectivo: number;
   num_ventas: number;
+  num_membresias: number;
   num_egresos: number;
   por_metodo: PorMetodo[];
 }
@@ -117,9 +121,73 @@ export interface EgresoRegistrado {
   ocurrido_en: string;
 }
 
+// ---------------------------------------------------------------------------
+// Membresías (fase 3B, parte 1)
+// ---------------------------------------------------------------------------
+export interface MembresiaActual {
+  id: string;
+  plan_id: string;
+  plan_nombre: string;
+  fecha_vencimiento: string;
+}
+
+export interface Renovacion {
+  precio_lista: number;
+  dias: number;
+  /** AAAA-MM-DD en que quedaría vencida si se renueva hoy. */
+  fecha_vencimiento_nueva: string;
+}
+
+export interface PlanVenta {
+  id: string;
+  nombre: string;
+  precio: number;
+  duracion_dias: number;
+  fecha_vencimiento: string;
+}
+
+export interface OpcionesMembresia {
+  cliente: import('./ingreso.types').ClienteEvaluado;
+  membresia: MembresiaActual | null;
+  renovacion: Renovacion | null;
+  planes: PlanVenta[];
+  /** Por qué no se puede cobrar aquí; se hace en la web. */
+  aviso: string | null;
+}
+
+export interface NuevoCobroMembresia {
+  deportista_id: string;
+  accion: 'renovar' | 'vender';
+  plan_id?: string;
+  precio_cobrado?: number;
+  motivo_descuento?: string;
+  metodo?: string;
+  pagos?: { metodo: string; monto: number }[];
+  valor_recibido?: number;
+}
+
+export interface CobroMembresiaRegistrado {
+  id: string;
+  tipo: 'venta' | 'renovacion';
+  turno_id: string;
+  membresia_id: string;
+  deportista_nombre: string;
+  plan_nombre: string;
+  fecha_vencimiento_anterior: string | null;
+  fecha_vencimiento_nueva: string;
+  precio_lista: number;
+  precio_cobrado: number;
+  tipo_medio: 'efectivo' | 'otro' | 'mixto';
+  metodo: string;
+  pagos: PorMetodo[];
+  valor_recibido: number | null;
+  cambio: number | null;
+  ocurrida_en: string;
+}
+
 export interface MovimientoCaja {
   id: string;
-  tipo: 'venta' | 'egreso';
+  tipo: 'venta' | 'membresia' | 'egreso';
   ocurrido_en: string;
   concepto: string;
   metodo: string;

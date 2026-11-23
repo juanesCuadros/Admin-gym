@@ -95,14 +95,24 @@ async def preparar(fabrica: Fabrica):
               {"id": barra, "g": gym.id, "p": PRECIO_BARRA})
     await sql(gym.id, """INSERT INTO platform.deportistas (id, gimnasio_id, tipo_documento, documento, nombre, activo)
                          VALUES (:id, :g, 'CC', :doc, 'Visitante de prueba', true)""", {"id": cliente, "g": gym.id, "doc": documento})
-    return gym, jefe, recepcion, str(agua), str(barra), str(cliente), documento
+    # Fase 3B: un plan mensual, un socio cuya membresía vence en 5 días (comprada a 70.000) y uno sin membresía.
+    plan, socio, nuevo, doc_nuevo = uuid4(), uuid4(), uuid4(), uuid4().hex[:10]
+    await sql(gym.id, "INSERT INTO platform.planes (id, gimnasio_id, nombre, precio, duracion_dias, tipo) VALUES (:id, :g, 'Mensual', 80000, 30, 'individual')",
+              {"id": plan, "g": gym.id})
+    for dep_id, nombre, doc in ((socio, "Socio que renueva", uuid4().hex[:10]), (nuevo, "Socio nuevo", doc_nuevo)):
+        await sql(gym.id, """INSERT INTO platform.deportistas (id, gimnasio_id, tipo_documento, documento, nombre, activo)
+                             VALUES (:id, :g, 'CC', :doc, :n, true)""", {"id": dep_id, "g": gym.id, "doc": doc, "n": nombre})
+    await sql(gym.id, """INSERT INTO platform.membresias (gimnasio_id, deportista_id, plan_id, fecha_inicio, fecha_vencimiento, plan_precio_vendido)
+                         VALUES (:g, :d, :p, (now() AT TIME ZONE 'America/Bogota')::date - 25, (now() AT TIME ZONE 'America/Bogota')::date + 5, 70000)""",
+              {"g": gym.id, "d": socio, "p": plan})
+    return gym, jefe, recepcion, str(agua), str(barra), str(cliente), documento, str(socio), str(nuevo), doc_nuevo
 
 
 async def main() -> int:
     fabrica = Fabrica()
     api = None
     try:
-        gym, jefe, recepcion, agua, barra, cliente, documento = await preparar(fabrica)
+        gym, jefe, recepcion, agua, barra, cliente, documento, socio, nuevo, doc_nuevo = await preparar(fabrica)
         print(f"Gimnasio de prueba: {gym.subdominio}")
         api = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(PUERTO), "--log-level", "warning"],
@@ -125,6 +135,9 @@ async def main() -> int:
             "GYMDESK_PRUEBA_DOCUMENTO": documento,
             "GYMDESK_PRUEBA_AGUA": agua,
             "GYMDESK_PRUEBA_BARRA": barra,
+            "GYMDESK_PRUEBA_SOCIO": socio,
+            "GYMDESK_PRUEBA_SOCIO_NUEVO": nuevo,
+            "GYMDESK_PRUEBA_DOC_NUEVO": doc_nuevo,
             "GYMDESK_PRUEBA_SALIDA": str(salida),
         }
         inicio = time.time()
@@ -152,7 +165,14 @@ async def main() -> int:
               SELECT v.metodo, v.tipo_medio, v.total AS monto FROM platform.ventas v WHERE v.turno_id = :t AND v.tipo_medio <> 'mixto'
               UNION ALL
               SELECT m.metodo, m.tipo_medio, m.monto FROM platform.cobro_medios m JOIN platform.ventas v ON v.id = m.venta_id WHERE v.turno_id = :t
+              UNION ALL
+              SELECT p.metodo, p.tipo_medio, p.monto FROM platform.pagos_membresia p WHERE p.turno_id = :t AND p.tipo_medio <> 'mixto'
+              UNION ALL
+              SELECT m.metodo, m.tipo_medio, m.monto FROM platform.cobro_medios m JOIN platform.pagos_membresia p ON p.id = m.pago_membresia_id WHERE p.turno_id = :t
             ) x GROUP BY metodo, tipo_medio""", {"t": t_id})
+        pagos_srv = (await sql(gym.id, "SELECT count(*) n, count(DISTINCT id) d FROM platform.pagos_membresia WHERE turno_id = :t", {"t": t_id}))[0]
+        vence_srv = {f["id"]: f["v"] for f in await sql(
+            gym.id, "SELECT id::text, fecha_vencimiento::text AS v FROM platform.membresias WHERE deportista_id IN (:a, :b)", {"a": socio, "b": nuevo})}
         egresos_srv = (await sql(gym.id, "SELECT count(*) n, coalesce(round(sum(monto))::bigint, 0) s FROM platform.egresos_caja WHERE turno_id = :t", {"t": t_id}))[0]
         ventas_srv = (await sql(gym.id, "SELECT count(*) n, count(DISTINCT id) d FROM platform.ventas WHERE turno_id = :t", {"t": t_id}))[0]
         recibidas = await sql(gym.id, "SELECT operacion_id::text AS id FROM platform.sync_operaciones ORDER BY id")
@@ -172,6 +192,7 @@ async def main() -> int:
             fila = dict((await s.execute(text("SELECT * FROM platform.turnos_caja WHERE id = :t"), {"t": t_id})).mappings().one())
             r = await CajaService._calcular_acumulados_turno(s, fila)
         srv = {"base_inicial": int(r.base_inicial), "ventas_efectivo": int(r.ventas_efectivo), "ventas_otro": int(r.ventas_otro),
+               "membresias_efectivo": int(r.pagos_membresia_efectivo), "membresias_otro": int(r.pagos_membresia_otro),
                "egresos_efectivo": int(r.egresos_efectivo), "total_esperado_efectivo": int(r.total_esperado_efectivo)}
         loc = {k: inf["totales"][k] for k in srv}
 
@@ -189,6 +210,8 @@ async def main() -> int:
              (turno_srv["contado"], turno_srv["diferencia"])),
             ("El turno de la estación quedó cerrado y marcado como de estación", turno_srv["estado"] == "cerrado" and turno_srv["de_estacion"], turno_srv["estado"]),
             ("Mismas ventas, sin duplicados", ventas_srv["n"] == ventas_srv["d"] == inf["ventas"], ventas_srv["n"]),
+            ("Membresías: una renovación y una venta, sin duplicados", pagos_srv["n"] == pagos_srv["d"] == inf["totales"]["num_membresias"] == 2, pagos_srv["n"]),
+            ("Mismas fechas de vencimiento en la estación y en el servidor", vence_srv == inf["vencimientos"], f"{vence_srv} vs {inf['vencimientos']}"),
             ("Mismos egresos", (egresos_srv["n"], egresos_srv["s"]) == (inf["egresos"], inf["totales"]["egresos_efectivo"]), egresos_srv["n"]),
             ("El servidor recibió cada operación una sola vez", len(ids_srv) == len(set(ids_srv)) == len(ids_est) and set(ids_srv) == set(ids_est), len(ids_srv)),
             ("Stock igual en la estación y en el servidor", stock_ok, {"agua": stock_srv[agua], "barra": stock_srv[barra]}),

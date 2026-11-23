@@ -34,6 +34,8 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
   const [vista, setVista] = useState<'ingreso' | 'caja' | 'pendientes' | 'pin'>('ingreso');
   // Al cerrar pendientes o el PIN se vuelve a la pantalla de trabajo en la que estaba.
   const [trabajo, setTrabajo] = useState<'ingreso' | 'caja'>('ingreso');
+  // Cliente que pasa de Control de ingreso a Caja con "Renovar membresía".
+  const [clienteParaCobrar, setClienteParaCobrar] = useState<string | null>(null);
   const verPendientes = vista === 'pendientes';
   const setVerPendientes = (alternar: (v: boolean) => boolean) => setVista(alternar(verPendientes) ? 'pendientes' : trabajo);
   const irA = (v: 'ingreso' | 'caja') => {
@@ -100,9 +102,19 @@ export const InicioPage: React.FC<{ usuario: UsuarioSesion }> = ({ usuario }) =>
 
         {verPendientes && estacion && <PendientesPanel estacion={estacion} onCerrar={() => setVista(trabajo)} />}
 
-        {vista === 'ingreso' && estacion && <ControlIngresoPanel estacion={estacion} />}
+        {vista === 'ingreso' && estacion && (
+          <ControlIngresoPanel
+            estacion={estacion}
+            onCobrar={(id) => {
+              setClienteParaCobrar(id);
+              irA('caja');
+            }}
+          />
+        )}
 
-        {vista === 'caja' && estacion && <CajaPanel enLinea={estacion.en_linea} />}
+        {vista === 'caja' && estacion && (
+          <CajaPanel enLinea={estacion.en_linea} clienteParaCobrar={clienteParaCobrar} onClienteUsado={() => setClienteParaCobrar(null)} />
+        )}
 
         <section className="gd-tarjeta" style={{ maxWidth: 440, display: vista === 'pin' ? undefined : 'none' }}>
           <Button variant="ghost" size="sm" leftIcon={<ArrowLeft size={15} />} onClick={() => setVista(trabajo)} style={{ marginBottom: 8 }}>
