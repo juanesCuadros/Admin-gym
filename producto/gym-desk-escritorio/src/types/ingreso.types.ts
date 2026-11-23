@@ -32,6 +32,20 @@ export interface ClienteEvaluado {
   foto: string | null;
 }
 
+export interface PaginaClientes {
+  items: ClienteEvaluado[];
+  total: number;
+  por_estado: [EstadoCliente, number][];
+}
+
+export interface FichaCliente {
+  cliente: ClienteEvaluado;
+  ingresos: { ocurrido_en: string; resultado: ResultadoAcceso; metodo: string; mensaje: string }[];
+  cobros: { ocurrido_en: string; concepto: string; monto: number; metodo: string }[];
+  huellas: string[];
+  membresia_desde: string | null;
+}
+
 /** Datos para registrar un cliente: los mismos que pide la web (Ley 1581, menor con acudiente). */
 export interface NuevoCliente {
   tipo_documento: 'CC' | 'TI' | 'CE' | 'PAS' | 'PPT' | 'RC';

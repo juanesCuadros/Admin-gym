@@ -420,6 +420,29 @@ pub fn registrar_cliente(
     Ok(r)
 }
 
+/// Módulo Clientes: lista con búsqueda y filtro por estado.
+#[tauri::command]
+pub fn listar_clientes(
+    estado: State<'_, EstadoApp>,
+    texto: String,
+    filtro: String,
+    limite: usize,
+    desde: usize,
+) -> Resultado<crate::acceso::clientes::PaginaClientes> {
+    estado.con_base(|conn, sesion, ahora| {
+        sesion.exigir_activa(conn, ahora)?;
+        crate::acceso::clientes::listar(conn, &texto, &filtro, fecha_negocio(ahora), limite, desde)
+    })
+}
+
+#[tauri::command]
+pub fn ficha_cliente(estado: State<'_, EstadoApp>, deportista_id: String) -> Resultado<crate::acceso::clientes::FichaCliente> {
+    estado.con_base(|conn, sesion, ahora| {
+        sesion.exigir_activa(conn, ahora)?;
+        crate::acceso::clientes::ficha(conn, &deportista_id, fecha_negocio(ahora))
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Huella (fase 4). Capturar bloquea hasta que llega el dedo: corre fuera del hilo de la ventana.
 // ---------------------------------------------------------------------------

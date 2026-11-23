@@ -916,3 +916,74 @@ button.gd-sync:hover {
 .gd-huella-pasos { display: flex; gap: 10px; margin: 14px 0 8px; }
 .gd-huella-pasos span { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--border); color: var(--text-secondary, #888); }
 .gd-huella-pasos span.hecho { border-color: var(--success); color: var(--success); }
+
+/* ===================================================================== */
+/* Armazón de recepción: menú lateral con módulos y atajos (estilo punto de venta) */
+/* ===================================================================== */
+.gd-shell { flex: 1; display: grid; grid-template-columns: 264px 1fr; min-height: 0; height: 100%; background: var(--bg-app); }
+.gd-lateral { display: flex; flex-direction: column; background: #0f172a; color: #e2e8f0; padding: 16px 12px; gap: 12px; min-height: 0; }
+.gd-lateral-marca { display: flex; align-items: center; gap: 10px; padding: 4px 6px 12px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.gd-lateral-marca div { display: flex; flex-direction: column; min-width: 0; }
+.gd-lateral-marca strong { font-size: 1.02rem; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gd-lateral-marca span:not(.gd-marca-icono) { font-size: 0.78rem; color: #94a3b8; }
+.gd-lateral-modulos { display: flex; flex-direction: column; gap: 6px; flex: 1; overflow-y: auto; }
+.gd-lateral-modulos button { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; border-radius: 12px; padding: 12px; background: transparent; color: inherit; text-align: left; cursor: pointer; transition: background .15s; }
+.gd-lateral-modulos button:hover { background: rgba(255,255,255,0.06); }
+.gd-lateral-modulos button.activo { background: var(--primary); color: #fff; box-shadow: 0 6px 18px rgba(37,99,235,.35); }
+.gd-lateral-icono { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: rgba(255,255,255,0.08); flex-shrink: 0; }
+.gd-lateral-modulos button.activo .gd-lateral-icono { background: rgba(255,255,255,0.2); }
+.gd-lateral-texto { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.gd-lateral-texto span { font-weight: 600; font-size: 0.98rem; }
+.gd-lateral-texto small { font-size: 0.74rem; opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gd-lateral kbd, .gd-cabecera kbd { font: 600 0.7rem var(--font-sans); padding: 2px 6px; border-radius: 6px; border: 1px solid rgba(148,163,184,.5); opacity: .85; }
+.gd-lateral-pie { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px; }
+.gd-lateral-pie .gd-sync { background: rgba(255,255,255,0.06); color: #e2e8f0; border-color: transparent; width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+.gd-lateral-usuario { display: flex; flex-direction: column; padding: 0 6px; }
+.gd-lateral-usuario strong { color: #fff; font-size: 0.92rem; }
+.gd-lateral-usuario span { color: #94a3b8; font-size: 0.78rem; }
+.gd-lateral-botones { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.gd-lateral-botones button { height: 38px; border-radius: 10px; border: 0; background: rgba(255,255,255,0.06); color: #cbd5e1; cursor: pointer; display: grid; place-items: center; }
+.gd-lateral-botones button:hover { background: rgba(255,255,255,0.14); color: #fff; }
+.gd-principal { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.gd-cabecera { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 28px; background: var(--bg-surface, #fff); border-bottom: 1px solid var(--border); }
+.gd-cabecera h1 { margin: 0; font-size: 1.45rem; letter-spacing: -0.01em; }
+.gd-cabecera p { margin: 2px 0 0; color: var(--text-secondary, #64748b); font-size: 0.9rem; }
+.gd-cabecera-acciones { display: flex; gap: 8px; align-items: center; }
+.gd-cuerpo { flex: 1; overflow-y: auto; padding: 20px 28px 32px; }
+.gd-modulo { display: flex; flex-direction: column; gap: 14px; max-width: 1280px; }
+
+/* Clientes */
+.gd-filtros { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.gd-buscador { flex: 1; min-width: 280px; display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 48px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface, #fff); color: var(--text-secondary, #64748b); }
+.gd-buscador input { flex: 1; border: 0; outline: 0; background: transparent; font-size: 1.02rem; color: var(--text-primary); }
+.gd-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.gd-chips button { border: 1px solid var(--border); background: var(--bg-surface, #fff); border-radius: 999px; padding: 8px 14px; cursor: pointer; font-weight: 500; color: var(--text-primary); }
+.gd-chips button span { margin-left: 6px; font-size: 0.78rem; opacity: .65; }
+.gd-chips button.activa { background: var(--primary); border-color: var(--primary); color: #fff; }
+.gd-panel-tabla { padding: 0; overflow: hidden; }
+.gd-tabla-clientes tbody tr { cursor: pointer; }
+.gd-tabla-clientes tbody tr:hover, .gd-tabla-clientes tbody tr.elegida { background: rgba(37,99,235,.06); }
+.gd-mini-foto { border-radius: 50%; object-fit: cover; display: inline-grid; place-items: center; flex-shrink: 0; }
+.gd-mini-iniciales { background: #e2e8f0; color: #334155; font-weight: 700; font-size: 0.8rem; }
+.gd-vacio-grande { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 16px; color: var(--text-secondary, #64748b); }
+.gd-ficha h4 { margin: 20px 0 8px; font-size: 0.95rem; }
+.gd-ficha-cabecera { display: flex; gap: 18px; align-items: center; }
+.gd-ficha-cabecera .gd-mini-iniciales { font-size: 1.6rem; }
+.gd-ficha-plan { font-size: 1.15rem; font-weight: 700; margin: 6px 0 2px; }
+.gd-ficha-acceso { margin-top: 8px; font-weight: 600; font-size: 0.9rem; }
+.gd-ficha-acceso.si { color: var(--success); }
+.gd-ficha-acceso.no { color: var(--danger); }
+.gd-ficha-acciones { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+
+/* Membresías y Ventas */
+.gd-franja-caja { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; padding: 10px 16px; border-radius: 12px; background: rgba(22,163,74,.08); border: 1px solid rgba(22,163,74,.25); font-size: 0.9rem; }
+.gd-franja-caja span:first-child { font-weight: 700; color: var(--success); }
+.gd-dos-columnas { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 16px; align-items: start; }
+.gd-dos-columnas > div > .gd-panel { margin-top: 0 !important; }
+.gd-lista-cobrar ul { list-style: none; margin: 0; padding: 0; max-height: 62vh; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.gd-lista-cobrar button { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; text-align: left; padding: 10px 12px; border: 1px solid transparent; border-radius: 10px; background: transparent; cursor: pointer; }
+.gd-lista-cobrar button:hover { background: rgba(37,99,235,.05); }
+.gd-lista-cobrar button.activa { border-color: var(--primary); background: rgba(37,99,235,.08); }
+.gd-lista-nombre { font-weight: 600; }
+.gd-lista-detalle { grid-column: 1; font-size: 0.8rem; color: var(--text-secondary, #64748b); }
+.gd-lista-cobrar button > :last-child { grid-row: 1 / span 2; grid-column: 2; align-self: center; }

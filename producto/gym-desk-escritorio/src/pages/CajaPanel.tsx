@@ -19,7 +19,7 @@ import { Input, Select, Textarea } from '@web/components/ui/Input';
 import { ConfirmDialog, Modal } from '@web/components/ui/Modal';
 import { filasIniciales, mediosDeFilas, PagoDividido, repartoCompleto, efectivoDeFilas, type FilaMedio } from '@web/components/ui/PagoDividido';
 import { useToast } from '@web/contexts/ToastContext';
-import { formatCOP, formatDocumento, formatFecha, formatHora } from '@web/utils/formato';
+import { formatCOP, formatDocumento, formatHora } from '@web/utils/formato';
 import { cajaService } from '../api/caja.service';
 import { ingresoService } from '../api/ingreso.service';
 import { aErrorGymDesk } from '../api/tauri';
@@ -28,7 +28,6 @@ import { useEnvio } from '../hooks/useEnvio';
 import type { EstadoCaja, MovimientoCaja, NuevoItem, ProductoVenta, ResumenTurno, TipoLinea, VentaRegistrada } from '../types/caja.types';
 import type { ClienteEvaluado } from '../types/ingreso.types';
 import { CierreDiarioPanel } from './CierreDiarioPanel';
-import { MembresiasCaja } from './MembresiasCaja';
 
 const MOTIVO_MINIMO = 4;
 
@@ -63,19 +62,11 @@ const ENVIO: Record<string, { texto: string; tono: 'success' | 'warning' | 'dang
 const precioDe = (l: Linea) => l.precioLista ?? entero(l.precioEscrito) ?? 0;
 const cobradoDe = (l: Linea) => entero(l.precioCobrado) ?? precioDe(l);
 
-/** Caja de la estación: turno con arqueo, membresías, venta de mostrador y egresos. Funciona con red o sin ella. */
-export const CajaPanel: React.FC<{
-  enLinea: boolean;
-  /** Cliente que llega desde Control de ingreso para renovarle o venderle un plan. */
-  clienteParaCobrar?: string | null;
-  onClienteUsado?: () => void;
-}> = ({ enLinea, clienteParaCobrar, onClienteUsado }) => {
-  const { showToast } = useToast();
+/** Estado de la caja de la estación, recargado cada 15 s (el envío de cada movimiento cambia al sincronizar). */
+export function useCaja() {
   const [estado, setEstado] = useState<EstadoCaja | null>(null);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [movimientos, setMovimientos] = useState<MovimientoCaja[]>([]);
-  const [vista, setVista] = useState<'turno' | 'cierre'>('turno');
-
   const cargar = useCallback(async () => {
     try {
       const e = await cajaService.estado();
@@ -86,13 +77,36 @@ export const CajaPanel: React.FC<{
       setErrorCarga(aErrorGymDesk(err).mensaje);
     }
   }, []);
-
   useEffect(() => {
     void cargar();
-    // El estado del envío de cada movimiento cambia al sincronizar.
     const t = window.setInterval(() => void cargar(), 15_000);
     return () => window.clearInterval(t);
   }, [cargar]);
+  return { estado, errorCarga, movimientos, cargar };
+}
+
+/** Si la caja está cerrada, se abre aquí mismo (desde Ventas, Membresías o Caja). */
+export const CajaCerradaAviso: React.FC<{ estado: EstadoCaja; enLinea: boolean; onAbierta: () => void; para: string }> = ({ estado, enLinea, onAbierta, para }) => {
+  const { showToast } = useToast();
+  return (
+    <>
+      <p className="gd-subtitulo" style={{ marginTop: 0 }}>Para {para} hay que abrir la caja del turno.</p>
+      <AbrirCaja puedeOperar={estado.mostrador.puede_operar} enLinea={enLinea} onAbierta={(sinConfirmar) => {
+        showToast(
+          sinConfirmar ? 'warning' : 'success',
+          'Caja abierta',
+          sinConfirmar ? 'Sin red no se pudo confirmar que no haya otra caja abierta. Si la había, quedará por revisar.' : 'Quedó lista para cobrar.'
+        );
+        onAbierta();
+      }} />
+    </>
+  );
+};
+
+/** Módulo Caja: el turno (arqueo, egresos, movimientos, cierre) y el cierre diario. */
+export const CajaPanel: React.FC<{ enLinea: boolean }> = ({ enLinea }) => {
+  const { estado, errorCarga, movimientos, cargar } = useCaja();
+  const [vista, setVista] = useState<'turno' | 'cierre'>('turno');
 
   if (errorCarga) return <MensajeError>{errorCarga}</MensajeError>;
   if (!estado) return <div className="skeleton" style={{ height: 220, borderRadius: 16, maxWidth: 980 }} />;
@@ -101,7 +115,7 @@ export const CajaPanel: React.FC<{
     <div className="gd-caja">
       <div className="gd-pestanas gd-pestanas-caja" role="tablist" aria-label="Caja">
         <button role="tab" aria-selected={vista === 'turno'} className={vista === 'turno' ? 'activa' : ''} onClick={() => setVista('turno')}>
-          Turno y mostrador
+          Turno
         </button>
         <button role="tab" aria-selected={vista === 'cierre'} className={vista === 'cierre' ? 'activa' : ''} onClick={() => setVista('cierre')}>
           Cierre diario
@@ -110,25 +124,9 @@ export const CajaPanel: React.FC<{
       {vista === 'cierre' ? (
         <CierreDiarioPanel />
       ) : estado.turno ? (
-        <TurnoAbierto
-          estado={estado}
-          turno={estado.turno}
-          movimientos={movimientos}
-          onCambio={cargar}
-          clienteInicial={clienteParaCobrar}
-          onClienteInicialUsado={onClienteUsado}
-        />
+        <TurnoAbierto turno={estado.turno} movimientos={movimientos} onCambio={cargar} />
       ) : (
-        <AbrirCaja puedeOperar={estado.mostrador.puede_operar} enLinea={enLinea} onAbierta={(sinConfirmar) => {
-          showToast(
-            sinConfirmar ? 'warning' : 'success',
-            'Caja abierta',
-            sinConfirmar
-              ? 'Sin red no se pudo confirmar que no haya otra caja abierta. Si la había, quedará por revisar.'
-              : 'Quedó lista para vender.'
-          );
-          void cargar();
-        }} />
+        <CajaCerradaAviso estado={estado} enLinea={enLinea} onAbierta={() => void cargar()} para="cobrar" />
       )}
     </div>
   );
@@ -194,13 +192,10 @@ const AbrirCaja: React.FC<{ puedeOperar: boolean; enLinea: boolean; onAbierta: (
 // Turno abierto
 // ---------------------------------------------------------------------------
 const TurnoAbierto: React.FC<{
-  estado: EstadoCaja;
   turno: ResumenTurno;
   movimientos: MovimientoCaja[];
   onCambio: () => Promise<void>;
-  clienteInicial?: string | null;
-  onClienteInicialUsado?: () => void;
-}> = ({ estado, turno, movimientos, onCambio, clienteInicial, onClienteInicialUsado }) => {
+}> = ({ turno, movimientos, onCambio }) => {
   const { showToast } = useToast();
   const t = turno.totales;
   const [egresoAbierto, setEgresoAbierto] = useState(false);
@@ -241,25 +236,6 @@ const TurnoAbierto: React.FC<{
           <div className="gd-caja-esperado"><dt>Efectivo esperado</dt><dd>{formatCOP(t.total_esperado_efectivo)}</dd></div>
         </dl>
       </section>
-
-      <MembresiasCaja
-        mostrador={estado.mostrador}
-        clienteInicial={clienteInicial}
-        onClienteInicialUsado={onClienteInicialUsado}
-        onCobrado={(c) => {
-          showToast(
-            'success',
-            c.tipo === 'renovacion' ? 'Membresía renovada' : 'Plan vendido',
-            `${c.deportista_nombre} · ${c.plan_nombre} hasta el ${formatFecha(`${c.fecha_vencimiento_nueva}T12:00:00-05:00`)}${c.cambio ? ` · cambio ${formatCOP(c.cambio)}` : ''}`
-          );
-          void onCambio();
-        }}
-      />
-
-      <Mostrador mostrador={estado.mostrador} onVendida={(v) => {
-        showToast('success', 'Venta registrada', v.cambio ? `Total ${formatCOP(v.total)} · cambio ${formatCOP(v.cambio)}` : `Total ${formatCOP(v.total)}`);
-        void onCambio();
-      }} />
 
       <section className="gd-panel" style={{ marginTop: 16 }}>
         <h3 className="gd-titulo" style={{ fontSize: '1rem' }}>Movimientos del turno</h3>
@@ -306,11 +282,19 @@ const TurnoAbierto: React.FC<{
 // ---------------------------------------------------------------------------
 // Mostrador
 // ---------------------------------------------------------------------------
-const Mostrador: React.FC<{ mostrador: EstadoCaja['mostrador']; onVendida: (v: VentaRegistrada) => void }> = ({ mostrador, onVendida }) => {
+export const Mostrador: React.FC<{
+  mostrador: EstadoCaja['mostrador'];
+  onVendida: (v: VentaRegistrada) => void;
+  /** Cliente elegido desde su ficha (Clientes → Vender producto o pase). */
+  clienteInicial?: ClienteEvaluado | null;
+}> = ({ mostrador, onVendida, clienteInicial }) => {
   const [busqueda, setBusqueda] = useState('');
   const [productos, setProductos] = useState<ProductoVenta[]>([]);
   const [lineas, setLineas] = useState<Linea[]>([]);
-  const [cliente, setCliente] = useState<ClienteEvaluado | null>(null);
+  const [cliente, setCliente] = useState<ClienteEvaluado | null>(clienteInicial ?? null);
+  useEffect(() => {
+    if (clienteInicial) setCliente(clienteInicial);
+  }, [clienteInicial]);
   const [buscaCliente, setBuscaCliente] = useState('');
   const [sugerencias, setSugerencias] = useState<ClienteEvaluado[]>([]);
   const [metodo, setMetodo] = useState(() => mostrador.metodos_pago.find((m) => m.toLowerCase() === 'efectivo') ?? mostrador.metodos_pago[0]);
@@ -489,7 +473,7 @@ const Mostrador: React.FC<{ mostrador: EstadoCaja['mostrador']; onVendida: (v: V
           </ul>
         )}
 
-        {necesitaCliente && (
+        {(necesitaCliente || cliente) && (
           <div className="gd-cliente-venta">
             {cliente ? (
               <div className="gd-cliente-elegido">

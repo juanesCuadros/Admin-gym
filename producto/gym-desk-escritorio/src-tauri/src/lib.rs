@@ -64,6 +64,8 @@ pub fn run() {
             comandos::caja_productos,
             comandos::caja_registrar_venta,
             comandos::registrar_cliente,
+            comandos::listar_clientes,
+            comandos::ficha_cliente,
             comandos::huella_estado,
             comandos::huella_configurar,
             comandos::huella_capturar,
