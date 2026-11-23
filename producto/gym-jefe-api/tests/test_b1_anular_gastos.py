@@ -179,3 +179,44 @@ async def test_gasto_de_otro_gimnasio_es_404(cliente: AsyncClient, fabrica: Fabr
     g = await _gasto(cliente, h1)
     r = await _anular(cliente, h2, g["id"])
     assert r.status_code == 404 and r.json()["error"]["codigo"] == "GASTO_NO_ENCONTRADO"
+
+
+@pytest.mark.asyncio
+async def test_el_efectivo_no_vuelve_a_un_turno_de_estacion(cliente: AsyncClient, fabrica: Fabrica):
+    """Un turno abierto en una estación (escritorio) no es la caja de la web: el reintegro solo va al turno de la web."""
+    gym = await fabrica.crear_gimnasio()
+    jefe = await fabrica.crear_staff(gym, rol="jefe")
+    recep = await fabrica.crear_staff(gym, rol="recepcionista")
+    h = await _headers(cliente, gym, jefe)
+
+    # El gasto en efectivo sale de un turno web que luego se cierra.
+    assert (await cliente.post("/api/v1/caja/turnos/abrir", json={"base_inicial": 100000}, headers=h)).status_code == 201
+    g = await _gasto(cliente, h, metodo="efectivo", monto=30000)
+    r = await cliente.post("/api/v1/caja/turnos/cerrar", json={"efectivo_contado": 70000}, headers=h)
+    assert r.status_code == 200, r.text
+
+    # Hay un turno abierto en una estación y ninguno en la web.
+    estacion = (await _sql(
+        "INSERT INTO platform.estaciones (gimnasio_id, nombre) VALUES (:g, 'Recepción 2') RETURNING id", g=gym.id))[0]["id"]
+    turno_estacion = (await _sql(
+        "INSERT INTO platform.turnos_caja (gimnasio_id, staff_id, base_inicial, estacion_id) VALUES (:g, :s, 50000, :e) RETURNING id",
+        g=gym.id, s=recep["id"], e=estacion))[0]["id"]
+
+    r = await _anular(cliente, h, g["id"])
+    assert r.status_code == 400 and r.json()["error"]["codigo"] == "NO_HAY_TURNO_ABIERTO", r.text
+    assert (await _sql("SELECT count(*) n FROM platform.reintegros_caja WHERE gimnasio_id = :g", g=gym.id))[0]["n"] == 0
+    assert (await _sql("SELECT anulado FROM platform.gastos WHERE id = :g", g=g["id"]))[0]["anulado"] is False
+
+    # La web no deja abrir caja mientras la estación tiene la suya; el caso real es el turno simultáneo:
+    # la web abre y la estación, sin red, abre otro. Cerrada la primera, se repite el escenario en ese orden.
+    await _sql("UPDATE platform.turnos_caja SET estado = 'cerrado', cerrado_en = now(), efectivo_contado = 50000, diferencia = 0 WHERE id = :t", t=turno_estacion)
+    assert (await cliente.post("/api/v1/caja/turnos/abrir", json={"base_inicial": 10000}, headers=h)).status_code == 201
+    web = await _turno(cliente, h)
+    simultaneo = (await _sql(
+        "INSERT INTO platform.turnos_caja (gimnasio_id, staff_id, base_inicial, estacion_id) VALUES (:g, :s, 20000, :e) RETURNING id",
+        g=gym.id, s=recep["id"], e=estacion))[0]["id"]
+    r = await _anular(cliente, h, g["id"])
+    assert r.status_code == 200, r.text
+    assert r.json()["turno_reintegro_id"] == web["id"] != str(simultaneo)
+    assert float((await _turno(cliente, h))["reintegros_efectivo"]) == 30000
+    assert (await _sql("SELECT turno_id FROM platform.reintegros_caja WHERE gasto_id = :g", g=g["id"]))[0]["turno_id"] != simultaneo

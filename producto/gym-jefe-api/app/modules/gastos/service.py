@@ -471,7 +471,7 @@ class GastosService:
         """
         Anula un gasto con motivo. No se borra: queda marcado y deja de contar en el listado, el reporte de
         ingresos menos gastos y lo pagado a un entrenador. Si salió en efectivo de la caja, el efectivo vuelve
-        al turno abierto del gimnasio (P-11: el turno del gasto no se toca), con la misma regla que la anulación
+        al turno abierto de la web (no a uno de estación; P-11: el turno del gasto no se toca), con la misma regla que la anulación
         de pagos de membresía: sin turno abierto no se puede anular.
         """
         clave = clave.strip()
@@ -528,7 +528,7 @@ class GastosService:
         if gasto["metodo"] == "efectivo":
             turno_reintegro = (
                 await session.execute(
-                    text("SELECT id FROM platform.turnos_caja WHERE gimnasio_id = :gym_id AND estado = 'abierto' FOR UPDATE"),
+                    text("SELECT id FROM platform.turnos_caja WHERE gimnasio_id = :gym_id AND estado = 'abierto' AND estacion_id IS NULL FOR UPDATE"),
                     {"gym_id": gym_id},
                 )
             ).scalar()
