@@ -28,7 +28,7 @@ class AuthUseCases:
     def login(self, correo: str, password: str, client_ip: Optional[str] = None) -> Tuple[str, UsuarioInterno]:
         # 1. Bloqueo por intentos (SA-RF-00.4 CA1): durante el bloqueo, incluso la contraseña
         #    correcta recibe el MISMO mensaje genérico que unas credenciales inválidas (no se revela).
-        if self.user_repo.is_locked_out(correo):
+        if self.user_repo.is_locked_out(correo) or self.user_repo.is_ip_locked_out(client_ip):
             raise AuthenticationFailedException()
 
         user = self.user_repo.get_by_email(correo)

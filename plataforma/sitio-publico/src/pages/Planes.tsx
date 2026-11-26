@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { motion } from 'framer-motion'
+import { ArrowRight, Sparkles } from 'lucide-react'
 import { publicoService } from '@/api/publico.service'
 import type { ErrorApi } from '@/api/cliente'
 import { Aviso, Cargando } from '@/components/Estados'
+import TiltCard3D from '@/components/TiltCard3D'
 import { enlaceWhatsApp } from '@/config'
 import type { PlanPublico } from '@/types/publico.types'
 import { formatearCop, formatearEntero, plural } from '@/utils/formato'
@@ -17,45 +20,63 @@ function limite(valor: number | null): string {
   return valor === null ? 'Sin límite' : formatearEntero(valor)
 }
 
-function TarjetaPlan({ plan }: { plan: PlanPublico }) {
+function TarjetaPlan({ plan, index }: { plan: PlanPublico; index: number }) {
   const esPrueba = plan.tipo === 'prueba'
   return (
-    <li className={esPrueba ? 'tarjeta plan plan-prueba' : 'tarjeta plan'}>
-      <h2 className="plan-nombre">{plan.nombre}</h2>
-      {esPrueba ? (
-        <p className="plan-precio">
-          Gratis
-          {plan.dias_prueba !== null && (
-            <span className="plan-periodo"> · {plural(plan.dias_prueba, 'día', 'días')}</span>
-          )}
-        </p>
-      ) : (
-        <p className="plan-precio">
-          {formatearCop(plan.precio)}
-          <span className="plan-periodo"> al mes</span>
-        </p>
-      )}
-      {plan.descripcion && <p className="plan-descripcion">{plan.descripcion}</p>}
-      <dl className="plan-datos">
-        {!esPrueba && plan.duracion_meses !== null && (
-          <div>
-            <dt>Duración</dt>
-            <dd>{plural(plan.duracion_meses, 'mes', 'meses')}</dd>
-          </div>
+    <motion.li
+      className="plan-item"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, delay: index * 0.08 }}
+    >
+      <TiltCard3D
+        className={esPrueba ? 'tarjeta plan plan-prueba' : 'tarjeta plan'}
+        glowColor={esPrueba ? 'rgba(0, 102, 238, 0.18)' : 'rgba(51, 136, 255, 0.13)'}
+        maxTilt={5}
+      >
+        {esPrueba && (
+          <span className="plan-badge">
+            <Sparkles size={13} aria-hidden="true" /> Recomendado para iniciar
+          </span>
         )}
-        <div>
-          <dt>Clientes activos</dt>
-          <dd>{limite(plan.max_clientes_activos)}</dd>
-        </div>
-        <div>
-          <dt>Usuarios del personal</dt>
-          <dd>{limite(plan.max_staff)}</dd>
-        </div>
-      </dl>
-      {esPrueba && (
-        <Link to="/registro" className="boton boton-primario boton-bloque">Empezar prueba gratis</Link>
-      )}
-    </li>
+        <h2 className="plan-nombre">{plan.nombre}</h2>
+        {esPrueba ? (
+          <p className="plan-precio">
+            Gratis
+            {plan.dias_prueba !== null && (
+              <span className="plan-periodo"> · {plural(plan.dias_prueba, 'día', 'días')}</span>
+            )}
+          </p>
+        ) : (
+          <p className="plan-precio">
+            {formatearCop(plan.precio)}
+            <span className="plan-periodo"> al mes</span>
+          </p>
+        )}
+        {plan.descripcion && <p className="plan-descripcion">{plan.descripcion}</p>}
+        <dl className="plan-datos">
+          {!esPrueba && plan.duracion_meses !== null && (
+            <div>
+              <dt>Duración</dt>
+              <dd>{plural(plan.duracion_meses, 'mes', 'meses')}</dd>
+            </div>
+          )}
+          <div>
+            <dt>Clientes activos</dt>
+            <dd>{limite(plan.max_clientes_activos)}</dd>
+          </div>
+          <div>
+            <dt>Usuarios del personal</dt>
+            <dd>{limite(plan.max_staff)}</dd>
+          </div>
+        </dl>
+        {esPrueba && (
+          <Link to="/registro" className="boton boton-acento boton-bloque">
+            Empezar prueba gratis <ArrowRight size={16} aria-hidden="true" />
+          </Link>
+        )}
+      </TiltCard3D>
+    </motion.li>
   )
 }
 
@@ -83,11 +104,14 @@ export default function Planes() {
   }, [cargar])
 
   return (
-    <section className="contenedor seccion">
-      <h1>Planes</h1>
-      <p className="texto-suave intro">
-        Cada plan define cuántos clientes activos y cuántos usuarios del personal puede tener tu gimnasio.
-      </p>
+    <section className="contenedor seccion pagina-interna">
+      <div className="cabecera-seccion">
+        <p className="kicker-seccion">Tarifas transparentes en COP</p>
+        <h1>Planes</h1>
+        <p className="texto-suave intro">
+          Cada plan define cuántos clientes activos y cuántos usuarios del personal puede tener tu gimnasio.
+        </p>
+      </div>
 
       <div aria-live="polite">
         {estado.fase === 'cargando' && <Cargando texto="Cargando planes…" />}
@@ -117,7 +141,9 @@ export default function Planes() {
 
         {estado.fase === 'listo' && estado.planes.length > 0 && (
           <ul className="rejilla-planes">
-            {estado.planes.map((plan) => <TarjetaPlan key={plan.id} plan={plan} />)}
+            {estado.planes.map((plan, index) => (
+              <TarjetaPlan key={plan.id} plan={plan} index={index} />
+            ))}
           </ul>
         )}
       </div>

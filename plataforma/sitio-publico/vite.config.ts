@@ -11,7 +11,8 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3002,
+    port: 3003,
+    strictPort: true,
     host: true,
     proxy: {
       // En desarrollo, super-admin-api corre en el puerto 8002 (infra/docker-compose.dev.yml)

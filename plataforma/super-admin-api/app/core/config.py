@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # Brute Force Protection (RF-00.4)
     MAX_LOGIN_ATTEMPTS: int = 5
-    LOGIN_LOCKOUT_MINUTES: int = 15
+    LOGIN_LOCKOUT_MINUTES: int = 30
     # Recuperación de contraseña (SA-RF-00.2 CA2): 1 hora
     RECOVERY_TOKEN_MINUTES: int = 60
 

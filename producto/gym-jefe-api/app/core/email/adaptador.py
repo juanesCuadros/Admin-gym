@@ -41,25 +41,33 @@ class EmailAdaptador:
     async def enviar(self, correo: Correo) -> bool:
         """Envía el correo. Devuelve True si salió; False si falló. Nunca lanza."""
         try:
-            if self.modo == "resend":
+            modo_actual = (settings.EMAIL_MODO or self.modo).lower()
+            api_key_actual = settings.RESEND_API_KEY or self.api_key
+            if settings.DEBUG:
+                self._enviar_log(correo)
+            if modo_actual == "resend" and api_key_actual and api_key_actual.startswith("re_"):
+                self.api_key = api_key_actual
+                self.remitente = settings.EMAIL_REMITENTE or self.remitente
                 return await self._enviar_resend(correo)
-            return self._enviar_log(correo)
+            if not settings.DEBUG:
+                return self._enviar_log(correo)
+            return True
         except Exception:  # noqa: BLE001 — la regla es no propagar nada al usuario
             logger.exception("Fallo inesperado enviando correo a %s (modo=%s)", correo.destinatario, self.modo)
             return False
 
     # ------------------------------------------------------------------
     def _enviar_log(self, correo: Correo) -> bool:
-        logger.info(
-            "\n========== CORREO (modo log) ==========\n"
-            "De:      %s\nPara:    %s\nAsunto:  %s\n"
-            "---------- texto ----------\n%s\n"
-            "=======================================",
-            self.remitente,
-            correo.destinatario,
-            correo.asunto,
-            correo.texto,
+        bloque = (
+            "\n========== CORREO (GymOS Email) ==========\n"
+            f"De:      {self.remitente}\n"
+            f"Para:    {correo.destinatario}\n"
+            f"Asunto:  {correo.asunto}\n"
+            f"---------- texto ----------\n{correo.texto}\n"
+            "=========================================="
         )
+        logger.info("%s", bloque)
+        print(bloque, flush=True)
         return True
 
     async def _enviar_resend(self, correo: Correo) -> bool:

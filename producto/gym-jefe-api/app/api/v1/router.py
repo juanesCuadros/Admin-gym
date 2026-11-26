@@ -16,6 +16,7 @@ from app.modules.carga_inicial.router import router as carga_inicial_router
 from app.modules.gastos.router import router as gastos_router
 from app.modules.turnos_trabajo.router import router as turnos_trabajo_router
 from app.modules.sync.router import estaciones_router, sync_router
+from app.modules.portal_deportista.router import router as portal_deportista_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -37,3 +38,4 @@ api_v1_router.include_router(gastos_router)
 api_v1_router.include_router(turnos_trabajo_router)
 api_v1_router.include_router(estaciones_router)
 api_v1_router.include_router(sync_router)
+api_v1_router.include_router(portal_deportista_router)

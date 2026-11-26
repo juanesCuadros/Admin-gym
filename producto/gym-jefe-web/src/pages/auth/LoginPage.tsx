@@ -140,7 +140,12 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
-    // 401, 403 (usuario desactivado), 429 (bloqueo por intentos) y usuario de otro gimnasio:
+    if (err.status === 429) {
+      setErrorGeneral(err.message);
+      return;
+    }
+
+    // 401, 403 (usuario desactivado) y usuario de otro gimnasio:
     // siempre el mismo mensaje. No se revela nada.
     setErrorGeneral(MENSAJE_GENERICO);
   };
@@ -241,6 +246,15 @@ export const LoginPage: React.FC = () => {
         <div style={{ textAlign: 'center', marginTop: 18, fontSize: '0.875rem' }}>
           <Link to="/recuperar" style={{ color: 'var(--primary)', fontWeight: 500, textDecoration: 'none' }}>
             ¿Olvidaste tu contraseña?
+          </Link>
+        </div>
+
+        <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '18px 0 14px' }} />
+
+        <div style={{ textAlign: 'center', fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+          ¿Eres deportista del gimnasio?{' '}
+          <Link to="/portal/login" style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}>
+            Ingresa a tu Portal aquí
           </Link>
         </div>
       </div>

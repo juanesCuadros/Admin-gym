@@ -398,6 +398,17 @@ CREATE TABLE platform.intentos_login_staff (
 );
 CREATE INDEX ix_intentos_staff ON platform.intentos_login_staff(correo, created_at DESC);
 
+-- Bloqueo por intentos fallidos del deportista en el portal
+CREATE TABLE platform.intentos_login_deportista (
+  id           bigserial PRIMARY KEY,
+  gimnasio_id  uuid        REFERENCES platform.tenant(id) ON DELETE CASCADE,
+  correo       citext      NOT NULL,
+  ip           inet,
+  exito        boolean     NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_intentos_deportista ON platform.intentos_login_deportista(correo, created_at DESC);
+
 -- --- Deportistas -------------------------------------------------------
 CREATE TABLE platform.deportistas (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2159,14 +2170,35 @@ AS $$
   WHERE i.ip = p_ip AND i.exito = false AND i.created_at >= p_desde;
 $$;
 
+-- Resolución de gimnasio por correo de deportista (Portal del Deportista)
+CREATE OR REPLACE FUNCTION platform.gimnasio_id_por_correo_deportista(p_correo text)
+RETURNS uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public
+AS $$
+  SELECT COALESCE(
+    (SELECT ca.gimnasio_id FROM platform.cuentas_app ca
+     JOIN platform.tenant t ON t.id = ca.gimnasio_id
+     WHERE lower(ca.correo::text) = lower(p_correo) AND ca.activa = true AND t.activo = true
+     ORDER BY ca.updated_at DESC LIMIT 1),
+    (SELECT d.gimnasio_id FROM platform.deportistas d
+     JOIN platform.tenant t ON t.id = d.gimnasio_id
+     WHERE lower(d.correo::text) = lower(p_correo) AND d.deleted_at IS NULL AND d.activo = true AND t.activo = true
+     ORDER BY d.created_at DESC LIMIT 1)
+  );
+$$;
+
 REVOKE ALL ON FUNCTION platform.gimnasio_id_por_subdominio(text)         FROM PUBLIC;
 REVOKE ALL ON FUNCTION platform.gimnasio_id_por_refresh(text)            FROM PUBLIC;
 REVOKE ALL ON FUNCTION platform.gimnasio_id_por_token_recuperacion(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION platform.intentos_fallidos_ip(inet, timestamptz)  FROM PUBLIC;
+REVOKE ALL ON FUNCTION platform.intentos_fallidos_ip_deportista(inet, timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION platform.gimnasio_id_por_correo_deportista(text)  FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION platform.gimnasio_id_por_subdominio(text)         TO gymos_platform;
 GRANT EXECUTE ON FUNCTION platform.gimnasio_id_por_refresh(text)            TO gymos_platform;
 GRANT EXECUTE ON FUNCTION platform.gimnasio_id_por_token_recuperacion(text) TO gymos_platform;
 GRANT EXECUTE ON FUNCTION platform.intentos_fallidos_ip(inet, timestamptz)  TO gymos_platform;
+GRANT EXECUTE ON FUNCTION platform.intentos_fallidos_ip_deportista(inet, timestamptz) TO gymos_platform;
+GRANT EXECUTE ON FUNCTION platform.gimnasio_id_por_correo_deportista(text)  TO gymos_platform;
 
 
 -- =====================================================================

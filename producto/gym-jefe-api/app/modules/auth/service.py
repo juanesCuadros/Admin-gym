@@ -265,13 +265,13 @@ class AuthService:
         #    Cuenta en todos los gimnasios: por eso va por la función SECURITY DEFINER (migración 040).
         if client_ip:
             intentos_ip = await session.execute(
-                text("SELECT platform.intentos_fallidos_ip(CAST(:ip AS inet), now() - interval '15 minutes')"),
+                text("SELECT platform.intentos_fallidos_ip(CAST(:ip AS inet), now() - interval '30 minutes')"),
                 {"ip": client_ip},
             )
             if (intentos_ip.scalar() or 0) >= 15:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail={"codigo": "IP_BLOQUEADA_TEMPORALMENTE", "mensaje": "Demasiados intentos fallidos desde esta dirección IP. Bloqueada temporalmente por 15 minutos."}
+                    detail={"codigo": "IP_BLOQUEADA_TEMPORALMENTE", "mensaje": "Demasiados intentos fallidos desde esta dirección IP. Bloqueada temporalmente por 30 minutos."}
                 )
 
         # 2. Resolver tenant a partir del subdominio obligatorio
@@ -305,12 +305,17 @@ class AuthService:
         intentos_cuenta = await session.execute(text("""
             SELECT COUNT(*) FROM platform.intentos_login_staff
             WHERE gimnasio_id = :gym_id AND correo = :correo AND exito = false
-              AND created_at >= (now() - interval '15 minutes')
+              AND created_at >= (now() - interval '30 minutes')
+              AND created_at > COALESCE(
+                  (SELECT MAX(created_at) FROM platform.intentos_login_staff
+                   WHERE gimnasio_id = :gym_id AND correo = :correo AND exito = true),
+                  '1970-01-01'::timestamptz
+              )
         """), {"gym_id": gym_id, "correo": data.correo})
         if (intentos_cuenta.scalar() or 0) >= 5:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={"codigo": "CUENTA_BLOQUEADA_TEMPORALMENTE", "mensaje": "Demasiados intentos fallidos para esta cuenta. Bloqueada temporalmente por 15 minutos."}
+                detail={"codigo": "CUENTA_BLOQUEADA_TEMPORALMENTE", "mensaje": "Demasiados intentos fallidos para esta cuenta. Bloqueada temporalmente por 30 minutos."}
             )
 
         # 6. Buscar staff filtrando estrictamente por gimnasio_id y correo

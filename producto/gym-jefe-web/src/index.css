@@ -39,8 +39,10 @@
 
   /* ---------- Superficies (claro) ---------- */
   --bg-app: #f5f7fa;
+  --bg-body: var(--bg-app);
   --bg-surface: #ffffff;
   --bg-surface-elevated: #f3f5f8;
+  --bg-subtle: var(--bg-surface-elevated);
   --bg-surface-hover: #eef1f5;
   --bg-sidebar: #fbfcfd;
   --bg-header: rgba(245, 247, 250, 0.82);
@@ -103,8 +105,10 @@
   color-scheme: dark;
 
   --bg-app: #0a0c11;
+  --bg-body: var(--bg-app);
   --bg-surface: #11141b;
   --bg-surface-elevated: #171b24;
+  --bg-subtle: var(--bg-surface-elevated);
   --bg-surface-hover: #1c212c;
   --bg-sidebar: #0d1016;
   --bg-header: rgba(10, 12, 17, 0.78);
@@ -155,6 +159,7 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  scrollbar-gutter: stable;
 }
 
 html,

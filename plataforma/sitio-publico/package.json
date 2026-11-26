@@ -10,11 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/three": "^0.187.0",
     "axios": "^1.20.0",
+    "framer-motion": "^14.14.0",
     "lucide-react": "^1.43.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.3"
+    "react-router-dom": "^7.18.3",
+    "three": "^0.187.0"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

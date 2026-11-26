@@ -133,6 +133,44 @@ class ControlIngresoService:
             resultado_db = "abrio"
             mensaje_eval = "Ingreso con pase de día vigente hoy."
 
+        # 3.1 Anti-duplicados (Re-lectura en los últimos 3 minutos)
+        # Si ya existe un ingreso exitoso reciente para este mismo deportista en los últimos 3 minutos,
+        # se evita duplicar el registro en la bitácora histórica.
+        res_previo = await session.execute(
+            text("""
+                SELECT id, ts_utc FROM platform.checkins
+                WHERE gimnasio_id = :gym_id
+                  AND deportista_id = :dep_id
+                  AND tipo = 'ingreso'
+                  AND resultado = 'abrio'
+                  AND ts_utc >= (now() - interval '3 minutes')
+                ORDER BY ts_utc DESC
+                LIMIT 1
+            """),
+            {"gym_id": gym_id, "dep_id": deportista_id},
+        )
+        previo = res_previo.mappings().first()
+        if previo and resultado_db == "abrio":
+            deportista_dto = DeportistaCheckinDto(
+                id=dep["id"],
+                documento=dep["documento"],
+                nombre=dep["nombre"],
+                estado=estado,
+                estado_calculado=estado,
+                dias_restantes_o_vencido=dias_diff
+            )
+            return CheckinResponseDto(
+                checkin_id=previo["id"],
+                tipo="ingreso",
+                metodo=metodo,
+                resultado="abrio",
+                comando_torniquete=True,
+                mensaje="Ingreso ya registrado recientemente.",
+                relectura_ignorada=True,
+                deportista=deportista_dto,
+                ts_local=now_dt_local
+            )
+
         # 4. Insertar evento de check-in en platform.checkins
         insert_query = text("""
             INSERT INTO platform.checkins (

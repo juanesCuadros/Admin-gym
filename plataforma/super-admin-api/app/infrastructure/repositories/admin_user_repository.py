@@ -61,6 +61,26 @@ class AdminUserRepository:
         ).count()
         return failed_count >= settings.MAX_LOGIN_ATTEMPTS
 
+    def is_ip_locked_out(self, ip: Optional[str]) -> bool:
+        """Checks if IP exceeded 15 failed attempts in the last LOGIN_LOCKOUT_MINUTES."""
+        if not ip:
+            return False
+        clean_ip = None
+        try:
+            import ipaddress
+            ipaddress.ip_address(ip)
+            clean_ip = ip
+        except ValueError:
+            return False
+
+        window_start = datetime.now(timezone.utc) - timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
+        failed_count = self.db.query(IntentoLogin).filter(
+            IntentoLogin.ip == clean_ip,
+            IntentoLogin.exito.is_(False),
+            IntentoLogin.created_at >= window_start
+        ).count()
+        return failed_count >= 15
+
     def update_last_login(self, user: UsuarioInterno) -> None:
         user.ultimo_ingreso = datetime.now(timezone.utc)
         self.db.commit()

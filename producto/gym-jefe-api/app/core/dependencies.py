@@ -27,6 +27,22 @@ class AuthenticatedStaff:
         return self.id
 
 
+@dataclass
+class AuthenticatedDeportista:
+    cuenta_id: UUID
+    deportista_id: UUID
+    gimnasio_id: UUID
+    correo: str
+    nombre: str
+    documento: str
+    subdominio: str
+    gimnasio_nombre: str
+
+    @property
+    def id(self) -> UUID:
+        return self.deportista_id
+
+
 def gimnasio_suspendido_exception(motivo: Optional[str] = None) -> HTTPException:
     """403 único para todo bloqueo del gimnasio; el motivo es genérico, nunca datos internos."""
     return HTTPException(
@@ -65,6 +81,11 @@ async def get_current_staff(
     token = credentials.credentials
     try:
         payload = decode_access_token(token)
+        if payload.get("rol") == "deportista" or payload.get("type") == "portal_access":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"codigo": "ROL_NO_AUTORIZADO", "mensaje": "Acceso exclusivo para personal administrativo del gimnasio"},
+            )
         if payload.get("type") != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -197,3 +218,90 @@ async def exigir_permiso(session: AsyncSession, staff: AuthenticatedStaff, submo
                 "detalles": {"submodulo": submodulo, "accion": accion},
             }
         )
+
+
+async def get_current_deportista(
+    credentials: Annotated[HTTPAuthorizationCredentials, Security(security_bearer)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AuthenticatedDeportista:
+    """
+    Valida el JWT de acceso exclusivo del Portal del Deportista (`type = 'portal_access'`),
+    fija SET LOCAL app.gimnasio_id para RLS y verifica que la cuenta del deportista,
+    la ficha del deportista y el gimnasio estén activos.
+    Garantiza aislamiento anti-IDOR: el deportista_id sale únicamente del token verificado.
+    """
+    token = credentials.credentials
+    try:
+        payload = decode_access_token(token)
+        if payload.get("type") != "portal_access" or payload.get("rol") != "deportista":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"codigo": "TOKEN_INVALIDO", "mensaje": "Token de deportista inválido"},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        deportista_id = UUID(payload["sub"])
+        cuenta_id = UUID(payload["cuenta_id"])
+        gym_id = UUID(payload["gym_id"])
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"codigo": "TOKEN_INVALIDO", "mensaje": "Sesión de deportista inválida o expirada"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 1. Fijar RLS en PostgreSQL para toda la transacción
+    await session.execute(
+        text("SELECT set_config('app.gimnasio_id', :gym_id, true)"),
+        {"gym_id": str(gym_id)},
+    )
+
+    # 2. Verificar cuenta_app + deportista + tenant
+    query = text("""
+        SELECT ca.id AS cuenta_id, ca.activa AS cuenta_activa, ca.correo,
+               d.id AS deportista_id, d.gimnasio_id, d.nombre, d.documento, d.activo AS deportista_activo,
+               t.subdominio, t.nombre AS gimnasio_nombre, t.activo AS tenant_activo
+        FROM platform.cuentas_app ca
+        JOIN platform.deportistas d ON d.id = ca.deportista_id
+        JOIN platform.tenant t ON t.id = ca.gimnasio_id
+        WHERE ca.id = :cuenta_id
+          AND ca.deportista_id = :deportista_id
+          AND ca.gimnasio_id = :gym_id
+          AND d.deleted_at IS NULL
+    """)
+    res = await session.execute(
+        query,
+        {
+            "cuenta_id": cuenta_id,
+            "deportista_id": deportista_id,
+            "gym_id": gym_id,
+        },
+    )
+    row = res.mappings().first()
+
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"codigo": "USUARIO_NO_ENCONTRADO", "mensaje": "Cuenta de deportista no encontrada"},
+        )
+    if not row["cuenta_activa"] or not row["deportista_activo"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"codigo": "USUARIO_INACTIVO", "mensaje": "Tu cuenta de deportista se encuentra inactiva"},
+        )
+    if not row["tenant_activo"]:
+        raise gimnasio_suspendido_exception("suspendido")
+
+    await verificar_suscripcion_operativa(session, row["gimnasio_id"])
+
+    return AuthenticatedDeportista(
+        cuenta_id=row["cuenta_id"],
+        deportista_id=row["deportista_id"],
+        gimnasio_id=row["gimnasio_id"],
+        correo=str(row["correo"]),
+        nombre=row["nombre"],
+        documento=row["documento"],
+        subdominio=row["subdominio"],
+        gimnasio_nombre=row["gimnasio_nombre"],
+    )

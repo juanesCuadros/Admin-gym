@@ -189,7 +189,7 @@ export function limpiarSesionLocal(): void {
   localStorage.removeItem(STORAGE.user);
 }
 
-const RUTAS_PUBLICAS = ['/login', '/recuperar', '/bloqueado', '/pantalla-tv', '/tv/'];
+const RUTAS_PUBLICAS = ['/login', '/recuperar', '/bloqueado', '/pantalla-tv', '/tv/', '/portal'];
 
 function guardarRutaParaVolver(): void {
   const ruta = `${window.location.pathname}${window.location.search}`;

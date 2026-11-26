@@ -48,6 +48,29 @@ const formatoFecha = new Intl.DateTimeFormat('es-CO', {
   year: 'numeric',
 });
 
+/**
+ * Helper de pluralización en español (§1.5):
+ * plural(1, 'visita', 'visitas') -> '1 visita'
+ * plural(3, 'día', 'días') -> '3 días'
+ */
+export function plural(n: number | string | null | undefined, singular: string, pluralStr: string): string {
+  const num = typeof n === 'string' ? Number(n) : (n ?? 0);
+  const count = Number.isFinite(num) ? num : 0;
+  return `${count} ${Math.abs(count) === 1 ? singular : pluralStr}`;
+}
+
+const formatoDecimalCol = new Intl.NumberFormat('es-CO', {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+/** Formato decimal unificado en es-CO con 1 decimal: `83.5` -> `"83,5"` */
+export function formatDecimal(valor: number | string | null | undefined, fallback = '—'): string {
+  const n = typeof valor === 'string' ? Number(valor) : valor;
+  if (n === null || n === undefined || Number.isNaN(n)) return fallback;
+  return formatoDecimalCol.format(n);
+}
+
 const formatoHora = new Intl.DateTimeFormat('es-CO', {
   timeZone: ZONA_HORARIA,
   hour: '2-digit',

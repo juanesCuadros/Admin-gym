@@ -50,6 +50,8 @@ import { GastosPage } from './pages/gastos/GastosPage';
 import { TurnosTrabajoPage } from './pages/personal/TurnosTrabajoPage';
 
 import { PantallaTvConfigPage } from './pages/controlIngreso/PantallaTvConfigPage';
+import { PortalLoginPage } from './pages/portal/PortalLoginPage';
+import { PortalDeportistaPage } from './pages/portal/PortalDeportistaPage';
 
 import './styles/components.css';
 
@@ -80,6 +82,10 @@ export const App: React.FC = () => {
               <Route path="/bloqueado" element={<BloqueadoPage />} />
               <Route path="/pantalla-tv" element={<PantallaTvPage />} />
               <Route path="/tv/:subdominio" element={<PantallaTvPage />} />
+
+              {/* Portal del Deportista (autenticación y sesión independiente del staff) */}
+              <Route path="/portal/login" element={<PortalLoginPage />} />
+              <Route path="/portal" element={<PortalDeportistaPage />} />
 
               {/* Requiere sesión pero bloquea la navegación (§C4) */}
               <Route element={<ProtectedRoute />}>

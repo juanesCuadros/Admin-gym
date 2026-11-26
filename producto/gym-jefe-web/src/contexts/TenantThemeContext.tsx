@@ -49,7 +49,11 @@ export function detectarSubdominio(): string | null {
 
   const params = new URLSearchParams(window.location.search);
   const paramSub = params.get('subdominio') || params.get('tenant');
-  if (paramSub && paramSub.trim()) return paramSub.trim().toLowerCase();
+  if (paramSub && paramSub.trim()) {
+    const limpio = paramSub.trim().toLowerCase();
+    localStorage.setItem(STORAGE.subdominio, limpio);
+    return limpio;
+  }
 
   const hostname = window.location.hostname;
   const parts = hostname.split('.');
@@ -60,7 +64,9 @@ export function detectarSubdominio(): string | null {
     parts[0] !== '127' &&
     !/^\d+$/.test(parts[0])
   ) {
-    return parts[0].toLowerCase();
+    const limpio = parts[0].toLowerCase();
+    localStorage.setItem(STORAGE.subdominio, limpio);
+    return limpio;
   }
 
   const savedSub = localStorage.getItem(STORAGE.subdominio);

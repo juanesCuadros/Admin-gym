@@ -41,3 +41,7 @@ async def fijar_gimnasio_por_refresh(session: AsyncSession, refresh_hash: str) -
 
 async def fijar_gimnasio_por_token_recuperacion(session: AsyncSession, token_hash: str) -> Optional[UUID]:
     return await _resolver_y_fijar(session, "gimnasio_id_por_token_recuperacion", token_hash)
+
+
+async def fijar_gimnasio_por_correo_deportista(session: AsyncSession, correo: str) -> Optional[UUID]:
+    return await _resolver_y_fijar(session, "gimnasio_id_por_correo_deportista", correo.lower().strip())

@@ -1138,21 +1138,27 @@
 
 .table-base th {
   background: var(--bg-surface-elevated);
-  color: var(--text-muted);
-  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 11px 18px;
+  letter-spacing: 0.05em;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
   white-space: nowrap;
 }
 
 .table-base td {
-  padding: 14px 18px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-primary);
+  font-weight: 400;
   vertical-align: middle;
+}
+
+.table-base .col-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .table-base tbody tr:last-child td {
@@ -1172,15 +1178,15 @@
    ===================================================================== */
 .badge {
   --badge-color: var(--text-muted);
+  --badge-bg: var(--bg-surface-elevated);
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 22px;
-  padding: 0 8px 0 9px;
-  border-left: 3px solid var(--badge-color);
-  border-radius: 0 5px 5px 0;
-  background: var(--bg-surface-elevated);
-  color: var(--text-primary);
+  height: 24px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--badge-bg);
+  color: var(--badge-color);
   font-size: 0.75rem;
   font-weight: 500;
   line-height: 1;
@@ -1192,12 +1198,30 @@
   display: none;
 }
 
-.badge-primary { --badge-color: var(--primary); }
-.badge-success { --badge-color: var(--success); }
-.badge-warning { --badge-color: var(--warning); }
-.badge-danger  { --badge-color: var(--danger); }
-.badge-info    { --badge-color: var(--info); }
-.badge-neutral { --badge-color: var(--border-light); color: var(--text-secondary); }
+.badge-primary {
+  --badge-color: var(--primary);
+  --badge-bg: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+.badge-success {
+  --badge-color: var(--success);
+  --badge-bg: color-mix(in srgb, var(--success) 12%, transparent);
+}
+.badge-warning {
+  --badge-color: var(--warning);
+  --badge-bg: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+.badge-danger {
+  --badge-color: var(--danger);
+  --badge-bg: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.badge-info {
+  --badge-color: var(--info);
+  --badge-bg: color-mix(in srgb, var(--info) 12%, transparent);
+}
+.badge-neutral {
+  --badge-color: var(--text-secondary);
+  --badge-bg: var(--bg-surface-elevated);
+}
 
 /* Sobre fondos grises (tarjetas internas, filas resaltadas) la etiqueta pasa a blanco para no perderse */
 .membresia-card .badge,
@@ -1283,7 +1307,9 @@
   max-width: 580px;
   max-height: 90vh;
   max-height: 90dvh;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   box-shadow: var(--shadow-lg);
   animation: fadeInScale 0.22s var(--ease-out);
 }
@@ -1295,14 +1321,15 @@
   gap: 12px;
   padding: 20px 24px;
   border-bottom: 1px solid var(--border-color);
-  position: sticky;
-  top: 0;
   background: var(--bg-surface);
+  flex-shrink: 0;
   z-index: 1;
 }
 
 .modal-body {
   padding: 24px;
+  overflow-y: auto;
+  flex: 1;
 }
 
 .modal-footer {
@@ -1313,8 +1340,7 @@
   padding: 16px 24px;
   border-top: 1px solid var(--border-color);
   background: var(--bg-surface-elevated);
-  position: sticky;
-  bottom: 0;
+  flex-shrink: 0;
 }
 
 /* En móvil el modal sube desde abajo (bottom sheet) */
@@ -3237,3 +3263,115 @@
 .descarga-escritorio ol { margin: 6px 0 0; padding-left: 18px; color: var(--text-secondary); font-size: 0.88rem; line-height: 1.5; }
 .descarga-escritorio a.btn { text-decoration: none; gap: 8px; }
 .ficha-foto { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; flex: none; border: 2px solid var(--border-color); }
+
+/* =====================================================================
+   26. PORTAL DEL DEPORTISTA — RESPONSIVE MÓVIL (< 768px / < 640px)
+   ===================================================================== */
+.portal-desktop-only {
+  display: block;
+}
+
+.portal-mobile-only {
+  display: none !important;
+}
+
+.portal-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.portal-kpi-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  align-items: stretch;
+}
+
+.portal-kpi-card {
+  padding: 18px;
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.portal-mobile-table-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 767px) {
+  .portal-desktop-only {
+    display: none !important;
+  }
+
+  .portal-mobile-only {
+    display: flex !important;
+  }
+
+  .portal-page-container {
+    padding-bottom: 48px !important;
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .portal-header {
+    padding: 10px 14px !important;
+    min-height: 54px !important;
+  }
+
+  .portal-header-avatar {
+    width: 34px !important;
+    height: 34px !important;
+    font-size: 0.95rem !important;
+  }
+
+  .portal-header-name {
+    font-size: 0.92rem !important;
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .portal-kpi-grid,
+  .portal-kpi-grid-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .portal-kpi-card {
+    padding: 12px 10px !important;
+    min-height: 84px !important;
+  }
+
+  .portal-kpi-title {
+    font-size: 0.72rem !important;
+  }
+
+  .portal-kpi-val {
+    font-size: 1.15rem !important;
+  }
+
+  .portal-kpi-sub {
+    font-size: 0.7rem !important;
+  }
+}
