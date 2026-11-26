@@ -68,9 +68,21 @@ def _crear_token_portal(
     expire = now + timedelta(hours=PORTAL_TOKEN_HORAS)
     payload: Dict[str, Any] = {
         "sub": str(deportista_id),
+        "user_id": str(deportista_id),
         "cuenta_id": str(cuenta_id),
         "gym_id": str(gym_id),
+        "tenant_id": str(gym_id),
         "rol": "deportista",
+        "role": "deportista",
+        "permissions": [
+            "athletes:read",
+            "body_measurements:read",
+            "body_measurements:write",
+            "routines:read",
+            "classes:read",
+            "classes:book",
+            "ratings:write",
+        ],
         "type": "portal_access",
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),

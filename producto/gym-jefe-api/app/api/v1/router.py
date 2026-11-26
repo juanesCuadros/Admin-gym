@@ -17,10 +17,12 @@ from app.modules.gastos.router import router as gastos_router
 from app.modules.turnos_trabajo.router import router as turnos_trabajo_router
 from app.modules.sync.router import estaciones_router, sync_router
 from app.modules.portal_deportista.router import router as portal_deportista_router
+from app.modules.tenant.router import router as tenant_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
 # Inclusión de todos los módulos del Sistema Web (v1)
+api_v1_router.include_router(tenant_router)
 api_v1_router.include_router(auth_router)
 api_v1_router.include_router(control_ingreso_router)
 api_v1_router.include_router(pantalla_tv_router)

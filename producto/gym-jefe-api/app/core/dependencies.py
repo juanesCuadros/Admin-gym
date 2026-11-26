@@ -104,9 +104,13 @@ async def get_current_staff(
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-    # 1. Establecer RLS para toda la transacción del request
+    # 1. Establecer RLS para toda la transacción del request (Sección 4.2: app.current_tenant_id)
     await session.execute(
         text("SELECT set_config('app.gimnasio_id', :gym_id, true)"),
+        {"gym_id": str(gym_id)}
+    )
+    await session.execute(
+        text("SELECT set_config('app.current_tenant_id', :gym_id, true)"),
         {"gym_id": str(gym_id)}
     )
 
@@ -239,9 +243,9 @@ async def get_current_deportista(
                 detail={"codigo": "TOKEN_INVALIDO", "mensaje": "Token de deportista inválido"},
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        deportista_id = UUID(payload["sub"])
+        deportista_id = UUID(payload.get("user_id") or payload["sub"])
         cuenta_id = UUID(payload["cuenta_id"])
-        gym_id = UUID(payload["gym_id"])
+        gym_id = UUID(payload.get("tenant_id") or payload["gym_id"])
     except HTTPException:
         raise
     except Exception:
@@ -251,9 +255,13 @@ async def get_current_deportista(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 1. Fijar RLS en PostgreSQL para toda la transacción
+    # 1. Fijar RLS en PostgreSQL para toda la transacción (Sección 4.2)
     await session.execute(
         text("SELECT set_config('app.gimnasio_id', :gym_id, true)"),
+        {"gym_id": str(gym_id)},
+    )
+    await session.execute(
+        text("SELECT set_config('app.current_tenant_id', :gym_id, true)"),
         {"gym_id": str(gym_id)},
     )
 
