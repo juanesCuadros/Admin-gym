@@ -1,26 +1,54 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   Image,
-  Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../theme/ThemeContext';
+import { BottomTabBar, MainTabKey } from '../components/BottomTabBar';
+import { ProfileEditModal } from '../components/ProfileEditModal';
 
-export const HomeScreen: React.FC = () => {
-  const { user, cerrarSesion } = useAuth();
+interface HomeScreenProps {
+  onSelectTab: (tab: MainTabKey) => void;
+}
+
+export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectTab }) => {
+  const { user, perfil, avatarDataUrl, cerrarSesion } = useAuth();
   const { colors, theme } = useTheme();
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+
+  const membresia = perfil?.membresia_actual;
+  const estadoMemb = membresia?.estado || perfil?.estado_general || 'sin_membresia';
+
+  const badgeEstado = (() => {
+    switch (estadoMemb) {
+      case 'activo':
+        return { label: 'Al día', color: colors.success, bg: 'rgba(16, 185, 129, 0.2)' };
+      case 'por_vencer':
+        return { label: 'Por vencer', color: colors.warning, bg: 'rgba(245, 158, 11, 0.2)' };
+      case 'congelado':
+        return { label: 'Congelada', color: '#38BDF8', bg: 'rgba(56, 189, 248, 0.2)' };
+      case 'en_gracia':
+      case 'vencido':
+        return { label: 'Vencida', color: colors.error, bg: 'rgba(239, 68, 68, 0.2)' };
+      default:
+        return { label: 'Sin plan activo', color: colors.textSecondary, bg: 'rgba(148, 163, 184, 0.15)' };
+    }
+  })();
+
+  const pesoStr = perfil?.ultimo_peso_kg ? `${Number(perfil.ultimo_peso_kg).toFixed(1)} kg` : 'Sin registro';
+  const alturaStr = perfil?.altura_cm ? `${Number(perfil.altura_cm).toFixed(0)} cm` : '—';
+  const displayName = perfil?.nombre || user?.nombre || 'Atleta';
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Barra superior con identidad del gimnasio (White-Labeling dinámico) */}
         <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
           <View style={styles.topBarLeft}>
             {theme.logo_url ? (
@@ -28,16 +56,16 @@ export const HomeScreen: React.FC = () => {
             ) : (
               <View style={[styles.topBadge, { backgroundColor: colors.primary }]}>
                 <Text style={styles.topBadgeText}>
-                  {theme.gym_name.charAt(0).toUpperCase()}
+                  {(perfil?.gimnasio_nombre || theme.gym_name || 'G').charAt(0).toUpperCase()}
                 </Text>
               </View>
             )}
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={[styles.topGymName, { color: colors.text }]} numberOfLines={1}>
-                {theme.gym_name}
+                {perfil?.gimnasio_nombre || theme.gym_name}
               </Text>
               <Text style={[styles.topSubdomain, { color: colors.textSecondary }]}>
-                {theme.subdominio}.gymdeskcolombia.com
+                {perfil?.subdominio || theme.subdominio}.gymdeskcolombia.com
               </Text>
             </View>
           </View>
@@ -50,18 +78,47 @@ export const HomeScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Saludo al Deportista */}
-        <View style={styles.welcomeSection}>
-          <Text style={[styles.welcomeSub, { color: colors.accent }]}>BIENVENIDO DE VUELTA</Text>
-          <Text style={[styles.welcomeTitle, { color: colors.text }]}>
-            {user?.nombre || 'Atleta'}
-          </Text>
-          <Text style={[styles.documentText, { color: colors.textMuted }]}>
-            Doc: {user?.documento || '—'}
-          </Text>
+        {/* Cabecera del Deportista con Avatar y Edición de Perfil */}
+        <View style={styles.profileRow}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => setEditProfileOpen(true)}
+            style={styles.avatarWrapper}
+          >
+            {avatarDataUrl ? (
+              <Image source={{ uri: avatarDataUrl }} style={styles.userAvatar} />
+            ) : (
+              <View style={[styles.userAvatarFallback, { backgroundColor: colors.surfaceSubtle, borderColor: colors.primary }]}>
+                <Text style={[styles.userAvatarInitial, { color: colors.text }]}>
+                  {displayName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View style={[styles.cameraMiniBadge, { backgroundColor: colors.primary }]}>
+              <Ionicons name="camera" size={11} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.welcomeSub, { color: colors.accent }]}>HOLA DEPORTISTA</Text>
+            <Text style={[styles.welcomeTitle, { color: colors.text }]} numberOfLines={2}>
+              {displayName}
+            </Text>
+            <View style={styles.docAndEditRow}>
+              <Text style={[styles.documentText, { color: colors.textMuted }]}>
+                Doc: {perfil?.documento || user?.documento || '—'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setEditProfileOpen(true)}
+                style={[styles.editProfilePill, { backgroundColor: colors.surfaceSubtle, borderColor: colors.border }]}
+              >
+                <Ionicons name="create-outline" size={13} color={colors.primary} />
+                <Text style={[styles.editProfileText, { color: colors.text }]}>Editar perfil</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
 
-        {/* Tarjeta de Membresía y Estado Activo */}
         <View
           style={[
             styles.membershipCard,
@@ -69,17 +126,17 @@ export const HomeScreen: React.FC = () => {
           ]}
         >
           <View style={styles.membershipHeader}>
-            <View>
+            <View style={{ flex: 1, paddingRight: 10 }}>
               <Text style={[styles.membershipKicker, { color: colors.textSecondary }]}>
-                ESTADO DE MEMBRESÍA
+                MEMBRESÍA ACTUAL
               </Text>
               <Text style={[styles.membershipPlan, { color: colors.text }]}>
-                Plan Mensual Libre
+                {membresia?.plan_nombre || 'Sin membresía asignada'}
               </Text>
             </View>
-            <View style={[styles.statusBadge, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
-              <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
-              <Text style={[styles.statusText, { color: colors.success }]}>Al día</Text>
+            <View style={[styles.statusBadge, { backgroundColor: badgeEstado.bg }]}>
+              <View style={[styles.statusDot, { backgroundColor: badgeEstado.color }]} />
+              <Text style={[styles.statusText, { color: badgeEstado.color }]}>{badgeEstado.label}</Text>
             </View>
           </View>
 
@@ -89,100 +146,54 @@ export const HomeScreen: React.FC = () => {
             <View style={styles.detailItem}>
               <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
               <Text style={[styles.detailText, { color: colors.textSecondary }]}>
-                Vigente hasta fin de mes
-              </Text>
-            </View>
-            <View style={styles.detailItem}>
-              <Ionicons name="shield-checkmark-outline" size={16} color={colors.accent} />
-              <Text style={[styles.detailText, { color: colors.accent }]}>
-                Acceso Total Habilitado
+                {membresia
+                  ? `Vence: ${membresia.fecha_vencimiento} (${membresia.dias_restantes} días)`
+                  : 'Acércate a recepción para activar tu plan'}
               </Text>
             </View>
           </View>
         </View>
 
-        {/* Acciones Rápidas del Deportista */}
-        <Text style={[styles.sectionHeading, { color: colors.text }]}>Módulos y Entrenamiento</Text>
-        <View style={styles.actionsGrid}>
-          {/* Tarjeta 1: Rutinas */}
+        <View style={styles.kpiRow}>
           <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            activeOpacity={0.8}
+            onPress={() => onSelectTab('mediciones')}
+            style={[styles.kpiBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
           >
-            <View style={[styles.actionIconBox, { backgroundColor: 'rgba(255, 87, 34, 0.15)' }]}>
-              <Ionicons name="fitness-outline" size={24} color={colors.primary} />
-            </View>
-            <Text style={[styles.actionCardTitle, { color: colors.text }]}>Mis Rutinas</Text>
-            <Text style={[styles.actionCardSub, { color: colors.textSecondary }]}>
-              Ejercicios y series de hoy
-            </Text>
+            <Text style={[styles.kpiLabel, { color: colors.textSecondary }]}>Peso actual</Text>
+            <Text style={[styles.kpiValue, { color: colors.text }]}>{pesoStr}</Text>
+            <Text style={[styles.kpiSub, { color: colors.textMuted }]}>Estatura: {alturaStr}</Text>
           </TouchableOpacity>
 
-          {/* Tarjeta 2: Mediciones Corporales */}
           <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            activeOpacity={0.8}
+            onPress={() => onSelectTab('asistencias')}
+            style={[styles.kpiBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
           >
-            <View style={[styles.actionIconBox, { backgroundColor: 'rgba(0, 230, 118, 0.15)' }]}>
-              <Ionicons name="body-outline" size={24} color={colors.accent} />
-            </View>
-            <Text style={[styles.actionCardTitle, { color: colors.text }]}>Mediciones</Text>
-            <Text style={[styles.actionCardSub, { color: colors.textSecondary }]}>
-              Peso, grasa y circunferencias
+            <Text style={[styles.kpiLabel, { color: colors.textSecondary }]}>Entrenamientos</Text>
+            <Text style={[styles.kpiValue, { color: colors.accent }]}>
+              {perfil?.total_asistencias_mes ?? 0} este mes
+            </Text>
+            <Text style={[styles.kpiSub, { color: colors.textMuted }]}>
+              Histórico: {perfil?.total_asistencias_historico ?? 0}
             </Text>
           </TouchableOpacity>
-
-          {/* Tarjeta 3: Clases Grupales */}
-          <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <View style={[styles.actionIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
-              <Ionicons name="people-outline" size={24} color="#3B82F6" />
-            </View>
-            <Text style={[styles.actionCardTitle, { color: colors.text }]}>Clases</Text>
-            <Text style={[styles.actionCardSub, { color: colors.textSecondary }]}>
-              Horarios y reservas
-            </Text>
-          </TouchableOpacity>
-
-          {/* Tarjeta 4: Asistencias */}
-          <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <View style={[styles.actionIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-              <Ionicons name="trophy-outline" size={24} color={colors.warning} />
-            </View>
-            <Text style={[styles.actionCardTitle, { color: colors.text }]}>Progreso</Text>
-            <Text style={[styles.actionCardSub, { color: colors.textSecondary }]}>
-              Rachas e ingresos
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Auditoría y Contexto Multi-Tenant (Sección 4.2) */}
-        <View style={[styles.tenantInfoBox, { backgroundColor: colors.surfaceSubtle, borderColor: colors.border }]}>
-          <View style={styles.tenantInfoHeader}>
-            <Ionicons name="server-outline" size={16} color={colors.accent} />
-            <Text style={[styles.tenantInfoTitle, { color: colors.text }]}>Aislamiento RLS Verificado</Text>
-          </View>
-          <Text style={[styles.tenantInfoBody, { color: colors.textSecondary }]}>
-            Sesión conectada con contexto parametrizado en PostgreSQL:
-          </Text>
-          <Text style={[styles.tenantCode, { color: colors.accent }]}>
-            SET LOCAL app.current_tenant_id = '{user?.gimnasio_id}';
-          </Text>
         </View>
       </ScrollView>
+
+      <BottomTabBar activeTab="inicio" onSelectTab={onSelectTab} />
+
+      <ProfileEditModal
+        visible={editProfileOpen}
+        onClose={() => setEditProfileOpen(false)}
+      />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
+  safeArea: { flex: 1 },
+  scrollContent: { padding: 20, paddingBottom: 24 },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -191,17 +202,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     marginBottom: 20,
   },
-  topBarLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 12,
-  },
-  topLogo: {
-    width: 100,
-    height: 38,
-    marginRight: 10,
-  },
+  topBarLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 },
+  topLogo: { width: 100, height: 38, marginRight: 10 },
   topBadge: {
     width: 38,
     height: 38,
@@ -210,18 +212,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 10,
   },
-  topBadgeText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 18,
-  },
-  topGymName: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  topSubdomain: {
-    fontSize: 12,
-  },
+  topBadgeText: { color: '#FFFFFF', fontWeight: '800', fontSize: 18 },
+  topGymName: { fontSize: 15, fontWeight: '700' },
+  topSubdomain: { fontSize: 12 },
   logoutBtn: {
     width: 38,
     height: 38,
@@ -229,50 +222,74 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  welcomeSection: {
-    marginBottom: 20,
+  profileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 22,
   },
-  welcomeSub: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-    marginBottom: 4,
+  avatarWrapper: {
+    width: 64,
+    height: 64,
+    position: 'relative',
   },
-  welcomeTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+  userAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
   },
-  documentText: {
-    fontSize: 13,
-    marginTop: 2,
+  userAvatarFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+  userAvatarInitial: { fontSize: 24, fontWeight: '800' },
+  cameraMiniBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  welcomeSub: { fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 2 },
+  welcomeTitle: { fontSize: 22, fontWeight: '800', letterSpacing: -0.4 },
+  docAndEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 5,
+  },
+  documentText: { fontSize: 12 },
+  editProfilePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  editProfileText: { fontSize: 11, fontWeight: '700' },
   membershipCard: {
     borderRadius: 18,
     borderWidth: 1.5,
     padding: 20,
-    marginBottom: 28,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 4,
+    marginBottom: 16,
   },
   membershipHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
-  membershipKicker: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  membershipPlan: {
-    fontSize: 18,
-    fontWeight: '800',
-    marginTop: 4,
-  },
+  membershipKicker: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  membershipPlan: { fontSize: 18, fontWeight: '800', marginTop: 4 },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -281,91 +298,20 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     gap: 6,
   },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  membershipDivider: {
-    height: 1,
-    marginVertical: 14,
-  },
-  membershipDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  detailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  detailText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  sectionHeading: {
-    fontSize: 17,
-    fontWeight: '700',
-    marginBottom: 14,
-  },
-  actionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 28,
-  },
-  actionCard: {
-    width: '48%',
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
+  statusText: { fontSize: 12, fontWeight: '700' },
+  membershipDivider: { height: 1, marginVertical: 14 },
+  membershipDetails: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  detailItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  detailText: { fontSize: 13, fontWeight: '500' },
+  kpiRow: { flexDirection: 'row', gap: 12 },
+  kpiBox: {
+    flex: 1,
     borderWidth: 1,
     borderRadius: 16,
-    padding: 16,
+    padding: 14,
   },
-  actionIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  actionCardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  actionCardSub: {
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  tenantInfoBox: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 16,
-  },
-  tenantInfoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  tenantInfoTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  tenantInfoBody: {
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 6,
-  },
-  tenantCode: {
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    fontSize: 11,
-    fontWeight: '600',
-  },
+  kpiLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+  kpiValue: { fontSize: 18, fontWeight: '800', marginTop: 6 },
+  kpiSub: { fontSize: 12, marginTop: 3 },
 });

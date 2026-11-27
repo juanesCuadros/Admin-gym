@@ -1,3 +1,4 @@
+import base64
 import hmac
 import secrets
 from datetime import date, datetime, timedelta, timezone
@@ -25,6 +26,7 @@ from app.core.dependencies import (
     verificar_suscripcion_operativa,
 )
 from app.core.email import correo_pin_portal_deportista, email_adaptador
+from app.core.imagenes import optimizar_foto_deportista
 from app.core.security import decode_access_token, hash_password, hash_token, verify_password
 from app.modules.deportistas.service import DeportistasService
 from app.modules.portal_deportista.schemas import (
@@ -36,6 +38,7 @@ from app.modules.portal_deportista.schemas import (
     DeportistaAuthPerfilDto,
     EstablecerPasswordDeportistaRequest,
     FinanzasDeportistaResponse,
+    FotoPerfilResponse,
     IniciarAccesoDeportistaRequest,
     IniciarAccesoDeportistaResponse,
     LoginDeportistaResponse,
@@ -47,6 +50,7 @@ from app.modules.portal_deportista.schemas import (
     PerfilDeportistaResponse,
     ProgresoResumenDto,
     RegistrarMedicionPortalRequest,
+    SubirFotoPerfilRequest,
     ValidarPinDeportistaRequest,
     ValidarPinDeportistaResponse,
 )
@@ -862,6 +866,17 @@ class PortalDeportistaService:
         )
         med_row = res_med.mappings().first()
 
+        res_foto = await session.execute(
+            text("""
+                SELECT EXISTS (
+                    SELECT 1 FROM platform.deportista_fotos
+                    WHERE deportista_id = :dep_id AND gimnasio_id = :gym_id
+                )
+            """),
+            {"dep_id": dep.deportista_id, "gym_id": dep.gimnasio_id},
+        )
+        tiene_foto = bool(res_foto.scalar())
+
         return PerfilDeportistaResponse(
             id=row["id"],
             gimnasio_nombre=dep.gimnasio_nombre,
@@ -881,8 +896,105 @@ class PortalDeportistaService:
             ultimo_peso_kg=med_row["peso"] if med_row else None,
             ultimo_grasa_pct=med_row["grasa_pct"] if med_row else None,
             ultimo_masa_muscular_kg=med_row["masa_muscular"] if med_row else None,
+            tiene_foto=tiene_foto,
             version=row["version"],
         )
+
+    @classmethod
+    async def obtener_foto_perfil(
+        cls,
+        session: AsyncSession,
+        dep: AuthenticatedDeportista,
+    ) -> FotoPerfilResponse:
+        res = await session.execute(
+            text("""
+                SELECT contenido, media_type
+                FROM platform.deportista_fotos
+                WHERE deportista_id = :dep_id AND gimnasio_id = :gym_id
+            """),
+            {"dep_id": dep.deportista_id, "gym_id": dep.gimnasio_id},
+        )
+        row = res.mappings().first()
+        if not row:
+            return FotoPerfilResponse(tiene_foto=False, data_url=None, media_type=None, bytes_size=0)
+
+        raw = bytes(row["contenido"])
+        b64 = base64.b64encode(raw).decode("ascii")
+        mtype = row["media_type"] or "image/webp"
+        return FotoPerfilResponse(
+            tiene_foto=True,
+            data_url=f"data:{mtype};base64,{b64}",
+            media_type=mtype,
+            bytes_size=len(raw),
+        )
+
+    @classmethod
+    async def subir_foto_perfil(
+        cls,
+        session: AsyncSession,
+        dep: AuthenticatedDeportista,
+        req: SubirFotoPerfilRequest,
+    ) -> FotoPerfilResponse:
+        webp_bytes, media_type = optimizar_foto_deportista(req.foto_base64)
+
+        await session.execute(
+            text("""
+                INSERT INTO platform.deportista_fotos (
+                    deportista_id, gimnasio_id, contenido, media_type, subida_por, updated_at
+                ) VALUES (
+                    :dep_id, :gym_id, :contenido, :media_type, NULL, now()
+                )
+                ON CONFLICT (deportista_id) DO UPDATE
+                  SET contenido = EXCLUDED.contenido,
+                      media_type = EXCLUDED.media_type,
+                      subida_por = NULL,
+                      updated_at = now()
+            """),
+            {
+                "dep_id": dep.deportista_id,
+                "gym_id": dep.gimnasio_id,
+                "contenido": webp_bytes,
+                "media_type": media_type,
+            },
+        )
+
+        await AuditService.registrar(
+            session=session,
+            gimnasio_id=dep.gimnasio_id,
+            actor_id=None,
+            actor_nombre=f"Deportista: {dep.nombre}",
+            accion="ACTUALIZAR_FOTO_PERFIL_PORTAL",
+            entidad="deportistas",
+            entidad_id=str(dep.deportista_id),
+            detalle={
+                "media_type": media_type,
+                "bytes_optimizados": len(webp_bytes),
+                "origen": "app_movil_portal",
+            },
+        )
+
+        b64 = base64.b64encode(webp_bytes).decode("ascii")
+        return FotoPerfilResponse(
+            tiene_foto=True,
+            data_url=f"data:{media_type};base64,{b64}",
+            media_type=media_type,
+            bytes_size=len(webp_bytes),
+        )
+
+    @classmethod
+    async def eliminar_foto_perfil(
+        cls,
+        session: AsyncSession,
+        dep: AuthenticatedDeportista,
+    ) -> FotoPerfilResponse:
+        await session.execute(
+            text("""
+                DELETE FROM platform.deportista_fotos
+                WHERE deportista_id = :dep_id AND gimnasio_id = :gym_id
+            """),
+            {"dep_id": dep.deportista_id, "gym_id": dep.gimnasio_id},
+        )
+        return FotoPerfilResponse(tiene_foto=False, data_url=None, media_type=None, bytes_size=0)
 
     @classmethod
     async def actualizar_perfil(

@@ -30,23 +30,21 @@ export const PreLoginScreen: React.FC = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={[styles.container, { backgroundColor: colors.background }]}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Logo / Badge de bienvenida */}
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.headerArea}>
           <View style={[styles.logoBadge, { backgroundColor: colors.primary }]}>
             <Ionicons name="barbell-outline" size={36} color="#FFFFFF" />
           </View>
           <Text style={[styles.brandTitle, { color: colors.text }]}>GymOS</Text>
           <Text style={[styles.brandSubtitle, { color: colors.textSecondary }]}>
-            Acceso unificado para miembros y atletas
+            App exclusiva para deportistas inscritos
           </Text>
         </View>
 
-        {/* Tarjeta del formulario de pre-registro */}
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>Identifica tu gimnasio</Text>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>Ingresa con tu correo</Text>
           <Text style={[styles.cardDescription, { color: colors.textSecondary }]}>
-            Ingresa tu correo electrónico registrado para detectar automáticamente tu sede y personalizar tu app.
+            Escribe el correo registrado en tu gimnasio. Si es tu primera vez, te enviaremos un código de 6 dígitos para confirmar tus datos y medidas.
           </Text>
 
           {errorMessage && (
@@ -57,14 +55,15 @@ export const PreLoginScreen: React.FC = () => {
           )}
 
           <View style={styles.inputContainer}>
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Correo Electrónico</Text>
+            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Correo del deportista</Text>
             <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.surfaceSubtle }]}>
               <Ionicons name="mail-outline" size={20} color={colors.textMuted} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, { color: colors.text }]}
-                placeholder="ejemplo@correo.com"
+                placeholder="tucorreo@ejemplo.com"
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="none"
+                autoCorrect={false}
                 keyboardType="email-address"
                 value={email}
                 onChangeText={(val) => {
@@ -95,11 +94,10 @@ export const PreLoginScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Footer de seguridad multi-tenant */}
         <View style={styles.footerNote}>
           <Ionicons name="shield-checkmark-outline" size={16} color={colors.textMuted} />
           <Text style={[styles.footerText, { color: colors.textMuted }]}>
-            Aislamiento de datos con PostgreSQL Row-Level Security (RLS)
+            Debes estar inscrito como deportista activo en tu gimnasio
           </Text>
         </View>
       </ScrollView>
@@ -108,18 +106,9 @@ export const PreLoginScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  headerArea: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
+  container: { flex: 1 },
+  scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  headerArea: { alignItems: 'center', marginBottom: 30 },
   logoBadge: {
     width: 68,
     height: 68,
@@ -127,42 +116,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
   },
-  brandTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  brandSubtitle: {
-    fontSize: 14,
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  card: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 5,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  cardDescription: {
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 20,
-  },
+  brandTitle: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
+  brandSubtitle: { fontSize: 14, marginTop: 6, textAlign: 'center' },
+  card: { borderRadius: 18, borderWidth: 1, padding: 24 },
+  cardTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  cardDescription: { fontSize: 13, lineHeight: 19, marginBottom: 20 },
   errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -171,13 +130,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     gap: 8,
   },
-  errorText: {
-    fontSize: 13,
-    flex: 1,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
+  errorText: { fontSize: 13, flex: 1 },
+  inputContainer: { marginBottom: 20 },
   inputLabel: {
     fontSize: 12,
     fontWeight: '600',
@@ -193,13 +147,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 50,
   },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-  },
+  inputIcon: { marginRight: 10 },
+  input: { flex: 1, fontSize: 15 },
   primaryButton: {
     height: 50,
     borderRadius: 12,
@@ -208,20 +157,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 6,
   },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
+  primaryButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
   footerNote: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 32,
+    marginTop: 28,
     gap: 6,
   },
-  footerText: {
-    fontSize: 12,
-    textAlign: 'center',
-  },
+  footerText: { fontSize: 12, textAlign: 'center' },
 });

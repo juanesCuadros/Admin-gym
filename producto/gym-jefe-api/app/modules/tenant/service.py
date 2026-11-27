@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.contexto_gimnasio import fijar_gimnasio
+from app.core.dependencies import verificar_suscripcion_operativa
 from app.modules.tenant.schemas import (
     ResolverTenantResponse,
     TenantThemeResponse,
@@ -82,48 +83,35 @@ class TenantService:
     ) -> ResolverTenantResponse:
         """
         Resolución por correo en Pre-registro (Sección 4.1):
-        Valida el correo contra deportistas o staff, resuelve el tenant_id
-        y retorna la configuración de marca para tematizar la app inmediatamente.
+        Exige que la persona esté inscrita como DEPORTISTA activo en un gimnasio activo.
+        Retorna el tenant_id, subdominio, tema visual y si es su primer ingreso (requiere_activacion).
         """
         correo_limpio = correo.strip().lower()
 
-        # 1. Intentar resolver por función optimizada de deportista
+        # 1. Resolver únicamente contra fichas de deportistas activos en gimnasios activos
         res_dep = await session.execute(
             text("SELECT platform.gimnasio_id_por_correo_deportista(:correo)"),
             {"correo": correo_limpio},
         )
         gym_id = res_dep.scalar()
 
-        # 2. Si no es deportista, verificar si es staff del gimnasio
-        if not gym_id:
-            res_staff = await session.execute(
-                text("""
-                    SELECT gimnasio_id FROM platform.staff
-                    WHERE lower(correo::text) = :correo
-                      AND deleted_at IS NULL AND activo = true
-                    ORDER BY created_at DESC LIMIT 1
-                """),
-                {"correo": correo_limpio},
-            )
-            gym_id = res_staff.scalar()
-
         if not gym_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={
-                    "codigo": "CORREO_NO_REGISTRADO",
-                    "mensaje": "No se encontró ningún gimnasio vinculado a este correo electrónico.",
+                    "codigo": "DEPORTISTA_NO_REGISTRADO",
+                    "mensaje": "No encontramos un deportista activo con este correo. Debes estar inscrito en un gimnasio para ingresar.",
                 },
             )
 
-        # 3. Fijar contexto de base de datos
+        # 2. Fijar contexto RLS en PostgreSQL
         await fijar_gimnasio(session, gym_id)
         await session.execute(
             text("SELECT set_config('app.current_tenant_id', :gym_id, true)"),
             {"gym_id": str(gym_id)},
         )
 
-        # 4. Obtener datos de la sede y verificar si requiere activación de contraseña
+        # 3. Verificar que el gimnasio esté operativo y su suscripción al día
         res_tenant = await session.execute(
             text("""
                 SELECT id, nombre, subdominio, branding, activo
@@ -139,17 +127,42 @@ class TenantService:
                 detail={"codigo": "GIMNASIO_SUSPENDIDO", "mensaje": "El gimnasio se encuentra suspendido o inactivo."},
             )
 
-        # Verificar si ya tiene cuenta con contraseña establecida o es primer ingreso
-        res_cuenta = await session.execute(
+        await verificar_suscripcion_operativa(session, gym_id)
+
+        # 4. Confirmar que exista la ficha activa de deportista en ese gimnasio y revisar si ya activó cuenta
+        res_ficha = await session.execute(
             text("""
-                SELECT id, hash_password FROM platform.cuentas_app
-                WHERE gimnasio_id = :gym_id AND lower(correo::text) = :correo AND activa = true
+                SELECT d.id AS deportista_id,
+                       ca.id AS cuenta_id,
+                       ca.hash_password,
+                       ca.activa AS cuenta_activa
+                FROM platform.deportistas d
+                LEFT JOIN platform.cuentas_app ca ON ca.deportista_id = d.id
+                WHERE d.gimnasio_id = :gym_id
+                  AND lower(d.correo::text) = :correo
+                  AND d.deleted_at IS NULL
+                  AND d.activo = true
+                ORDER BY (ca.id IS NOT NULL) DESC, d.created_at DESC
                 LIMIT 1
             """),
             {"gym_id": gym_id, "correo": correo_limpio},
         )
-        cuenta = res_cuenta.mappings().first()
-        requiere_activacion = cuenta is None or not bool(cuenta["hash_password"])
+        ficha = res_ficha.mappings().first()
+
+        if not ficha:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "codigo": "DEPORTISTA_NO_REGISTRADO",
+                    "mensaje": "Tu ficha de deportista no se encuentra activa en el gimnasio. Consulta en recepción.",
+                },
+            )
+
+        requiere_activacion = (
+            ficha["cuenta_id"] is None
+            or not ficha["cuenta_activa"]
+            or not bool(ficha["hash_password"])
+        )
 
         branding = cls._parsear_branding(t_row["branding"])
         app_movil_activa = branding.get("app_movil_activa", True)

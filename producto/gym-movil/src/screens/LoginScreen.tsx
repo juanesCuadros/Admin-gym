@@ -16,7 +16,16 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../theme/ThemeContext';
 
 export const LoginScreen: React.FC = () => {
-  const { savedEmail, resolvedTenant, iniciarSesion, volverAPreLogin, isLoading, errorMessage, clearError } = useAuth();
+  const {
+    savedEmail,
+    resolvedTenant,
+    iniciarSesion,
+    solicitarRecuperacionPin,
+    volverAPreLogin,
+    isLoading,
+    errorMessage,
+    clearError,
+  } = useAuth();
   const { colors, theme } = useTheme();
 
   const [password, setPassword] = useState('');
@@ -32,16 +41,13 @@ export const LoginScreen: React.FC = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={[styles.container, { backgroundColor: colors.background }]}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Cabecera Dynamic White-Labeling (Sección 4.3) */}
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.brandingHeader}>
           {theme.logo_url ? (
             <Image source={{ uri: theme.logo_url }} style={styles.gymLogo} resizeMode="contain" />
           ) : (
             <View style={[styles.gymBadge, { backgroundColor: colors.primary }]}>
-              <Text style={styles.gymBadgeLetter}>
-                {theme.gym_name.charAt(0).toUpperCase()}
-              </Text>
+              <Text style={styles.gymBadgeLetter}>{theme.gym_name.charAt(0).toUpperCase()}</Text>
             </View>
           )}
           <Text style={[styles.gymName, { color: colors.text }]}>{theme.gym_name}</Text>
@@ -53,14 +59,12 @@ export const LoginScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Tarjeta de Inicio de Sesión */}
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>Ingresa tu contraseña</Text>
 
-          {/* Email badge con opción de cambiar */}
           <View style={[styles.emailBadge, { backgroundColor: colors.surfaceSubtle, borderColor: colors.border }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.emailLabel, { color: colors.textMuted }]}>Cuenta identificada</Text>
+              <Text style={[styles.emailLabel, { color: colors.textMuted }]}>Deportista identificado</Text>
               <Text style={[styles.emailValue, { color: colors.text }]} numberOfLines={1}>
                 {savedEmail}
               </Text>
@@ -77,7 +81,6 @@ export const LoginScreen: React.FC = () => {
             </View>
           )}
 
-          {/* Campo Contraseña */}
           <View style={styles.inputContainer}>
             <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Contraseña</Text>
             <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.surfaceSubtle }]}>
@@ -104,7 +107,6 @@ export const LoginScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* Botón Iniciar Sesión con Primary Color del Gimnasio */}
           <TouchableOpacity
             style={[
               styles.primaryButton,
@@ -120,10 +122,9 @@ export const LoginScreen: React.FC = () => {
             )}
           </TouchableOpacity>
 
-          {/* Botón Volver */}
-          <TouchableOpacity onPress={volverAPreLogin} style={styles.backButton}>
-            <Text style={[styles.backButtonText, { color: colors.textSecondary }]}>
-              ¿No es tu gimnasio? Volver al inicio
+          <TouchableOpacity onPress={solicitarRecuperacionPin} disabled={isLoading} style={styles.backButton}>
+            <Text style={[styles.backButtonText, { color: colors.accent }]}>
+              ¿Olvidaste tu contraseña? Recibir código por correo
             </Text>
           </TouchableOpacity>
         </View>
@@ -133,23 +134,10 @@ export const LoginScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  brandingHeader: {
-    alignItems: 'center',
-    marginBottom: 28,
-  },
-  gymLogo: {
-    width: 140,
-    height: 60,
-    marginBottom: 12,
-  },
+  container: { flex: 1 },
+  scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  brandingHeader: { alignItems: 'center', marginBottom: 28 },
+  gymLogo: { width: 140, height: 60, marginBottom: 12 },
   gymBadge: {
     width: 64,
     height: 64,
@@ -157,22 +145,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
   },
-  gymBadgeLetter: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '800',
-  },
-  gymName: {
-    fontSize: 22,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
+  gymBadgeLetter: { color: '#FFFFFF', fontSize: 28, fontWeight: '800' },
+  gymName: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
   tenantPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -182,25 +157,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
     gap: 4,
   },
-  tenantPillText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  card: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 5,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 16,
-  },
+  tenantPillText: { fontSize: 12, fontWeight: '500' },
+  card: { borderRadius: 18, borderWidth: 1, padding: 24 },
+  cardTitle: { fontSize: 18, fontWeight: '700', marginBottom: 16 },
   emailBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -209,25 +168,10 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 20,
   },
-  emailLabel: {
-    fontSize: 11,
-    textTransform: 'uppercase',
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  emailValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  changeEmailBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  changeEmailText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
+  emailLabel: { fontSize: 11, textTransform: 'uppercase', fontWeight: '600', letterSpacing: 0.5 },
+  emailValue: { fontSize: 14, fontWeight: '600', marginTop: 2 },
+  changeEmailBtn: { paddingHorizontal: 10, paddingVertical: 6 },
+  changeEmailText: { fontSize: 13, fontWeight: '700' },
   errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -236,13 +180,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     gap: 8,
   },
-  errorText: {
-    fontSize: 13,
-    flex: 1,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
+  errorText: { fontSize: 13, flex: 1 },
+  inputContainer: { marginBottom: 20 },
   inputLabel: {
     fontSize: 12,
     fontWeight: '600',
@@ -258,16 +197,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 50,
   },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-  },
-  eyeBtn: {
-    padding: 6,
-  },
+  inputIcon: { marginRight: 10 },
+  input: { flex: 1, fontSize: 15 },
+  eyeBtn: { padding: 6 },
   primaryButton: {
     height: 50,
     borderRadius: 12,
@@ -275,18 +207,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  backButton: {
-    alignItems: 'center',
-    marginTop: 18,
-    paddingVertical: 6,
-  },
-  backButtonText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
+  primaryButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  backButton: { alignItems: 'center', marginTop: 18, paddingVertical: 6 },
+  backButtonText: { fontSize: 13, fontWeight: '600' },
 });

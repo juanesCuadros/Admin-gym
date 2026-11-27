@@ -43,11 +43,11 @@ app = FastAPI(
     openapi_url=None if es_produccion else "/openapi.json"
 )
 
-# Configuración de CORS (admite orígenes explícitos y subdominios dinámicos *.localhost)
+# Configuración de CORS (admite orígenes explícitos, Expo Web y subdominios dinámicos *.localhost)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_origin_regex=r"https?://.*\.localhost(:\d+)?",
+    allow_origins=[*settings.CORS_ORIGINS, "http://localhost:8081", "http://127.0.0.1:8081"],
+    allow_origin_regex=r"https?://([a-z0-9-]+\.)?localhost(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -178,7 +178,19 @@ class PerfilDeportistaResponse(BaseModel):
     ultimo_peso_kg: Optional[Decimal] = None
     ultimo_grasa_pct: Optional[Decimal] = None
     ultimo_masa_muscular_kg: Optional[Decimal] = None
+    tiene_foto: bool = False
     version: int
+
+
+class SubirFotoPerfilRequest(BaseModel):
+    foto_base64: str = Field(..., min_length=20, max_length=9_000_000, description="Imagen en Base64 o Data URL")
+
+
+class FotoPerfilResponse(BaseModel):
+    tiene_foto: bool
+    data_url: Optional[str] = None
+    media_type: Optional[str] = None
+    bytes_size: int = 0
 
 
 class ActualizarPerfilDeportistaRequest(BaseModel):

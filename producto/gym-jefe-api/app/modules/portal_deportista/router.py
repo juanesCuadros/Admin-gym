@@ -10,6 +10,7 @@ from app.modules.portal_deportista.schemas import (
     AsistenciasPortalResponse,
     EstablecerPasswordDeportistaRequest,
     FinanzasDeportistaResponse,
+    FotoPerfilResponse,
     IniciarAccesoDeportistaRequest,
     IniciarAccesoDeportistaResponse,
     LoginDeportistaResponse,
@@ -18,6 +19,7 @@ from app.modules.portal_deportista.schemas import (
     MedicionPortalItem,
     PerfilDeportistaResponse,
     RegistrarMedicionPortalRequest,
+    SubirFotoPerfilRequest,
     ValidarPinDeportistaRequest,
     ValidarPinDeportistaResponse,
 )
@@ -107,6 +109,43 @@ async def patch_perfil_portal(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ):
     return await PortalDeportistaService.actualizar_perfil(session, current_dep, req)
+
+
+@router.get(
+    "/perfil/foto",
+    response_model=FotoPerfilResponse,
+    summary="Obtener foto de perfil optimizada del deportista autenticado",
+)
+async def get_foto_perfil_portal(
+    current_dep: Annotated[AuthenticatedDeportista, Depends(get_current_deportista)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    return await PortalDeportistaService.obtener_foto_perfil(session, current_dep)
+
+
+@router.put(
+    "/perfil/foto",
+    response_model=FotoPerfilResponse,
+    summary="Subir o reemplazar foto de perfil (auto-comprimida a WebP <= 64 KB)",
+)
+async def put_foto_perfil_portal(
+    req: SubirFotoPerfilRequest,
+    current_dep: Annotated[AuthenticatedDeportista, Depends(get_current_deportista)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    return await PortalDeportistaService.subir_foto_perfil(session, current_dep, req)
+
+
+@router.delete(
+    "/perfil/foto",
+    response_model=FotoPerfilResponse,
+    summary="Eliminar foto de perfil del deportista",
+)
+async def delete_foto_perfil_portal(
+    current_dep: Annotated[AuthenticatedDeportista, Depends(get_current_deportista)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    return await PortalDeportistaService.eliminar_foto_perfil(session, current_dep)
 
 
 @router.get(

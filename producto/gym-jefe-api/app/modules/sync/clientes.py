@@ -47,20 +47,12 @@ def _error(codigo: str, mensaje: str, http: int = status.HTTP_422_UNPROCESSABLE_
     return HTTPException(status_code=http, detail={"codigo": codigo, "mensaje": mensaje})
 
 
+from app.core.imagenes import optimizar_foto_deportista
+
+
 def decodificar_foto(texto: str) -> tuple[bytes, str]:
-    # Acepta también el prefijo de un data URL ("data:image/jpeg;base64,...").
-    if texto.startswith("data:"):
-        texto = texto.split(",", 1)[-1]
-    try:
-        contenido = base64.b64decode(texto, validate=True)
-    except (binascii.Error, ValueError):
-        raise _error("FOTO_NO_VALIDA", "La foto no llegó bien. Tómala de nuevo.")
-    if len(contenido) > MAX_BYTES_IMAGEN:
-        raise _error("FOTO_MUY_GRANDE", "La foto no puede pesar más de 3 MB.", status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
-    media_type = MyGymService._tipo_de_imagen(contenido)
-    if not media_type:
-        raise _error("FOTO_NO_VALIDA", "La foto debe ser JPG, PNG o WEBP.")
-    return contenido, media_type
+    """Valida, recorta 1:1 y comprime a WebP liviano (~15 KB) para no inflar PostgreSQL."""
+    return optimizar_foto_deportista(texto)
 
 
 async def guardar_foto(session: AsyncSession, gym_id: UUID, deportista_id: UUID, contenido: bytes, media_type: str,
